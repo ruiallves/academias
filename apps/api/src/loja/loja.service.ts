@@ -194,6 +194,7 @@ export class LojaService {
       nome: dto.nome.trim(),
       email: dto.email.trim().toLowerCase(),
       telefone: dto.telefone?.trim() || null,
+      nif: dto.nif?.trim() || null,
       entrega: dto.entrega,
       morada,
       nota: dto.nota?.trim() || null,
@@ -232,7 +233,7 @@ export class LojaService {
    */
   private async criarEncomenda(
     academyId: string,
-    p: { linhas: LinhaDoCarrinho[]; nome: string; email: string; telefone: string | null; entrega: Entrega; morada: ReturnType<typeof moradaValida>; nota: string | null; metodo: "MBWAY" | "MULTIBANCO" },
+    p: { linhas: LinhaDoCarrinho[]; nome: string; email: string; telefone: string | null; nif: string | null; entrega: Entrega; morada: ReturnType<typeof moradaValida>; nota: string | null; metodo: "MBWAY" | "MULTIBANCO" },
   ) {
     return this.naFila(academyId, () =>
       this.prisma.runAs(academyId, async (db) => {
@@ -285,6 +286,8 @@ export class LojaService {
             buyerEmail: p.email,
             // Normalizado: é por aqui que se contam as encomendas do mesmo telemóvel.
             buyerPhone: telemovel,
+            // Só para a fatura: nulo sai como consumidor final (ver `FaturacaoService`).
+            buyerTaxId: p.nif,
             address: p.morada ?? undefined,
             note: p.nota,
             itemsCents: r.itemsCents,

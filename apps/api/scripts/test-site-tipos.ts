@@ -10,7 +10,7 @@
  *
  * Uso: npm run test:site-tipos
  */
-import { identidadeValida, inicioValido, SECCOES_INICIO } from "../src/site/site.tipos";
+import { equipasValidas, identidadeValida, inicioValido, SECCOES_INICIO, semResultado } from "../src/site/site.tipos";
 
 let ok = 0;
 let falhas = 0;
@@ -112,6 +112,31 @@ console.log("\n=== A identidade: direção e instalações ===");
   check("a direção tem tecto de 40", muitos.direcao.length === 40);
   const muitas = identidadeValida({ instalacoes: Array.from({ length: 20 }, (_, i) => ({ nome: `I${i}` })) });
   check("as instalações têm tecto de 12", muitas.instalacoes.length === 12);
+}
+
+console.log("\n=== Resultados por equipa (federações que não os deixam publicar) ===");
+{
+  const eq = equipasValidas({
+    antiga: { visivel: true },
+    sem: { visivel: true, resultados: false },
+    com: { visivel: true, resultados: true },
+    lixo: { visivel: true, resultados: "nao" },
+  });
+  check("uma equipa gravada antes da opção publica os resultados", eq.antiga.resultados === true);
+  check("desligados ficam desligados", eq.sem.resultados === false);
+  check("ligados ficam ligados", eq.com.resultados === true);
+  check("um valor estranho não os desliga (só false desliga)", eq.lixo.resultados === true);
+
+  const agora = Date.parse("2026-10-25T12:00:00Z");
+  const jogo = (teamId: string, quando: string, status: "SCHEDULED" | "PLAYED" | "CANCELLED") => ({ teamId, startsAt: new Date(quando), status });
+  check("com resultados, nada muda num jogo jogado", semResultado(jogo("com", "2026-10-20T15:00:00Z", "PLAYED"), eq, agora) === null);
+  check("com resultados, nada muda num jogo por jogar", semResultado(jogo("antiga", "2026-11-01T15:00:00Z", "SCHEDULED"), eq, agora) === null);
+  check("sem resultados, um jogo jogado esconde-se", semResultado(jogo("sem", "2026-10-20T15:00:00Z", "PLAYED"), eq, agora) === "esconder");
+  check("sem resultados, um jogo passado que ninguém marcou como jogado esconde-se", semResultado(jogo("sem", "2026-10-25T10:00:00Z", "SCHEDULED"), eq, agora) === "esconder");
+  check("sem resultados, um jogo já começado esconde-se", semResultado(jogo("sem", "2026-10-25T11:59:00Z", "SCHEDULED"), eq, agora) === "esconder");
+  check("sem resultados, um jogo por jogar fica, sem marcador", semResultado(jogo("sem", "2026-11-01T15:00:00Z", "SCHEDULED"), eq, agora) === "limpar");
+  check("sem resultados, um jogo futuro mesmo marcado como jogado esconde-se", semResultado(jogo("sem", "2026-11-01T15:00:00Z", "PLAYED"), eq, agora) === "esconder");
+  check("uma equipa desconhecida segue a regra de omissão (publica)", semResultado(jogo("outra", "2026-10-20T15:00:00Z", "PLAYED"), eq, agora) === null);
 }
 
 console.log(`\n${falhas === 0 ? "TUDO OK" : "FALHOU"} — ${ok} ok, ${falhas} falhas`);

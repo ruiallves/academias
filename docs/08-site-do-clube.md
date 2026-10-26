@@ -293,8 +293,11 @@ Rui, 21/10). As faturas ficam para o fim.
   **Feito a 25/10/2026, à mão:** enquanto não há ligação por API, marca-se no
   painel da plataforma, na ficha do clube ("Vendas no site e faturação"), o
   programa que ele usa (`Academy.invoicingSystem`, `invoicingConfirmedAt`).
-  A regra vive em `api/src/common/vendas-online.ts`; a ligação por API, quando
-  existir, preenche os mesmos dois campos.
+  A regra vive em `api/src/common/vendas-online.ts`.
+  **Ligação por API feita a 26/10/2026** (`docs/11-faturacao.md`): o clube
+  liga o programa dele em Definições › Faturação (InvoiceXpress, Moloni, Sage
+  One, PHC GO, Vendus) e é a ligação que preenche os mesmos dois campos; o
+  painel só marca à mão clubes sem ligação.
 - **Ligação por API à conta do clube**, a cada venda paga: emite a
   fatura-recibo, buscamos o PDF e enviamo-lo no mesmo email do bilhete ou da
   encomenda. Se o programa estiver em baixo, a fatura fica numa fila.

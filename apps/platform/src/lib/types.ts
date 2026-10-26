@@ -182,6 +182,8 @@ export type FaturacaoDoClube = {
   programa: string | null;
   /** Quando ficou marcada. */
   desde: string | null;
+  /** Ligada pelo próprio clube, por API, em Definições › Faturação: as faturas saem sozinhas e aqui só se vê. */
+  porApi: boolean;
   passos: { site: boolean; eupago: boolean; pagamentos: boolean; faturacao: boolean };
   /** Vende no site: as quatro ligadas. */
   vende: boolean;

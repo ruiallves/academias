@@ -99,12 +99,14 @@ export function FaturacaoDoClubePanel({
 
         {estado.programa && (
           <p className="text-meta text-ink-2">
-            Fatura no <strong className="font-semibold text-ink">{estado.programa}</strong>
-            {desde ? `, confirmado a ${desde}` : ""}.
+            {estado.porApi ? "Ligada pelo clube, por API, ao " : "Fatura no "}
+            <strong className="font-semibold text-ink">{estado.programa}</strong>
+            {desde ? `, ${estado.porApi ? "desde" : "confirmado a"} ${desde}` : ""}.
+            {estado.porApi && " Cada pagamento gera a fatura e o email sai sozinho. Desliga-se na consola do clube, em Definições › Faturação."}
           </p>
         )}
 
-        {mayEdit && (
+        {mayEdit && !estado.porApi && (
           <div className="space-y-2.5 border-t border-line pt-3.5">
             <p className="text-[11px] leading-relaxed text-ink-4">
               Marca só depois de confirmar com o clube que o programa de faturação dele está pronto para faturar as vendas do site. É o clube que fatura cada

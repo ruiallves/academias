@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, ChevronRight, LogOut, MessageSquare, Plus, ShieldAlert, Sparkles, ShieldCheck } from "lucide-react";
+import { BookOpen, ChevronRight, LogOut, MessageSquare, Plus, Receipt, ShieldAlert, Sparkles, ShieldCheck } from "lucide-react";
 import { reload, useStore } from "@/lib/store";
 import { apiPost } from "@/lib/http";
 import { signOut } from "@/lib/session";
@@ -107,6 +107,8 @@ export default function Profile() {
       <section>
         <Label>Conta</Label>
         <div className="space-y-2">
+          {/* O que vai na fatura de quem paga pela app. A área de atleta não paga nada. Ver `screens/DadosDeFaturacao`. */}
+          {!store.atleta && <ActionRow icon={Receipt} label="Dados para faturas" onClick={() => navigate("/dados-de-faturacao")} />}
           <ActionRow icon={MessageSquare} label="Falar com a academia" />
           <ActionRow
             icon={Sparkles}

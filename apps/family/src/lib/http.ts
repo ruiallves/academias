@@ -121,6 +121,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
 
 export const apiGet = <T>(path: string, opts?: RequestOpts) => request<T>("GET", path, undefined, opts);
 export const apiPost = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
+export const apiPut = <T>(path: string, body?: unknown) => request<T>("PUT", path, body ?? {});
 export const apiPatch = <T>(path: string, body?: unknown, opts?: RequestOpts) => request<T>("PATCH", path, body ?? {}, opts);
 export const apiDelete = <T>(path: string) => request<T>("DELETE", path);
 

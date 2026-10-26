@@ -115,7 +115,14 @@ export const BANNER_VAZIO: Banner = { titulo: "", texto: "", imagem: "", botao: 
  * liga é o clube, com a autorização das famílias (decisão do Rui, 25/10/2026).
  * Desligadas, o plantel mostra a imagem padrão.
  */
-export type EquipaNoSite = { visivel: boolean; plantel: boolean; foto: string; fotos: boolean };
+/**
+ * `resultados`: os resultados dos jogos desta equipa. Há federações que não
+ * deixam publicar resultados abaixo de um certo escalão (pedido do Rui,
+ * 25/10/2026). Desligados, o site mostra só os próximos jogos, sem marcador,
+ * e nenhum jogo já jogado. Ligados por omissão: era assim antes da opção, e
+ * quem tem de os esconder sabe em que escalões.
+ */
+export type EquipaNoSite = { visivel: boolean; plantel: boolean; foto: string; fotos: boolean; resultados: boolean };
 
 export const LADOS = ["norte", "sul", "nascente", "poente", "noroeste", "nordeste", "sudoeste", "sudeste"] as const;
 export type Lado = (typeof LADOS)[number];
@@ -279,9 +286,25 @@ export function equipasValidas(v: unknown): Record<string, EquipaNoSite> {
     if (!id || id.length > 60 || !e || typeof e !== "object") continue;
     const x = e as Record<string, unknown>;
     const visivel = x.visivel === true;
-    out[id] = { visivel, plantel: visivel, foto: urlSegura(x.foto), fotos: visivel && x.fotos === true };
+    out[id] = { visivel, plantel: visivel, foto: urlSegura(x.foto), fotos: visivel && x.fotos === true, resultados: x.resultados !== false };
   }
   return out;
+}
+
+/**
+ * Um jogo de uma equipa com os resultados desligados no site (ver
+ * `EquipaNoSite.resultados`): só os que ainda não começaram aparecem, e
+ * sempre sem marcador. "esconder" para um jogo já jogado ou com a hora de
+ * início passada (um jogo a meio, ou que ninguém marcou como jogado); "limpar"
+ * para um jogo por jogar; nulo quando a equipa publica os resultados.
+ */
+export function semResultado(
+  j: { teamId: string; startsAt: Date; status: "SCHEDULED" | "PLAYED" | "CANCELLED" },
+  equipas: Record<string, EquipaNoSite>,
+  agora: number,
+): "esconder" | "limpar" | null {
+  if (equipas[j.teamId]?.resultados !== false) return null;
+  return j.status === "PLAYED" || j.startsAt.getTime() < agora ? "esconder" : "limpar";
 }
 
 export function recintosValidos(v: unknown): Recinto[] {

@@ -32,7 +32,7 @@
 export type Destino = { area: "FAMILY" | "MEMBER"; rota: string };
 
 /** As páginas da família. `/evento/…` trata-se à parte, por ser variável. */
-const FAMILIA = new Set(["/", "/agenda", "/pagamentos", "/atleta", "/notificacoes", "/perfil", "/denuncias", "/documentos"]);
+const FAMILIA = new Set(["/", "/agenda", "/pagamentos", "/atleta", "/notificacoes", "/perfil", "/denuncias", "/documentos", "/dados-de-faturacao"]);
 
 /** As páginas do sócio — as rotas de `screens/socio/SocioApp`. */
 const SOCIO = new Set(["/socio", "/socio/quotas", "/socio/jogos", "/socio/novidades", "/socio/perfil"]);

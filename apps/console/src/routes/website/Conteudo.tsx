@@ -32,6 +32,8 @@ import { mostrarErro, mostrarOk, textoDoErro } from "@/lib/avisos";
  * Uma opção por equipa. Ligada, a equipa vai para o site com tudo: equipa
  * técnica, plantel, jogos e resultados. Desligada, não aparece nada dela.
  * Desligada por omissão: o plantel publica nomes, e na formação são menores.
+ * Os resultados desligam-se à parte (regra de algumas federações para os
+ * escalões jovens): o servidor deixa de mandar jogos jogados e marcadores.
  * Ver `equipasValidas` na API.
  */
 export function Equipas() {
@@ -54,6 +56,11 @@ export function Equipas() {
   const mudarFotos = (id: string) => {
     void guardarConfig({ equipas: { ...site.equipas, [id]: { ...site.equipas[id], visivel: true, plantel: true, fotos: !comFotos(id) } } });
   };
+  /* Os resultados dos jogos. Ligados por omissão; desligados, o site mostra só os próximos jogos. */
+  const comResultados = (id: string) => site.equipas[id]?.resultados !== false;
+  const mudarResultados = (id: string) => {
+    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...site.equipas[id], visivel: true, plantel: true, resultados: !comResultados(id) } } });
+  };
 
   const equipas = [...store.teams].sort((a, b) => b.maxAge - a.maxAge || a.name.localeCompare(b.name));
 
@@ -67,18 +74,23 @@ export function Equipas() {
         "Fotos dos atletas" mostra no plantel a fotografia de cada atleta, a da ficha dele. Liga só com a autorização de imagem das famílias. Desligada, ou num
         atleta sem fotografia, aparece uma imagem padrão com o número.
       </p>
+      <p className="mb-4 rounded-[10px] bg-sunken/60 px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
+        Há federações que não deixam publicar resultados abaixo de certos escalões. Com "Resultados" desligado, o site mostra só os próximos jogos dessa
+        equipa: nenhum resultado, nem os jogos já disputados.
+      </p>
       <div className="overflow-hidden rounded-[12px] border border-line bg-surface">
-        <div className="grid grid-cols-[96px_minmax(0,1fr)_72px_88px] items-center gap-3 border-b border-line bg-sunken/40 px-4 py-2 text-meta font-medium text-ink-3">
+        <div className="grid grid-cols-[96px_minmax(0,1fr)_72px_88px_88px] items-center gap-3 border-b border-line bg-sunken/40 px-4 py-2 text-meta font-medium text-ink-3">
           <span>Fotografia</span>
           <span>Equipa</span>
           <span className="text-center">No site</span>
           <span className="text-center leading-tight">Fotos dos atletas</span>
+          <span className="text-center">Resultados</span>
         </div>
         <ul>
           {equipas.map((t) => {
             const on = ligada(t.id);
             return (
-              <li key={t.id} className="grid grid-cols-[96px_minmax(0,1fr)_72px_88px] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
+              <li key={t.id} className="grid grid-cols-[96px_minmax(0,1fr)_72px_88px_88px] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
                 <FotoDaEquipa id={t.id} nome={t.name} />
                 <span className={cx("truncate text-body", on ? "font-medium text-ink" : "text-ink-3")}>{t.name}</span>
                 <span className="flex justify-center">
@@ -86,6 +98,9 @@ export function Equipas() {
                 </span>
                 <span className="flex justify-center">
                   <Interruptor ligado={comFotos(t.id)} onChange={() => mudarFotos(t.id)} disabled={!on} label={`Mostrar as fotografias dos atletas de ${t.name} no site`} />
+                </span>
+                <span className="flex justify-center">
+                  <Interruptor ligado={on && comResultados(t.id)} onChange={() => mudarResultados(t.id)} disabled={!on} label={`Mostrar os resultados de ${t.name} no site`} />
                 </span>
               </li>
             );

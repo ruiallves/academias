@@ -39,6 +39,6 @@ export function tiposQueSeVendem<T extends { precoCents: number }>(tipos: T[], c
 /** O porquê, dito à direção, quando abre uma venda paga sem poder cobrar. */
 export function motivoParaNaoVender(a: ClubeQueVende | null | undefined): string | null {
   if (!a?.paymentsEnabled) return "Para vender no site, os pagamentos do clube têm de estar ligados (euPago).";
-  if (a.invoicingConfirmedAt === null) return "Para vender no site, o clube precisa de ter a faturação configurada. Fala connosco para a ligar.";
+  if (a.invoicingConfirmedAt === null) return "Para vender no site, o clube precisa de ligar o programa de faturação, em Definições › Faturação.";
   return null;
 }

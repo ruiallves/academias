@@ -103,6 +103,7 @@ export function Compra({ slug, matchId, api, demonstracao, demo, nota, resumo }:
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [nif, setNif] = useState("");
   const [metodo, setMetodo] = useState<Metodo>("MBWAY");
   const topo = useRef<HTMLDivElement | null>(null);
   const ficha = useRef("");
@@ -325,6 +326,11 @@ export function Compra({ slug, matchId, api, demonstracao, demo, nota, resumo }:
       setEnvio({ fase: "erro", mensagem: "Para pagar por MB WAY, escreve o número de telemóvel." });
       return;
     }
+    // O NIF é opcional; escrito, tem de ter os nove algarismos.
+    if (nif && nif.length !== 9) {
+      setEnvio({ fase: "erro", mensagem: "O NIF tem nove algarismos. Apaga-o se não quiseres a fatura com NIF." });
+      return;
+    }
     const linhas = escolhidos.map((t) => ({ typeId: t.id, quantidade: q(t) }));
     if (!demonstracao && CHAVE_TURNSTILE && !desafio.current?.token()) {
       setEnvio({ fase: "erro", mensagem: "Ainda estamos a confirmar que és uma pessoa. Espera um segundo e carrega outra vez." });
@@ -349,6 +355,7 @@ export function Compra({ slug, matchId, api, demonstracao, demo, nota, resumo }:
           nome: nome.trim(),
           email: email.trim(),
           telefone: telefone.trim() || undefined,
+          nif: nif || undefined,
           metodo: metodoFinal,
           credencial: socio?.credencial,
           notaExtra,
@@ -450,6 +457,20 @@ export function Compra({ slug, matchId, api, demonstracao, demo, nota, resumo }:
                       value={telefone}
                       onChange={(e) => setTelefone(e.target.value)}
                     />
+                  </label>
+                  <label className="block text-sm font-semibold text-ink sm:col-span-2">
+                    NIF <span className="font-normal text-ink-3">(para a fatura, opcional)</span>
+                    <input
+                      name="nif"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={9}
+                      placeholder="123 456 789"
+                      className={`${campo} tabular`}
+                      value={nif}
+                      onChange={(e) => setNif(so(e.target.value).slice(0, 9))}
+                    />
+                    <span className="mt-1.5 block text-xs font-normal text-ink-3">Se quiseres a fatura com NIF. Sem NIF, sai como consumidor final.</span>
                   </label>
                 </div>
               </fieldset>

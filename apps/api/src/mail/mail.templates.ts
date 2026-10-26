@@ -2152,6 +2152,45 @@ export function platformPaymentAlertEmail(input: {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* A fatura de um pagamento — com o PDF em anexo                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O email que leva a fatura. Curto de propósito: a pessoa já recebeu a
+ * confirmação do que pagou (o push, o email dos bilhetes ou da encomenda);
+ * isto é só "aqui está a fatura", com o valor e o número para a reconhecer.
+ */
+export function faturaEmail(input: {
+  brand: MailBrand;
+  nome: string;
+  /** "FR A/123", ou "n.º 456" quando o programa não devolveu o número. */
+  numero: string;
+  valor: string;
+  /** "a mensalidade de Outubro de 2026 de João", "2 bilhetes para …". */
+  resumo: string;
+  programa: string;
+  /** Na Sage One a fatura e o recibo são dois documentos; o anexo é a fatura, já paga. */
+  semFaturaRecibo: boolean;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.nome.trim().split(/\s+/)[0] ?? "";
+  const heading = "A tua fatura";
+  const paragraphs = [
+    "Segue em anexo a fatura <strong>" + esc(input.numero) + "</strong>, de <strong>" + esc(input.valor) + "</strong>, de " + esc(input.resumo) + ".",
+    input.semFaturaRecibo
+      ? "Está paga: o recibo fica registado no clube."
+      : "É uma fatura-recibo: o pagamento já está registado nela.",
+  ];
+  const notes = [
+    "Emitida pelo " + esc(input.brand.name) + " no " + esc(input.programa) + ". Se precisares de a corrigir (o NIF, o nome), responde a este email.",
+  ];
+  return {
+    subject: `${input.brand.shortName} · fatura ${input.numero}`,
+    html: layout({ brand: input.brand, greeting: "Olá " + primeiro + ",", heading, paragraphs, notes }),
+    text: plain("Olá " + primeiro + ",", paragraphs.map(semTags), undefined, notes.map(semTags)),
+  };
+}
+
 /** "19,99 €" — o formato que o resto do produto usa. */
 function euros(cents: number): string {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(cents / 100);

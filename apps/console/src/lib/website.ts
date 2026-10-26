@@ -226,8 +226,11 @@ export type SiteDoClube = {
   recintos: Recinto[];
   /** Por id de jogo. Um jogo sem entrada não tem bilheteira. */
   bilheteira: Record<string, BilheteiraDoJogo>;
-  /** Por id de equipa. Sem entrada = não aparece; ligada = aparece com tudo (plantel incluído). */
-  equipas: Record<string, { visivel: boolean; plantel: boolean; foto?: string; fotos?: boolean }>;
+  /**
+   * Por id de equipa. Sem entrada = não aparece; ligada = aparece com tudo (plantel incluído).
+   * `resultados: false`: só os próximos jogos, nunca resultados (regra de algumas federações para os escalões jovens).
+   */
+  equipas: Record<string, { visivel: boolean; plantel: boolean; foto?: string; fotos?: boolean; resultados?: boolean }>;
   patrocinadores: Patrocinador[];
   /** Mensagens do formulário de contactos ainda por abrir. A pastilha do submenu. */
   mensagensPorLer: number;

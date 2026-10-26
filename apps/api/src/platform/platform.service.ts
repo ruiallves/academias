@@ -313,6 +313,8 @@ export class PlatformService {
         /* Só para dizer se estão preenchidas — os valores nunca saem daqui. */
         eupagoApiKey: true, eupagoWebhookSecret: true,
         paymentsEnabled: true, invoicingSystem: true, invoicingConfirmedAt: true,
+        /* A ligação por API ao programa de faturação, feita pelo clube nas Definições. */
+        invoicingAccount: { select: { readyAt: true } },
         subscription: {
           select: { status: true, priceCents: true, plan: { select: { id: true, name: true, amountCents: true, includesWebsite: true } } },
         },
@@ -1286,6 +1288,7 @@ export class PlatformService {
     paymentsEnabled: boolean;
     invoicingSystem: string | null;
     invoicingConfirmedAt: Date | null;
+    invoicingAccount?: { readyAt: Date | null } | null;
   }) {
     const passos = {
       site: a.siteNoPlano,
@@ -1296,6 +1299,8 @@ export class PlatformService {
     return {
       programa: a.invoicingSystem,
       desde: a.invoicingConfirmedAt,
+      /** Ligada pelo clube por API (Definições › Faturação): as faturas saem sozinhas, e aqui só se vê. */
+      porApi: a.invoicingAccount?.readyAt != null,
       passos,
       /** Vende no site: bilheteira paga e loja. */
       vende: passos.site && vendeOnline(a),
@@ -1313,9 +1318,12 @@ export class PlatformService {
   async setFaturacao(admin: PlatformAdminContext, id: string, dto: { programa: string }, ip?: string) {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
-      select: { id: true, slug: true, invoicingSystem: true, invoicingConfirmedAt: true },
+      select: { id: true, slug: true, invoicingSystem: true, invoicingConfirmedAt: true, invoicingAccount: { select: { readyAt: true } } },
     });
     if (!academy) throw new BadRequestException("Academia não encontrada");
+    if (academy.invoicingAccount?.readyAt) {
+      throw new BadRequestException("A faturação deste clube está ligada por API, pelo próprio clube, em Definições › Faturação. Desliga-se lá.");
+    }
     const programa = dto.programa.trim();
     const mesmo = programa && programa === academy.invoicingSystem && academy.invoicingConfirmedAt;
 
@@ -1331,6 +1339,7 @@ export class PlatformService {
       where: { id },
       select: {
         eupagoApiKey: true, eupagoWebhookSecret: true, paymentsEnabled: true, invoicingSystem: true, invoicingConfirmedAt: true,
+        invoicingAccount: { select: { readyAt: true } },
         subscription: { select: { plan: { select: { includesWebsite: true } } } },
       },
     });

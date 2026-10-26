@@ -132,10 +132,15 @@ model Academy {
   /// Marca-se no painel da plataforma, na ficha do clube, depois de confirmar
   /// com ele que o programa está pronto: `invoicingSystem` é o programa
   /// ("InvoiceXpress", "Moloni", ou o nome de outro) e `invoicingConfirmedAt`
-  /// quando ficou confirmado. Nulo = sem faturação, não vende. Quando houver
-  /// ligação por API ao programa, é ela que preenche estes dois.
+  /// quando ficou confirmado. Nulo = sem faturação, não vende. A ligação por
+  /// API (`InvoicingAccount`, Definições › Faturação) preenche estes dois
+  /// quando fica pronta, e limpa-os quando o clube a desliga.
   invoicingSystem      String?
   invoicingConfirmedAt DateTime?
+
+  /// A ligação ao programa de faturação do clube. Ver `faturacao/`.
+  invoicingAccount InvoicingAccount?
+  invoices         Invoice[]
 
   /// ## O canal euPago do clube — a arquitectura do "split"
   ///
@@ -612,6 +617,12 @@ model Membership {
   /// Quando o clube aprovou este encarregado. Nulo num pedido que nunca foi
   /// aprovado: recusá-lo apaga a conta, em vez de só a deixar desligada.
   approvedAt          DateTime?
+
+  /// Os dados para as faturas de quem paga na app: `{ nome, nif, morada,
+  /// codigoPostal, localidade }`, todos opcionais. Nulo = fatura em nome de
+  /// quem pagou, sem NIF (consumidor final). Por clube, como a conta: cada
+  /// clube fatura com o que a pessoa lhe deu. Ver `faturacao/documento.ts`.
+  invoiceDetails Json?
 
   /// Os cargos **secundários** desta pessoa. Ver `MembershipRole`.
   extraRoles MembershipRole[]
@@ -1428,6 +1439,7 @@ model TrainingSession {
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -2286,6 +2298,10 @@ model Payment {
   /// Resposta em bruto do provedor, para auditoria e para reconciliar disputas.
   rawPayload Json?
 
+  /// A fatura deste pagamento, quando o clube tem a faturação ligada. A quem
+  /// foi passada está dentro dela (`Invoice.document.cliente`).
+  invoice Invoice?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2293,6 +2309,138 @@ model Payment {
   @@index([chargeId])
   @@index([memberFeeId])
   @@index([status])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Faturação — a ligação ao programa certificado do clube
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// O programa de faturação a que um clube se liga. Ver `faturacao/`.
+enum InvoicingProvider {
+  /// Conta + chave da API, que o clube copia do programa.
+  INVOICEXPRESS
+  /// OAuth: o clube autoriza na página da Moloni.
+  MOLONI
+  /// OAuth: o clube autoriza na página da Sage. Fatura + recibo (não há fatura-recibo).
+  SAGE_ONE
+  /// O endereço da instalação, um utilizador e a palavra-passe; a nossa aplicação registada no clube.
+  PHC_GO
+  /// A Vendus da Cegid (a família Primavera, na nuvem): chave da API.
+  VENDUS
+}
+
+/// A ligação de um clube ao programa de faturação dele.
+///
+/// ## Porquê uma tabela, e não colunas na `Academy`
+///
+/// Porque é um segredo com vida própria: credenciais cifradas, tokens que se
+/// renovam sozinhos, definições do programa (a série, o método de pagamento)
+/// e um estado de saúde. Tudo isso numa linha só, que se apaga de uma vez
+/// quando o clube desliga. A `Academy.invoicingSystem` e a
+/// `invoicingConfirmedAt` continuam a ser o que o resto do produto lê para
+/// saber se o clube vende; é esta tabela que as preenche.
+model InvoicingAccount {
+  id        String  @id @default(cuid())
+  academyId String  @unique
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  provider InvoicingProvider
+
+  /// As credenciais, cifradas com `INVOICING_SECRET` (AES-256-GCM, ver
+  /// `faturacao/cofre.ts`). Nunca saem por nenhum endpoint. O que lá dentro
+  /// vive depende do programa: ver `Credenciais` em `faturacao/tipos.ts`.
+  credentials String
+
+  /// O que o clube escolheu no programa (a série, o método de pagamento, a
+  /// empresa na Moloni). Em claro, porque não são segredos. Ver
+  /// `DefinicoesDaConta` em `faturacao/tipos.ts`.
+  settings Json @default("{}")
+
+  /// A regra fiscal do clube: o IVA ou o motivo de isenção de cada tipo de
+  /// venda (mensalidades, quotas, bilhetes, loja). Decisão do contabilista do
+  /// clube, não nossa. Ver `RegrasFiscais`.
+  taxRules Json @default("{}")
+
+  /// Pronta para emitir: credenciais a funcionar e definições completas. Só a
+  /// partir daqui as faturas saem e o clube vende no site. Nulo = por acabar.
+  readyAt DateTime?
+
+  /// O último erro ao falar com o programa, para a consola o dizer ao clube.
+  /// Limpo a cada chamada que corre bem.
+  lastError   String?
+  lastErrorAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum InvoiceStatus {
+  /// Por emitir: ainda não foi tentada, ou o programa estava em baixo e fica
+  /// para a próxima volta.
+  PENDING
+  /// Emitida no programa; o email ainda não saiu.
+  ISSUED
+  /// Emitida e enviada por email a quem pagou.
+  SENT
+  /// Falhou por uma razão que repetir não cura (dados recusados, série sem
+  /// ATCUD, ligação desligada). Precisa de alguém na consola.
+  FAILED
+  /// Anulada no programa, depois de um reembolso.
+  CANCELLED
+}
+
+/// A fatura de um pagamento, emitida no programa do clube.
+///
+/// Nasce `PENDING` no mesmo instante em que o pagamento fica pago (na mesma
+/// transação), e é a fila (`FaturacaoService.varrer`) que a emite depois do
+/// commit. Uma fatura por pagamento, sempre: o `@unique` é o que impede duas
+/// voltas da fila de emitirem a mesma duas vezes.
+model Invoice {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  paymentId String  @unique
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  provider InvoicingProvider
+  status   InvoiceStatus     @default(PENDING)
+
+  /// O documento no programa: o id lá, o número impresso ("FR A/123"), o
+  /// ATCUD quando o programa o devolve, e o link para o ver.
+  externalId        String?
+  number            String?
+  atcud             String?
+  permalink         String?
+  /// O recibo, na Sage One, onde a fatura e o recibo são dois documentos.
+  receiptExternalId String?
+
+  /// O que se faturou, fotografado: a quem, as linhas, o total, a regra
+  /// fiscal aplicada. Ver `DocumentoAFaturar` em `faturacao/tipos.ts`. É isto
+  /// que a consola mostra e que uma repetição volta a enviar.
+  document Json
+
+  /// Para onde foi o email, e quando.
+  sentTo String?
+  sentAt DateTime?
+
+  /// Tentativas feitas, a próxima, e o que correu mal na última.
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+  @@index([academyId, createdAt])
+  @@index([status, nextAttemptAt])
 }
 
 enum MandateStatus {
@@ -2615,6 +2763,7 @@ model Match {
    * /**
    * /**
    * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -2819,10 +2968,10 @@ model MatchAppearance {
   /// registou: aí vale `minutes`, escrito à mão no Pós-jogo.
   stints    Int[] @default([])
   /// Golos no futebol, pontos nos restantes — o substantivo vem da modalidade.
-  tally     Int  @default(0)
+  tally     Int   @default(0)
   /// Assistências. Zero na maior parte das modalidades, e por isso o ecrã só as
   /// mostra a quem as quiser — mas quem as quer, quer mesmo.
-  assists   Int  @default(0)
+  assists   Int   @default(0)
 
   /// Amarelos: zero, um, ou dois. Dois amarelos são uma expulsão, e é por isso
   /// que isto é um número e não um sim/não.
@@ -5641,8 +5790,8 @@ model InventoryVariant {
 
   archivedAt DateTime?
 
-  movements   InventoryMovement[]
-  assignments InventoryAssignment[]
+  movements      InventoryMovement[]
+  assignments    InventoryAssignment[]
   /// As linhas de encomenda da loja do site que vendem este tamanho.
   siteOrderItems SiteOrderItem[]
 
@@ -7042,14 +7191,14 @@ model SiteProduct {
 
   /// As outras fotografias do produto, a seguir à capa (`imageUrl`). Só
   /// imagens do bucket do site deste clube, como a capa.
-  images      String[] @default([])
+  images String[] @default([])
   /// O stock por tamanho de um produto **sem** artigo do Inventário:
   /// `{ "S": 3, "M": 0 }`, ou `{ "": 12 }` num produto sem tamanhos. Um
   /// tamanho que não está aqui vende-se sem contagem. Desce quando uma
   /// encomenda é paga; enquanto está guardada (10 minutos) conta-se à parte,
   /// a partir das linhas das encomendas. Num produto do Inventário ignora-se:
   /// o stock é o das variantes do artigo. Ver `stockValido` em `site.tipos.ts`.
-  stock       Json     @default("{}")
+  stock  Json     @default("{}")
 
   /// O artigo do Inventário que este produto vende, quando o clube pôs um
   /// artigo do armazém à venda no site.
@@ -7166,6 +7315,8 @@ model TicketOrder {
   buyerName  String
   buyerEmail String
   buyerPhone String?
+  /// O NIF para a fatura, se quem comprou o quis dar. Nulo = consumidor final.
+  buyerTaxId String?
   /// O sócio que comprou ao preço de sócio (identificado por número e data de
   /// nascimento no site, ou pela conta na app). Nulo = público geral.
   memberId   String?
@@ -7502,6 +7653,8 @@ model SiteOrder {
   buyerName  String
   buyerEmail String
   buyerPhone String?
+  /// O NIF para a fatura, se quem comprou o quis dar. Nulo = consumidor final.
+  buyerTaxId String?
   /// A morada de envio, só numa encomenda com `delivery = SHIPPING`:
   /// `{ nome, linha1, linha2, codigoPostal, localidade }`.
   address    Json?
@@ -7586,7 +7739,7 @@ model SiteOrderItem {
   order     SiteOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   productId String?
-  product   SiteProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product   SiteProduct?      @relation(fields: [productId], references: [id], onDelete: SetNull)
   /// O tamanho do artigo do Inventário que esta linha vende, quando o produto
   /// vem de lá: é a este que o stock desce ao pagar.
   variantId String?
@@ -7594,7 +7747,7 @@ model SiteOrderItem {
 
   productName    String
   /// "M", "Nº 5", ou vazio num produto sem tamanhos.
-  size           String @default("")
+  size           String  @default("")
   quantity       Int
   unitPriceCents Int
   imageUrl       String?

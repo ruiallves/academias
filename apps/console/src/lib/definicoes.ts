@@ -30,6 +30,7 @@ export type SecaoKey =
   | "clinico"
   | "socios"
   | "mensalidades"
+  | "faturacao"
   | "mensalidade"
   | "plano"
   | "legal"
@@ -58,6 +59,7 @@ export const SECOES: Secao[] = [
   { key: "socios", grupo: "Pessoas", label: "Sócios", descricao: "As categorias de sócio, com o valor da quota de cada uma, e o cartão de sócio na app do clube." },
   { key: "clinico", grupo: "Pessoas", label: "Clínico", descricao: "Os tipos de consulta que o departamento clínico marca." },
   { key: "mensalidades", grupo: "Conta", label: "Pagamentos", descricao: "Como as famílias e os sócios pagam: pagamentos pela app, comissões, período de cobrança e lembretes." },
+  { key: "faturacao", grupo: "Conta", label: "Faturação", descricao: "O programa de faturação do clube, as regras de IVA e as faturas que saem a cada pagamento." },
   { key: "mensalidade", grupo: "Conta", label: "Mensalidade", descricao: "O que o clube paga à plataforma: a mensalidade em falta, como pagar, e as já pagas." },
   { key: "plano", grupo: "Conta", label: "Plano", descricao: "O que o clube contratou à plataforma e o espaço de ficheiros que usa." },
   { key: "legal", grupo: "Conta", label: "Legal", descricao: "Os termos e políticas em vigor, e o que já foi aceite." },

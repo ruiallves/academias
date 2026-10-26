@@ -22,6 +22,7 @@ import {
   recintosValidos,
   tiposValidos,
   type EquipaNoSite,
+  semResultado,
   type Layout,
 } from "./site.tipos";
 import { siteIncluido } from "./plano";
@@ -401,7 +402,7 @@ export class SitePublicoService {
         orderBy: { startsAt: "asc" },
         select: SELECT_JOGO,
       });
-      return jogos.map((j) => jogoPublico(j, a.vendeOnline));
+      return jogos.filter((j) => semResultado(j, a.equipas, agora) !== "esconder").map((j) => jogoPublico(j, a.vendeOnline, a.equipas));
     });
   }
 
@@ -414,7 +415,9 @@ export class SitePublicoService {
       const visiveis = new Set((await this.equipasVisiveis(db, a.equipas)).map((t) => t.id));
       const j = await db.match.findFirst({ where: { id }, select: SELECT_JOGO });
       if (!j || !visiveis.has(j.teamId)) throw new NotFoundException();
-      return jogoPublico(j, a.vendeOnline);
+      // Uma equipa sem resultados no site: um jogo já jogado também não se abre pelo endereço.
+      if (semResultado(j, a.equipas, Date.now()) === "esconder") throw new NotFoundException();
+      return jogoPublico(j, a.vendeOnline, a.equipas);
     });
   }
 
@@ -660,7 +663,7 @@ const SELECT_JOGO = {
 /**
  * Um jogo como o site o mostra. `cobra` falso (sem pagamentos ou sem
  * faturação): só os bilhetes a 0 € ficam à venda, e uma venda só com preços
- * pagos não aparece.
+ * pagos não aparece. Numa equipa sem resultados no site, nunca leva marcador.
  */
 function jogoPublico(j: {
   id: string;
@@ -686,7 +689,8 @@ function jogoPublico(j: {
     membersOnly: boolean;
     closesAt: Date | null;
   } | null;
-}, cobra: boolean) {
+}, cobra: boolean, equipas: Record<string, EquipaNoSite>) {
+  const comResultado = equipas[j.teamId]?.resultados !== false;
   const comVenda = j.status !== "CANCELLED" ? j.siteTickets : null;
   const tipos = comVenda ? tiposQueSeVendem(tiposValidos(comVenda.types), cobra) : [];
   const t = comVenda && tipos.length > 0 ? comVenda : null;
@@ -703,8 +707,8 @@ function jogoPublico(j: {
     competition: j.competition?.label,
     roundLabel: j.roundLabel ?? undefined,
     status: j.status,
-    ourScore: j.ourScore ?? undefined,
-    theirScore: j.theirScore ?? undefined,
+    ourScore: comResultado ? (j.ourScore ?? undefined) : undefined,
+    theirScore: comResultado ? (j.theirScore ?? undefined) : undefined,
     tickets: t
       ? {
           open: t.open,

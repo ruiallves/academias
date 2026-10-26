@@ -16,6 +16,8 @@ import { EupagoFeesService } from "./billing/eupago-fees";
 import { ClubAppController } from "./club-app/club-app.controller";
 import { ClubAppService } from "./club-app/club-app.service";
 import { BillingController } from "./billing/billing.controller";
+import { FaturacaoCallbackController, FaturacaoController } from "./faturacao/faturacao.controller";
+import { FaturacaoService } from "./faturacao/faturacao.service";
 import { EupagoWebhookController } from "./billing/webhooks.controller";
 import { LandingController } from "./landing/landing.controller";
 import { LandingService } from "./landing/landing.service";
@@ -163,6 +165,9 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
   controllers: [
     SubscriptionController,
     BillingController,
+    // A faturação por API: a ligação do clube, as faturas, e o callback OAuth (público).
+    FaturacaoController,
+    FaturacaoCallbackController,
     ClubAppController,
     EupagoWebhookController,
     LandingController,
@@ -248,6 +253,7 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     PushService,
     EupagoClient,
     BillingService,
+    FaturacaoService,
     EupagoFeesService,
     ClinicalService,
     ClubAppService,

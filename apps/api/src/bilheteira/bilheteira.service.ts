@@ -316,6 +316,7 @@ export class BilheteiraService {
       nome: dto.nome.trim(),
       email: dto.email.trim().toLowerCase(),
       telefone: dto.telefone?.trim() || null,
+      nif: dto.nif?.trim() || null,
       canal: "SITE",
       metodo: dto.metodo,
     });
@@ -335,6 +336,8 @@ export class BilheteiraService {
       nome: eu.nome,
       email: eu.email.toLowerCase(),
       telefone: dto.telefone?.trim() || eu.telefone || null,
+      // Na app ninguém escreve o NIF: vai o da ficha de sócio (ver `criarCompra`).
+      nif: null,
       canal: "APP",
       metodo: dto.metodo,
     });
@@ -350,6 +353,8 @@ export class BilheteiraService {
       nome: string;
       email: string;
       telefone: string | null;
+      /** O NIF escrito no site para a fatura; nulo na app. */
+      nif: string | null;
       canal: "SITE" | "APP";
       metodo: "MBWAY" | "MULTIBANCO";
     },
@@ -395,7 +400,7 @@ export class BilheteiraService {
   private async criarCompra(
     academyId: string,
     matchId: string,
-    p: { memberId: string | null; exigirQuota: boolean; linhas: LinhaDoPedido[]; nome: string; email: string; telefone: string | null; canal: "SITE" | "APP"; metodo: "MBWAY" | "MULTIBANCO" },
+    p: { memberId: string | null; exigirQuota: boolean; linhas: LinhaDoPedido[]; nome: string; email: string; telefone: string | null; nif: string | null; canal: "SITE" | "APP"; metodo: "MBWAY" | "MULTIBANCO" },
   ) {
     return this.naFila(matchId, () => this.prisma.runAs(academyId, async (db) => {
       const agora = new Date();
@@ -406,8 +411,11 @@ export class BilheteiraService {
       if (!ctx) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
 
       let quem: Comprador = { kind: "publico" };
+      // Na app quem compra é o próprio sócio: a fatura leva o NIF da ficha dele, se o tiver.
+      let nifDoSocio: string | null = null;
       if (p.memberId) {
-        const socio = await db.member.findFirst({ where: { id: p.memberId }, select: { id: true, tierId: true } });
+        const socio = await db.member.findFirst({ where: { id: p.memberId }, select: { id: true, tierId: true, taxId: true } });
+        if (p.canal === "APP") nifDoSocio = socio?.taxId?.trim() || null;
         const emDia = !!socio && (await quotaDoSocioCobre(db, academyId, p.memberId, ctx.jogo.startsAt));
         if (emDia && socio) {
           quem = { kind: "socio", memberId: socio.id, tierId: socio.tierId, jaTemBilheteDeSocio: await this.jaTemBilheteDeSocio(db, ctx, socio.id) };
@@ -464,6 +472,8 @@ export class BilheteiraService {
           buyerEmail: p.email,
           // Normalizado: é por aqui que se contam as compras do mesmo telemóvel.
           buyerPhone: telemovel,
+          // Só para a fatura: nulo sai como consumidor final (ver `FaturacaoService`).
+          buyerTaxId: p.nif ?? nifDoSocio,
           memberId: quem.kind === "socio" ? quem.memberId : null,
           totalCents: r.totalCents,
           reservedUntil: new Date(agora.getTime() + RESERVA_MINUTOS * 60_000),

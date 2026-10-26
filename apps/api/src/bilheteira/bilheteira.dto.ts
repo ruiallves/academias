@@ -27,6 +27,8 @@ export class ReservarDto {
   @IsString() @Length(2, 120) nome!: string;
   @IsEmail() @Length(3, 254) email!: string;
   @IsOptional() @IsString() @MaxLength(30) telefone?: string;
+  /** O NIF para a fatura, se quem compra o quiser dar. Sem ele, a fatura sai como consumidor final. */
+  @IsOptional() @IsString() @Matches(/^\d{9}$/, { message: "O NIF tem nove algarismos" }) nif?: string;
   @IsIn(["MBWAY", "MULTIBANCO"]) metodo!: "MBWAY" | "MULTIBANCO";
   /** A credencial devolvida por `identificar`, para comprar ao preço de sócio. */
   @IsOptional() @IsString() @MaxLength(300) credencial?: string;

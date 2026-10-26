@@ -18,6 +18,8 @@ export {
   CalendarDays,
   ClipboardCheck,
   Receipt,
+  /* A faturação: a fatura que sai certa a cada pagamento. */
+  FileCheck,
   Megaphone,
   Gauge,
   FileText,

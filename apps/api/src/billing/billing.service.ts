@@ -15,6 +15,7 @@ import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
 import { EupagoFeesService } from "./eupago-fees";
 import { BilheteiraEmissao } from "../bilheteira/emissao.service";
 import { LojaEmissao } from "../loja/emissao.service";
+import { FaturacaoService } from "../faturacao/faturacao.service";
 import {
   cotacao,
   MENSAGEM_DESATIVADOS,
@@ -191,6 +192,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     private readonly bilhetes: BilheteiraEmissao,
     /** As encomendas da loja do site: o webhook confirma-as aqui. */
     private readonly loja: LojaEmissao,
+    /** A fatura de cada pagamento, no programa do clube. Ver `confirmPayment`. */
+    private readonly faturacao: FaturacaoService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -2655,6 +2658,13 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
      * bilheteira. Ver `BilheteiraEmissao`.
      */
     const depois: { enviar: (() => Promise<void>) | null } = { enviar: null };
+    /*
+     * A fatura nasce na mesma transação (`FaturacaoService.registar`) e
+     * emite-se depois do commit, como o email dos bilhetes: HTTP nunca entra
+     * num `runAs`, e uma fatura de um pagamento que se desfez era pior do que
+     * nenhuma.
+     */
+    const fatura: { depois: (() => void) | null } = { depois: null };
     const resultado = await this.prisma.runAs(found.academyId, async (db) => {
       /*
        * O webhook, um reenvio dele e a reconciliação podem chegar ao mesmo
@@ -2712,6 +2722,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
         });
         depois.enviar = await this.bilhetes.pagamentoConfirmado(db, found.academyId, payment.ticketOrderId, paidAt, payment.amountCents);
+        fatura.depois = await this.faturacao.registar(db, found.academyId, payment.id);
         return { handled: true as const, duplicate: false };
       }
 
@@ -2726,6 +2737,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
         });
         depois.enviar = await this.loja.pagamentoConfirmado(db, found.academyId, payment.siteOrderId, paidAt, payment.amountCents);
+        fatura.depois = await this.faturacao.registar(db, found.academyId, payment.id);
         return { handled: true as const, duplicate: false };
       }
 
@@ -2788,6 +2800,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           );
         }
 
+        fatura.depois = await this.faturacao.registar(db, found.academyId, payment.id);
         return { handled: true as const, duplicate: false };
       }
 
@@ -2855,12 +2868,15 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         }, db);
       }
 
+      fatura.depois = await this.faturacao.registar(db, found.academyId, payment.id);
       return { handled: true as const, duplicate: false };
     });
 
     if (depois.enviar) {
       await depois.enviar().catch((e: unknown) => this.log.error(`Bilhetes pagos mas o email não saiu: ${e instanceof Error ? e.message : e}`));
     }
+    // A emissão segue por conta própria: o webhook responde já, e a fila apanha o que falhar.
+    if (fatura.depois) fatura.depois();
     return resultado;
   }
 
@@ -2924,7 +2940,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     const found = await this.encontrarPagamento(refs);
     if (!found) return { handled: false as const };
 
-    return this.prisma.runAs(found.academyId, async (db) => {
+    const resultado = await this.prisma.runAs(found.academyId, async (db) => {
       const payment = await db.payment.findFirst({
         where: { id: found.paymentId },
         include: {
@@ -2998,6 +3014,14 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       return { handled: true as const };
     });
+
+    // Dinheiro devolvido, fatura anulada no programa do clube (depois do commit; falhar fica na fatura).
+    if (resultado.handled) {
+      void this.faturacao
+        .anularDoPagamento(found.academyId, found.paymentId, "Pagamento devolvido na euPago")
+        .catch((e: unknown) => this.log.error(`Reembolso sem anulação da fatura: ${e instanceof Error ? e.message : e}`));
+    }
+    return resultado;
   }
 
   /**

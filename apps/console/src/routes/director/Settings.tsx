@@ -24,11 +24,13 @@ import { CondutaSection } from "@/components/definicoes/CondutaSection";
 import { carregarDocumentosDeConduta } from "@/lib/conduta";
 import { CategoriasDeSocioSection } from "@/components/definicoes/CategoriasDeSocioSection";
 import { MensalidadesSection } from "@/components/definicoes/MensalidadesSection";
+import { FaturacaoSection } from "@/components/definicoes/FaturacaoSection";
 import { EpocaPanel } from "@/components/EpocaPanel";
 import { MensalidadeDaPlataformaPanel } from "@/components/MensalidadeDaPlataformaPanel";
 import {
   CalendarDays,
   CreditCard,
+  FileCheck,
   FileText,
   IdCard,
   Receipt,
@@ -88,6 +90,7 @@ const ICONE: Record<SecaoKey, LucideIcon> = {
   socios: IdCard,
   clinico: Stethoscope,
   mensalidades: Wallet,
+  faturacao: FileCheck,
   mensalidade: CreditCard,
   plano: Receipt,
   legal: FileText,
@@ -111,8 +114,16 @@ export default function Settings() {
     void carregarDocumentosDeConduta().catch(() => undefined);
   }, []);
 
-  /* Só o que esta pessoa pode ver. A zona de perigo é de quem pode apagar o clube. */
-  const secoes = SECOES.filter((sec) => sec.key !== "perigo" || can(session, "academy:delete"));
+  /*
+   * Só o que esta pessoa pode ver. A zona de perigo é de quem pode apagar o
+   * clube; a Faturação é de quem configura o clube ou vê a cobrança, que é o
+   * mesmo que o servidor exige em `/api/faturacao`.
+   */
+  const secoes = SECOES.filter((sec) => {
+    if (sec.key === "perigo") return can(session, "academy:delete");
+    if (sec.key === "faturacao") return maySettings || can(session, "billing:read");
+    return true;
+  });
   const disponiveis = secoes.map((sec) => sec.key);
 
   // Deep-link a partir de qualquer diálogo que ofereça "gerir X" — p. ex. o local
@@ -189,6 +200,9 @@ export default function Settings() {
             )}
 
             {ativa === "mensalidades" && <MensalidadesSection />}
+
+            {/* O programa de faturação do clube, as regras de IVA e as faturas que saem. */}
+            {ativa === "faturacao" && <FaturacaoSection />}
 
             {/* O que o clube paga à plataforma, e como: MB WAY ou Multibanco. */}
             {ativa === "mensalidade" && <MensalidadeDaPlataformaPanel />}

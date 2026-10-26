@@ -181,6 +181,9 @@ const TENANT_SCOPED = new Set<string>([
   "SubscriptionPlan",
   "Charge",
   "ChargeSkip",
+  // A faturação por API: a ligação do clube e as faturas dos pagamentos.
+  "InvoicingAccount",
+  "Invoice",
   "Announcement",
   "Notification",
   "Evaluation",

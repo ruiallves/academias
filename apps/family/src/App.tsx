@@ -34,6 +34,7 @@ import Denuncias from "@/screens/Denuncias";
 import NovaDenuncia from "@/screens/NovaDenuncia";
 import Denuncia from "@/screens/Denuncia";
 import DocumentosDoClube from "@/screens/DocumentosDoClube";
+import DadosDeFaturacao from "@/screens/DadosDeFaturacao";
 import { LegalGate } from "@/screens/LegalGate";
 import PedidoPendente from "@/screens/PedidoPendente";
 
@@ -325,6 +326,8 @@ function Dentro({
             <Route path="/denuncias/nova" element={<NovaDenuncia />} />
             <Route path="/denuncia/:id" element={<Denuncia />} />
             <Route path="/documentos" element={<DocumentosDoClube />} />
+            {/* Os dados para a fatura de quem paga pela app. Como os pagamentos, não existe na área de atleta. */}
+            <Route path="/dados-de-faturacao" element={store.atleta ? <Navigate to="/" replace /> : <DadosDeFaturacao />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
