@@ -1,4 +1,6 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { NotificationsService } from "../notifications/notifications.service";
+import { avisarTreinadores, textoDeQuemDa, textoDoAviso, treinadoresAAvisar } from "./aviso-ao-treinador";
 import { ConfigService } from "@nestjs/config";
 import { eupagoConfigurado, MENSAGEM_SEM_EUPAGO } from "../billing/eupago-do-clube";
 import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role, type StaffDepartment } from "@prisma/client";
@@ -26,7 +28,7 @@ import { equipasDaEpocaAtual } from "../common/seasons";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
-import { siteIncluido } from "../site/plano";
+import { siteIncluido, siteSoNaExperiencia } from "../site/plano";
 
 /**
  * Um jogo com bilhetes vendidos não se desmarca nem se apaga pelo calendário:
@@ -195,8 +197,27 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
  *     zero. Um zero afirma um facto; um nulo diz "ninguém verificou", e a consola
  *     mostra as duas coisas de maneira diferente.
  */
+/** O que se pode mudar num evento. Ver `AcademyService.updateEvent`. */
+type EdicaoDeEvento = {
+  title?: string;
+  startsAt?: string;
+  endsAt?: string;
+  venue?: string;
+  dressingRoom?: string | null;
+  dressingRooms?: string[];
+  typeId?: string;
+  isPublic?: boolean;
+  opponent?: string;
+  isHome?: boolean;
+  competitionId?: string;
+  /** Quem dá o treino. Vazio volta ao principal. Ver `treinadorEscolhido`. */
+  coachId?: string;
+};
+
 @Injectable()
 export class AcademyService {
+  private readonly log = new Logger(AcademyService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
@@ -209,6 +230,8 @@ export class AcademyService {
      * segunda ligação para os ir buscar.
      */
     private readonly matches: MatchesService,
+    /* O aviso de falta chega ao treinador. Ver `aviso-ao-treinador.ts`. */
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -333,8 +356,10 @@ export class AcademyService {
           ? {
               ...academy,
               eupagoConfigured: await this.temEupago(db, ctx.academyId),
-              // O plano inclui o site (Connect Pro)? Liga o menu Website na consola.
+              // O clube tem o site (Connect Pro, ou o período experimental)? Liga o menu Website na consola.
               websiteIncluido: await siteIncluido(db, ctx.academyId),
+              // Só por causa do período experimental: a consola diz até quando (`trialEndsAt`).
+              websiteNaExperiencia: await siteSoNaExperiencia(db, ctx.academyId),
               /*
                * Os meses de cada escalão desta época, para o período de cobrança
                * por escalão. Vazio = segue os meses do clube.
@@ -2484,7 +2509,7 @@ export class AcademyService {
       throw new BadRequestException("Diz porque é que não vai — o treinador precisa de saber para contar com ele ou não");
     }
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const { resposta, avisar } = await this.prisma.runAs(ctx.academyId, async (db) => {
       const treino = await this.treinoParaAviso(db, sessionId, athleteId);
       /*
        * Quem avisa é quem o treino diz: o encarregado, ou o próprio atleta nos
@@ -2493,6 +2518,10 @@ export class AcademyService {
        */
       assertPodeResponderPor(ctx, treino.respondBy);
 
+      const antes = await db.absenceNotice.findUnique({
+        where: { sessionId_athleteId: { sessionId, athleteId } },
+        select: { reason: true },
+      });
       const aviso = await db.absenceNotice.upsert({
         where: { sessionId_athleteId: { sessionId, athleteId } },
         update: { reason: razao.slice(0, 200), noticedAt: new Date(), noticedById: ctx.membershipId },
@@ -2505,8 +2534,52 @@ export class AcademyService {
         select: { athleteId: true, reason: true, noticedAt: true },
       });
 
-      return { sessionId: treino.id, ...aviso };
+      /* Avisar outra vez com o mesmo motivo não é notícia para o treinador. */
+      const avisar = antes?.reason === aviso.reason ? null : await this.avisoDoTreino(db, ctx, treino, athleteId, aviso.reason);
+      return { resposta: { sessionId: treino.id, ...aviso }, avisar };
     });
+
+    if (avisar) await this.enviarAvisoDoTreino(ctx, sessionId, avisar);
+    return resposta;
+  }
+
+  /** O que dizer aos treinadores sobre este treino, e a quem. Só leituras. */
+  private async avisoDoTreino(
+    db: ScopedClient,
+    ctx: RequestContext,
+    treino: { teamId: string; startsAt: Date; coachId: string | null; team: { name: string } },
+    athleteId: string,
+    motivo: string | null,
+  ) {
+    const userIds = await treinadoresAAvisar(db, treino.teamId, treino.coachId, ctx.userId);
+    if (userIds.length === 0) return null;
+    const atleta = await db.athlete.findFirst({ where: { id: athleteId }, select: { name: true } });
+    return {
+      userIds,
+      texto: textoDoAviso({
+        evento: "treino",
+        atleta: atleta?.name ?? "Um atleta",
+        equipa: treino.team.name,
+        inicio: treino.startsAt,
+        motivo,
+      }),
+    };
+  }
+
+  private async enviarAvisoDoTreino(
+    ctx: RequestContext,
+    sessionId: string,
+    avisar: { userIds: string[]; texto: { title: string; body: string } },
+  ) {
+    await avisarTreinadores(
+      this.notifications,
+      ctx.academyId,
+      avisar.userIds,
+      "ABSENCE_NOTICED",
+      avisar.texto,
+      `/treinos/${sessionId}`,
+      (erro) => this.log.warn(`Aviso de falta ao treinador falhou (${sessionId}): ${String(erro)}`),
+    );
   }
 
   /** A família desmarca o aviso — afinal vai. A linha desaparece; ver `AbsenceNotice`. */
@@ -2516,12 +2589,16 @@ export class AcademyService {
       throw new ForbiddenException("Este atleta não é teu");
     }
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const avisar = await this.prisma.runAs(ctx.academyId, async (db) => {
       const treino = await this.treinoParaAviso(db, sessionId, athleteId);
       assertPodeResponderPor(ctx, treino.respondBy);
-      await db.absenceNotice.deleteMany({ where: { sessionId, athleteId } });
-      return { sessionId, athleteId, removed: true };
+      const { count } = await db.absenceNotice.deleteMany({ where: { sessionId, athleteId } });
+      /* O treinador foi avisado de que não vinha: tem de saber que afinal vem. */
+      return count > 0 ? this.avisoDoTreino(db, ctx, treino, athleteId, null) : null;
     });
+
+    if (avisar) await this.enviarAvisoDoTreino(ctx, sessionId, avisar);
+    return { sessionId, athleteId, removed: true };
   }
 
   /**
@@ -2535,7 +2612,10 @@ export class AcademyService {
   private async treinoParaAviso(db: ScopedClient, sessionId: string, athleteId: string) {
     const treino = await db.trainingSession.findFirst({
       where: { id: sessionId },
-      select: { id: true, teamId: true, status: true, startsAt: true, attendanceClosedAt: true, respondBy: true },
+      select: {
+        id: true, teamId: true, status: true, startsAt: true, attendanceClosedAt: true, respondBy: true,
+        coachId: true, team: { select: { name: true } },
+      },
     });
     if (!treino) throw new NotFoundException("Treino não encontrado");
     if (treino.status === "CANCELLED") throw new BadRequestException("Este treino está desmarcado");
@@ -2770,13 +2850,28 @@ export class AcademyService {
       competitionId?: string;
       /** Quem avisa a falta, num treino. Ver `ResponderBy`. */
       respondBy?: "GUARDIAN" | "ATHLETE";
+      /** Quem dá o treino, se não for o principal. Ver `treinadorEscolhido`. */
+      coachId?: string;
       repeat?: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] };
     },
   ) {
     if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para criar eventos");
 
+    /*
+     * Quem dá o treino valida-se uma vez, antes da série.
+     *
+     * Dentro do ciclo, um 400 por a pessoa não ser do staff contava como "dia
+     * ocupado" e a série inteira saltava, com a mensagem errada no fim.
+     */
+    const treinoComOutro = dto.kind === "TRAINING" && dto.teamId && dto.coachId;
+    const coachId = treinoComOutro
+      ? await this.prisma.runAs(ctx.academyId, (db) => this.treinadorEscolhido(db, dto.teamId!, dto.coachId))
+      : null;
+    dto = { ...dto, coachId: coachId ?? undefined };
+
     if (!dto.repeat) {
       const one = await this.createSingleEvent(ctx, dto);
+      if (coachId) await this.avisarQuemDaOsTreinos(ctx, coachId, [one]);
       return { created: 1, skipped: 0, events: [one] };
     }
 
@@ -2810,7 +2905,66 @@ export class AcademyService {
       throw new BadRequestException("Nenhuma data ficou livre — já há eventos marcados em todas elas.");
     }
 
+    if (coachId) await this.avisarQuemDaOsTreinos(ctx, coachId, events as { id: string; startsAt: Date; venue: string }[]);
     return { created: events.length, skipped, events };
+  }
+
+  /**
+   * Quem dá o treino, a partir do que veio do formulário.
+   *
+   * `undefined` é "não mexer"; vazio é "o treinador principal", e guarda-se nulo.
+   * Escolher o próprio principal também guarda nulo: assim, se a equipa mudar de
+   * principal, os treinos dele passam para o novo, em vez de ficarem presos a
+   * quem lá estava no dia em que foram marcados.
+   *
+   * Qualquer pessoa activa do staff do clube serve, e não só a equipa técnica:
+   * quem substitui é muitas vezes o coordenador ou o treinador de outro escalão.
+   */
+  private async treinadorEscolhido(db: ScopedClient, teamId: string, pedido: string | undefined): Promise<string | null | undefined> {
+    if (pedido === undefined) return undefined;
+    if (!pedido) return null;
+    const principal = (await this.headCoaches(db, [teamId])).get(teamId);
+    if (principal?.id === pedido) return null;
+    const m = await db.membership.findFirst({
+      where: { id: pedido, isActive: true, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+      select: { id: true },
+    });
+    if (!m) throw new BadRequestException("Essa pessoa não é do staff do clube");
+    return m.id;
+  }
+
+  /** "Vais dar um treino" (ou vários), a quem foi escolhido no lugar do principal. Depois do commit. */
+  private async avisarQuemDaOsTreinos(
+    ctx: RequestContext,
+    coachId: string,
+    treinos: { id: string; startsAt: Date; venue: string }[],
+  ) {
+    if (treinos.length === 0 || coachId === ctx.membershipId) return;
+    const info = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const m = await db.membership.findFirst({ where: { id: coachId }, select: { userId: true } });
+      const t = await db.trainingSession.findFirst({ where: { id: treinos[0].id }, select: { team: { select: { name: true } } } });
+      return { userId: m?.userId, equipa: t?.team.name ?? "Treino" };
+    });
+    if (!info.userId || info.userId === ctx.userId) return;
+
+    const ordenados = [...treinos].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    const primeiro = ordenados[0];
+    const ultimo = ordenados[ordenados.length - 1];
+    await avisarTreinadores(
+      this.notifications,
+      ctx.academyId,
+      [info.userId],
+      "TRAINING_COACH_ASSIGNED",
+      textoDeQuemDa({
+        equipa: info.equipa,
+        inicio: new Date(primeiro.startsAt),
+        local: primeiro.venue,
+        total: ordenados.length,
+        ultimo: new Date(ultimo.startsAt),
+      }),
+      ordenados.length === 1 ? `/treinos/${primeiro.id}` : "/treinos",
+      (erro) => this.log.warn(`Aviso a quem dá o treino falhou (${primeiro.id}): ${String(erro)}`),
+    );
   }
 
   /** Um evento, numa data. É aqui que vive tudo o que decide em que tabela grava. */
@@ -2902,6 +3056,8 @@ export class AcademyService {
       competitionId?: string;
       /** Quem avisa a falta, num treino. Ver `ResponderBy`. */
       respondBy?: "GUARDIAN" | "ATHLETE";
+      /** Quem dá o treino, já validado por `createEvent`. */
+      coachId?: string;
     },
   ) {
     const scope = teamScopeFilter(ctx);
@@ -3093,6 +3249,8 @@ export class AcademyService {
             dressingRooms: balnearios,
             // Quem avisa que não vai. Ver `ResponderBy`.
             respondBy: dto.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN",
+            // Quem dá o treino, já validado em `createEvent`. Sem ele, o principal.
+            ...(dto.coachId ? { coachId: dto.coachId } : {}),
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
@@ -4369,25 +4527,31 @@ export class AcademyService {
    * caminho de escrita que não as repita é um caminho por onde elas se
    * contornam.
    */
-  async updateEvent(
-    ctx: RequestContext,
-    id: string,
-    dto: {
-      title?: string;
-      startsAt?: string;
-      endsAt?: string;
-      venue?: string;
-      dressingRoom?: string | null;
-      dressingRooms?: string[];
-      typeId?: string;
-      isPublic?: boolean;
-      opponent?: string;
-      isHome?: boolean;
-      competitionId?: string;
-    },
-  ) {
+  async updateEvent(ctx: RequestContext, id: string, dto: EdicaoDeEvento) {
     if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para alterar eventos");
     const scope = teamScopeFilter(ctx);
+
+    /*
+     * Os avisos a quem passa a dar o treino e a quem deixa de o dar. Juntam-se
+     * dentro da transação e saem depois do commit — ver `NotificationsService`.
+     */
+    const avisos: { userId: string; texto: { title: string; body: string }; link: string }[] = [];
+    const resultado = await this.editarEvento(ctx, id, dto, scope, avisos);
+    for (const a of avisos) {
+      await avisarTreinadores(this.notifications, ctx.academyId, [a.userId], "TRAINING_COACH_ASSIGNED", a.texto, a.link, (erro) =>
+        this.log.warn(`Aviso de troca de treinador falhou (${id}): ${String(erro)}`),
+      );
+    }
+    return resultado;
+  }
+
+  private async editarEvento(
+    ctx: RequestContext,
+    id: string,
+    dto: EdicaoDeEvento,
+    scope: ReturnType<typeof teamScopeFilter>,
+    avisos: { userId: string; texto: { title: string; body: string }; link: string }[],
+  ) {
 
     /*
      * Os balneários, quando vierem.
@@ -4418,13 +4582,14 @@ export class AcademyService {
       /* ---------------------------------------------------------- treino --- */
       const training = await db.trainingSession.findFirst({
         where: { id },
-        select: { id: true, teamId: true, startsAt: true, endsAt: true },
+        select: { id: true, teamId: true, startsAt: true, endsAt: true, coachId: true },
       });
       if (training) {
         if (scope && !scope.in.includes(training.teamId)) {
           throw new ForbiddenException("Evento fora do teu âmbito");
         }
         const { startsAt, endsAt } = quando(training.startsAt, training.endsAt);
+        const novoTreinador = await this.treinadorEscolhido(db, training.teamId, dto.coachId);
 
         // A mesma equipa não treina duas vezes à mesma hora — a mesma regra da
         // criação, e o mesmo motivo: o índice por baixo rebentava com um P2002
@@ -4454,14 +4619,41 @@ export class AcademyService {
             ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
             // Os dois enquanto durar a travessia — ver a migração `20260908120000`.
             ...(balnearios !== undefined ? { dressingRoom: balnearios[0] ?? null, dressingRooms: balnearios } : {}),
+            ...(novoTreinador !== undefined ? { coachId: novoTreinador } : {}),
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
             dressingRoom: true, dressingRooms: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
+            team: { select: { name: true } },
           },
         });
         const daEquipa = (await this.headCoaches(db, [updated.teamId])).get(updated.teamId);
+
+        /*
+         * Trocou quem dá o treino: avisa-se quem entra e quem sai. Nunca o
+         * principal (sabe que o treino é dele), nem quem fez a troca.
+         */
+        if (novoTreinador !== undefined && novoTreinador !== training.coachId) {
+          const ids = [novoTreinador, training.coachId].filter(
+            (m): m is string => Boolean(m) && m !== daEquipa?.id && m !== ctx.membershipId,
+          );
+          const pessoas = ids.length
+            ? await db.membership.findMany({ where: { id: { in: ids } }, select: { id: true, userId: true } })
+            : [];
+          const userDe = (m: string | null) => pessoas.find((p) => p.id === m)?.userId;
+          const base = { equipa: updated.team.name, inicio: updated.startsAt, local: updated.venue };
+          const entra = userDe(novoTreinador);
+          if (entra && entra !== ctx.userId) {
+            avisos.push({ userId: entra, texto: textoDeQuemDa(base), link: `/treinos/${id}` });
+          }
+          const sai = userDe(training.coachId);
+          if (sai && sai !== ctx.userId) {
+            const para = updated.coach?.user.name ?? daEquipa?.name ?? null;
+            avisos.push({ userId: sai, texto: textoDeQuemDa({ ...base, saiu: { para } }), link: `/treinos/${id}` });
+          }
+        }
+
         return {
           id: updated.id,
           teamId: updated.teamId,

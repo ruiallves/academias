@@ -90,7 +90,10 @@ function secaoDe(valor: string | null): SecaoKey {
   return SECOES.some((s) => s.key === valor) ? (valor as SecaoKey) : "geral";
 }
 
-/** Sem o site no plano (Connect Pro) o menu não aparece, e quem escreve o endereço volta ao início. */
+/**
+ * Sem o site (Connect Pro, ou o período experimental) o menu não aparece, e
+ * quem escreve o endereço volta ao início.
+ */
 export default function Website() {
   const store = useStore();
   if (!store.academy.websiteIncluido) return <Navigate to="/" replace />;
@@ -128,6 +131,25 @@ function WebsiteDoClube() {
           <span>
             <strong className="font-semibold text-ink">Podes ver o site, mas não publicar.</strong> Mudar o conteúdo ou pôr o site no ar é de quem tem a
             permissão de publicar o website.
+          </span>
+        </p>
+      )}
+
+      {/*
+        Em avaliação, sem o Connect Pro: o site está cá para o clube ver como ia
+        ficar. Diz-se até quando, e o que acontece depois, para ninguém publicar
+        o site a contar com ele e o ver desaparecer sem aviso.
+      */}
+      {store.academy.websiteNaExperiencia && (
+        <p className="mb-5 flex items-start gap-2 rounded-[10px] border border-signal/25 bg-signal-soft px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
+          <Globe className="mt-0.5 size-4 shrink-0 text-signal-ink" strokeWidth={1.75} />
+          <span>
+            <strong className="font-semibold text-ink">
+              O site está incluído no período experimental
+              {store.academy.trialEndsAt ? `, até ${new Date(store.academy.trialEndsAt).toLocaleDateString("pt-PT")}` : ""}.
+            </strong>{" "}
+            Monta-o e publica-o para veres como fica. Depois disso o site vem com o Connect Pro: sem ele sai do ar, e o que
+            preparaste fica guardado para quando o ligares.
           </span>
         </p>
       )}

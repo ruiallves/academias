@@ -18,7 +18,7 @@
  */
 
 import { getAccessToken } from "@/lib/session";
-import { appHeader } from "@/lib/area";
+import { activeArea, appHeader } from "@/lib/area";
 import { academySlug } from "@/lib/invite";
 
 // Em produção a app e a API vivem na mesma origem, e a base fica vazia. Em
@@ -43,7 +43,12 @@ async function authed(path: string, body: unknown): Promise<Response> {
          `academySlug()` que o resto da app usa.
       */
       "x-academy-slug": academySlug(),
-      "x-app": appHeader(),
+      /*
+         Na área de staff a subscrição é do treinador, e a API só lhe encontra o
+         vínculo como consola: com `family`, uma conta só de staff levava 403 e
+         o telemóvel do treinador nunca recebia os avisos de falta.
+      */
+      "x-app": activeArea() === "STAFF" ? "console" : appHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -148,10 +153,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
  */
 let jaConfirmado = false;
 
-export async function refreshPush(): Promise<void> {
+export async function refreshPush(forcar = false): Promise<void> {
   /* Uma vez por arranque. A sessão renova-se sozinha (ver `lib/session`), e sem
-     isto cada renovação era mais um `POST` a dizer o que o servidor já sabia. */
-  if (jaConfirmado) return;
+     isto cada renovação era mais um `POST` a dizer o que o servidor já sabia.
+     `forcar` é a área de staff: a do arranque correu antes de se saber a área,
+     com o cabeçalho de família, e a uma conta só de staff isso não serve. */
+  if (jaConfirmado && !forcar) return;
   if (!pushSupported() || Notification.permission !== "granted") return;
   jaConfirmado = true;
 

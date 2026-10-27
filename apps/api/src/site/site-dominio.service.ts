@@ -56,12 +56,23 @@ export class SiteDominioService {
         siteDomainRenewsAt: true,
         siteConfig: { select: { published: true } },
         subscription: { select: { status: true, plan: { select: { name: true, includesWebsite: true } } } },
+        status: true, trialEndsAt: true, suspendedAt: true,
       },
     });
     if (!a) throw new BadRequestException("Academia não encontrada");
+    // As mesmas regras de `app.academy_website_by_plan` e `app.academy_in_trial`, lidas aqui sem RLS.
+    const noPlano = !!a.subscription && a.subscription.status !== "CANCELLED" && a.subscription.plan.includesWebsite;
+    const emAvaliacao =
+      !!a.trialEndsAt &&
+      a.trialEndsAt > new Date() &&
+      a.status !== "CANCELLED" &&
+      !a.suspendedAt &&
+      !(a.subscription && (a.subscription.status === "ACTIVE" || a.subscription.status === "PAST_DUE"));
     return {
-      // A mesma regra de `app.academy_has_website`, lida aqui sem RLS.
-      noPlano: !!a.subscription && a.subscription.status !== "CANCELLED" && a.subscription.plan.includesWebsite,
+      noPlano,
+      /** Sem o plano, mas com o site enquanto a avaliação corre. O domínio próprio continua a pedir o plano. */
+      naExperiencia: !noPlano && emAvaliacao,
+      experienciaAte: !noPlano && emAvaliacao ? a.trialEndsAt!.toISOString().slice(0, 10) : null,
       plano: a.subscription?.plan.name ?? null,
       dominio: a.siteDomain,
       renovaEm: a.siteDomainRenewsAt?.toISOString().slice(0, 10) ?? null,
@@ -84,7 +95,8 @@ export class SiteDominioService {
     });
     if (!a) throw new BadRequestException("Academia não encontrada");
     if (!a.subscription || a.subscription.status === "CANCELLED" || !a.subscription.plan.includesWebsite) {
-      throw new BadRequestException("O plano deste clube não inclui o site. Passa-o para o Connect Pro antes de ligar o domínio.");
+      // Também em avaliação: o site funciona na pré-visualização, mas um domínio regista-se e paga-se.
+      throw new BadRequestException("O plano deste clube não inclui o site. Passa-o para o Connect Pro antes de ligar o domínio (em avaliação, o site funciona no endereço de pré-visualização).");
     }
     const outro = await this.prisma.academy.findFirst({ where: { siteDomain: dominio, NOT: { id: academyId } }, select: { name: true } });
     if (outro) throw new BadRequestException(`Esse domínio já está ligado a ${outro.name}`);

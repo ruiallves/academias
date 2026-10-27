@@ -2569,6 +2569,14 @@ enum NotificationType {
   CONDUCT_REPORT_CREATED
   /// O clube respondeu a uma denúncia, ou mudou-lhe o estado. Vai a quem a enviou.
   CONDUCT_REPORT_REPLIED
+  /// A família avisou que o atleta não vai a um treino, ou retirou o aviso.
+  /// Vai aos treinadores da equipa. Ver `academy/aviso-ao-treinador.ts`.
+  ABSENCE_NOTICED
+  /// A família recusou uma convocatória, ou voltou atrás. Vai aos treinadores.
+  CALLUP_DECLINED
+  /// Alguém que não é o treinador principal passou a dar um treino, ou deixou de o
+  /// dar. O principal nunca a recebe: o treino é dele por omissão.
+  TRAINING_COACH_ASSIGNED
 }
 
 /// Uma notificação é uma linha na base de dados; os canais são adaptadores por
@@ -4788,7 +4796,8 @@ model Plan {
 
   /// O plano inclui o site do clube (o Connect Pro). É a primeira coisa que o
   /// plano liga ou desliga: o menu Website da consola e o site público só
-  /// existem para clubes com isto. Lido pela função `app.academy_has_website`,
+  /// existem para clubes com isto, ou ainda no período experimental. Lido pela
+  /// função `app.academy_has_website` (via `app.academy_website_by_plan`),
   /// porque as tabelas dos planos estão fechadas ao `academia_app`.
   includesWebsite Boolean @default(false)
 

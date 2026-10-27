@@ -89,6 +89,14 @@ await db.connect();
 const planoOriginal = (await db.query(`SELECT "planId" FROM "Subscription" WHERE "academyId"='acd_lifeclub'`)).rows[0]?.planId;
 if (!planoOriginal) throw new Error("o Life Club nÃ£o tem subscriÃ§Ã£o");
 const porPlano = (id) => db.query(`UPDATE "Subscription" SET "planId"=$1 WHERE "academyId"='acd_lifeclub'`, [id]);
+/*
+ * Desde 26/10 o período experimental também dá o site (migração
+ * `20261026120000_site_na_experiencia`). Para ver o clube "sem o site", a
+ * avaliação do Life Club vai ao passado durante essa verificação e volta logo a
+ * seguir (e no `finally`, se algo falhar a meio).
+ */
+const trialOriginal = (await db.query(`SELECT "trialEndsAt" FROM "Academy" WHERE id='acd_lifeclub'`)).rows[0]?.trialEndsAt ?? null;
+const porTrial = (d) => db.query(`UPDATE "Academy" SET "trialEndsAt"=$1 WHERE id='acd_lifeclub'`, [d]);
 
 let director, coach, parent, inicial, antes, equipasDoClube, todasLigadas;
 const criados = { noticias: [], produtos: [], patrocinadores: [], bilheteira: [] };
@@ -105,11 +113,13 @@ coach = await signIn("treinador@lifeclub.pt");
 parent = await signIn("familia@lifeclub.pt");
 
 console.log("\n=== O plano ===");
+await porTrial(new Date(Date.now() - 86_400_000));
 await porPlano("plan_clube");
 const semPlano = await api(director, "GET", "/api/site");
 check("sem o Connect Pro, a direÃ§Ã£o nÃ£o lÃª (403 SITE_NOT_IN_PLAN)", semPlano.status === 403 && JSON.stringify(semPlano.body).includes("SITE_NOT_IN_PLAN"), JSON.stringify(semPlano.body).slice(0, 120));
 const bootSem = await api(director, "GET", "/api/bootstrap");
 await porPlano("plan_connect_pro");
+await porTrial(trialOriginal);
 const bootCom = await api(director, "GET", "/api/bootstrap");
 if (bootSem.status === 200 && bootCom.status === 200) {
   check("o arranque diz se o site estÃ¡ no plano", bootSem.body.academy.websiteIncluido === false && bootCom.body.academy.websiteIncluido === true);
@@ -249,6 +259,7 @@ try {
   check("com o plano de volta, o pÃºblico vÃª o clube", (await publico("")).status === 200);
 } finally {
   await porPlano("plan_connect_pro");
+  await porTrial(trialOriginal);
   console.log("\n=== Arrumar ===");
   for (const id of criados.noticias) await api(director, "DELETE", `/api/site/noticias/${id}`);
   for (const id of criados.produtos) await api(director, "DELETE", `/api/site/produtos/${id}`);

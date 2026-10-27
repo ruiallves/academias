@@ -29,7 +29,8 @@ import {
 } from "@/lib/training";
 import { useSession } from "@/session";
 import { sharePlan } from "@/lib/training";
-import { matches } from "@/lib/store";
+import { ensureCalendarRange, matches, useStore } from "@/lib/store";
+import { AvisosDeFalta } from "@/components/AvisosDeFalta";
 import { cycleOn, dayKey, listCycles, matchDayLabel, mesoOf, microLabel, type Cycle } from "@/lib/cycles";
 import { Users } from "@/lib/icons";
 import { esperadosNoTreino } from "@/lib/esperados-no-treino";
@@ -72,6 +73,19 @@ export default function TrainingPlan() {
 
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * O treino tal como o calendário o conhece, para saber quem avisou que não
+   * vem. Um treino longe de hoje pode não ter vindo no arranque: pede-se o dia.
+   */
+  const store = useStore();
+  const inicioDoPlano = plan?.startsAt;
+  useEffect(() => {
+    if (!inicioDoPlano) return;
+    const d = new Date(inicioDoPlano);
+    const dia0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    void ensureCalendarRange(dia0, new Date(dia0.getTime() + 86_400_000)).catch(() => undefined);
+  }, [inicioDoPlano]);
   /*
    * O PDF, pedido a pedido.
    *
@@ -370,6 +384,7 @@ export default function TrainingPlan() {
   const load = sessionLoad(plan.blocks, plan.intensity);
   const byCat = minutesByCategory(plan.blocks);
   const past = end < new Date();
+  const treinoNoCalendario = store.sessions.find((s) => s.id === plan.sessionId);
   // A modalidade é a da equipa do treino — é ela que dá o vocabulário.
   const sportId = teamById(plan.teamId)?.sportId ?? null;
   const categories = categoriesFor(sportId);
@@ -509,6 +524,17 @@ export default function TrainingPlan() {
             </span>
           )}
         </div>
+      )}
+
+      {/*
+        Quem a família já disse que não vem. Só antes de a folha estar gravada:
+        depois disso é a folha que manda, e está nas Presenças.
+      */}
+      {!treinoNoCalendario?.attendance && (treinoNoCalendario?.notices?.length ?? 0) > 0 && (
+        <AvisosDeFalta
+          notices={treinoNoCalendario?.notices}
+          className="mb-3 rounded-[var(--radius-panel)] border border-risk/30 bg-risk-soft/40 px-4 py-2.5"
+        />
       )}
 
       <div className="grid gap-3 xl:grid-cols-3">

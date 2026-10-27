@@ -10,6 +10,9 @@ type EstadoNoVercel =
 type SiteDominio = {
   /** O plano do clube inclui o site (Connect Pro). Sem isso não há menu, nem site, nem domínio. */
   noPlano: boolean;
+  /** Sem o plano, mas em avaliação: tem o menu e o site até `experienciaAte`. O domínio próprio continua a pedir o plano. */
+  naExperiencia?: boolean;
+  experienciaAte?: string | null;
   plano: string | null;
   dominio: string | null;
   renovaEm: string | null;
@@ -91,7 +94,14 @@ export function SiteDoClubePanel({ academyId, mayEdit }: { academyId: string; ma
     <Panel>
       <PanelHead title="Site do clube" hint={site ? (site.publicado ? "no ar" : "por publicar") : undefined} />
       <div className="space-y-3.5 px-5 py-4">
-        {site && !site.noPlano && (
+        {site && !site.noPlano && site.naExperiencia && (
+          <p className="rounded-[10px] border border-line bg-sunken px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
+            Em avaliação: o clube tem o menu Website e o site no endereço de pré-visualização
+            {site.experienciaAte ? ` até ${site.experienciaAte.split("-").reverse().join("/")}` : ""}. Depois disso, e para ligar um
+            domínio próprio, precisa do Connect Pro.
+          </p>
+        )}
+        {site && !site.noPlano && !site.naExperiencia && (
           <p className="rounded-[10px] border border-warn/25 bg-warn-soft px-3.5 py-2.5 text-meta leading-relaxed text-warn">
             O plano {site.plano ? `${site.plano} ` : ""}não inclui o site. Passa o clube para o Connect Pro para ele ver o menu Website e o site ficar no ar.
           </p>

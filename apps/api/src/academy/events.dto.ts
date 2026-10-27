@@ -52,6 +52,15 @@ export class CreateEventDto {
   @IsIn(["GUARDIAN", "ATHLETE"])
   respondBy?: "GUARDIAN" | "ATHLETE";
 
+  /**
+   * Quem dá este treino, se não for o treinador principal da equipa. Vazio ou
+   * ausente é o principal. Só num treino; nos outros tipos é ignorado.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  coachId?: string;
+
   /** Ausente é "toda a academia". Só a direção o pode fazer — verificado no serviço. */
   @IsOptional()
   @IsString()
@@ -281,4 +290,6 @@ export class EditEventDto {
   @IsOptional() @IsString() @Length(1, 40) competitionId?: string;
   /** Quem avisa a falta a este treino. Ver `CreateEventDto.respondBy`. */
   @IsOptional() @IsIn(["GUARDIAN", "ATHLETE"]) respondBy?: "GUARDIAN" | "ATHLETE";
+  /** Quem dá o treino. String vazia volta ao treinador principal. Ver `CreateEventDto.coachId`. */
+  @IsOptional() @IsString() @Length(0, 40) coachId?: string;
 }

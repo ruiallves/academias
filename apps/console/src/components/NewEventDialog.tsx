@@ -13,6 +13,7 @@ import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
+import { CampoQuemDaOTreino } from "./CampoQuemDaOTreino";
 import { Repetir, useRepeticao } from "./Repetir";
 import { Interruptor } from "./definicoes/ui";
 import { cx, SelectField } from "./primitives";
@@ -120,6 +121,8 @@ export function NewEventDialog({
    * convocatória (ver `SubmitCallUpDialog`).
    */
   const [respondBy, setRespondBy] = useState<"GUARDIAN" | "ATHLETE">("GUARDIAN");
+  /** Quem dá o treino. Vazio é o treinador principal. Ver `CampoQuemDaOTreino`. */
+  const [coachId, setCoachId] = useState("");
   const [opponent, setOpponent] = useState("");
   const [isHome, setIsHome] = useState(true);
   const [competitionId, setCompetitionId] = useState("");
@@ -266,6 +269,7 @@ export function NewEventDialog({
         ...(balneariosEfectivos[0] ? { dressingRoom: balneariosEfectivos[0] } : {}),
         ...(tipoEfectivo ? { typeId: tipoEfectivo.id } : {}),
         ...(kind === "training" ? { respondBy } : {}),
+        ...(kind === "training" && coachId ? { coachId } : {}),
         ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
         ...(isMatch && competitionId ? { competitionId } : {}),
         ...(podeIrParaOSite && isPublic ? { isPublic: true } : {}),
@@ -476,6 +480,8 @@ export function NewEventDialog({
         <DialogField label="Título" hint="opcional">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={suggested} className={dialogInputClass} />
         </DialogField>
+
+        {kind === "training" && <CampoQuemDaOTreino teamId={teamId} value={coachId} onChange={setCoachId} />}
 
         {/*
           Quem avisa que não vai, num treino.

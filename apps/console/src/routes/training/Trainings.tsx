@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { Link, useNavigate, useNavigationType, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Loading, Metric, MetricRow, Pill, cx } from "@/components/primitives";
+import { AvisosDeFalta } from "@/components/AvisosDeFalta";
 import { Segmented } from "@/components/filters";
 import { Lista, ListaTopo } from "@/components/definicoes/ui";
 import { EquipasRail } from "@/components/EquipasRail";
@@ -2082,6 +2083,8 @@ function TreinosPorDia({
                         <div className="mt-0.5 truncate text-meta text-ink-3">
                           {pl ? [`${pl.blockCount} blocos`, `${load!.volume} min`, pl.objective].filter(Boolean).join(" · ") : x.venue}
                         </div>
+                        {/* Quem já disse que não vem: muda o treino que se planeia. */}
+                        <AvisosDeFalta notices={x.notices} className="mt-1" />
                       </div>
                       {pl ? <Pill tone={load!.tone}>{load!.label}</Pill> : <Pill tone="warn">Por planear</Pill>}
                       <ArrowRight className="size-3.5 shrink-0 text-ink-4 transition-transform duration-[120ms] group-hover:translate-x-0.5 group-hover:text-ink-2" strokeWidth={1.75} />

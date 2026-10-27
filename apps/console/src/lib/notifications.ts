@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { apiGetSilencioso, apiPatch } from "@/lib/http";
+import { refrescarProximos } from "@/lib/store";
 
 /**
  * As notificações de quem está na consola.
@@ -47,17 +48,61 @@ export function useUnreadCount(): number {
   return useNotifications().items.filter((n) => !n.readAt).length;
 }
 
+/** Os avisos das famílias que mudam um treino ou um jogo que já está no ecrã. */
+const MUDAM_O_CALENDARIO = new Set(["ABSENCE_NOTICED", "CALLUP_DECLINED"]);
+
 export async function loadNotifications(): Promise<void> {
+  const conhecidas = new Set(state.items.map((n) => n.id));
+  const primeira = !state.loaded;
   try {
     // Silencioso: o sino carrega-se sozinho à entrada, e uma lista de
     // notificações que falha não pode partir a consola nem gritar por isso.
     const items = await apiGetSilencioso<Notification[]>("/api/notifications");
     state = { items, loaded: true };
+    /*
+     * Chegou um aviso de falta desde a última leitura: os treinos em memória
+     * estão desactualizados. Na primeira leitura não, que o arranque acabou de
+     * os trazer.
+     */
+    if (!primeira && items.some((n) => !conhecidas.has(n.id) && MUDAM_O_CALENDARIO.has(n.kind))) {
+      void refrescarProximos().catch(() => undefined);
+    }
   } catch {
     // Silencioso: uma lista de notificações que falha não pode partir a consola.
-    state = { items: [], loaded: true };
+    // Fica o que já havia: uma rede que falha a meio não apaga o sino.
+    state = { items: state.items, loaded: true };
   }
   emit();
+}
+
+/** De quanto em quanto tempo se volta a perguntar, com o separador à vista. */
+const INTERVALO = 120_000;
+
+/**
+ * O sino relê-se sozinho.
+ *
+ * Carregava uma vez, no arranque. Um treinador com a consola aberta desde a
+ * manhã não via o aviso de falta que uma mãe deu à tarde, e é para ele que o
+ * aviso existe. Dois minutos chegam: a notificação também vai por push a quem
+ * o ligou, e isto é para quem está ao computador.
+ *
+ * Só com o separador à vista, como a presença (`lib/presence.ts`): uma consola
+ * esquecida numa secretaria não tem de falar com o servidor. Ao voltar a ficar
+ * visível relê logo.
+ */
+export function useVigiarNotificacoes(activo: boolean): void {
+  useEffect(() => {
+    if (!activo) return;
+    const ler = () => {
+      if (document.visibilityState === "visible") void loadNotifications();
+    };
+    const relogio = setInterval(ler, INTERVALO);
+    document.addEventListener("visibilitychange", ler);
+    return () => {
+      clearInterval(relogio);
+      document.removeEventListener("visibilitychange", ler);
+    };
+  }, [activo]);
 }
 
 /**

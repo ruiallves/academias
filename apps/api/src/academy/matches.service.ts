@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { avisarTreinadores, textoDoAviso, treinadoresAAvisar } from "./aviso-ao-treinador";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import {
@@ -37,6 +38,8 @@ import { formatarNoFuso, horaNoFuso, instanteNoFuso, lerHora, partesNoFuso, soma
  */
 @Injectable()
 export class MatchesService {
+  private readonly log = new Logger(MatchesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -1843,10 +1846,13 @@ export class MatchesService {
     }
     if (motivo.length > 300) throw new BadRequestException("O motivo é demasiado longo");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const { resultado, avisar } = await this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await db.match.findFirst({
         where: { id: matchId },
-        select: { id: true, startsAt: true, status: true, callUpsClosedAt: true, respondBy: true },
+        select: {
+          id: true, startsAt: true, status: true, callUpsClosedAt: true, respondBy: true,
+          teamId: true, coachId: true, opponent: true, team: { select: { name: true } },
+        },
       });
       if (!match) throw new NotFoundException("Jogo não encontrado");
       /*
@@ -1869,7 +1875,7 @@ export class MatchesService {
 
       const linha = await db.matchCallUp.findFirst({
         where: { matchId, athleteId },
-        select: { id: true },
+        select: { id: true, status: true, declineReason: true, athlete: { select: { name: true } } },
       });
       if (!linha) throw new NotFoundException("Este atleta não está convocado para este jogo");
 
@@ -1886,8 +1892,50 @@ export class MatchesService {
         select: { status: true, declineReason: true, respondedAt: true },
       });
 
-      return { matchId, athleteId, ...atualizada };
+      /*
+       * O treinador é avisado de uma recusa, e de quem volta atrás depois de ter
+       * recusado. Uma confirmação não: num plantel de catorze eram catorze pushes
+       * a dizer o que ele já assume. Recusar outra vez com o mesmo motivo também
+       * não, que não é notícia.
+       */
+      const recusou = atualizada.status === "DECLINED";
+      const mudou = recusou
+        ? linha.status !== "DECLINED" || linha.declineReason !== atualizada.declineReason
+        : linha.status === "DECLINED";
+      let avisar: { userIds: string[]; texto: { title: string; body: string } } | null = null;
+      if (mudou) {
+        const userIds = await treinadoresAAvisar(db, match.teamId, match.coachId, ctx.userId);
+        if (userIds.length > 0) {
+          avisar = {
+            userIds,
+            texto: textoDoAviso({
+              evento: "jogo",
+              atleta: linha.athlete.name,
+              equipa: match.team.name,
+              adversario: match.opponent,
+              inicio: match.startsAt,
+              motivo: recusou ? atualizada.declineReason : null,
+            }),
+          };
+        }
+      }
+
+      return { resultado: { matchId, athleteId, ...atualizada }, avisar };
     });
+
+    /* Depois do commit, como todas as notificações desta casa. */
+    if (avisar) {
+      await avisarTreinadores(
+        this.notifications,
+        ctx.academyId,
+        avisar.userIds,
+        "CALLUP_DECLINED",
+        avisar.texto,
+        `/convocatorias?jogo=${matchId}`,
+        (erro) => this.log.warn(`Aviso de recusa ao treinador falhou (${matchId}): ${String(erro)}`),
+      );
+    }
+    return resultado;
   }
 
   /**

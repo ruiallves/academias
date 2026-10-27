@@ -102,8 +102,10 @@ export type Academy = {
    * do clube para onde ir.
    */
   eupagoConfigured: boolean;
-  /** O plano inclui o site do clube (Connect Pro). Sem ele não há menu Website. */
+  /** O clube tem o site (Connect Pro, ou o período experimental). Sem ele não há menu Website. */
   websiteIncluido: boolean;
+  /** O site está cá só por causa do período experimental: acaba em `trialEndsAt`, e depois é preciso o Connect Pro. */
+  websiteNaExperiencia: boolean;
   /**
    * A comissão da euPago é de quem paga. Ligado, **os valores da plataforma são
    * o que o clube recebe**, e a família paga esse valor mais a taxa, a mesma em

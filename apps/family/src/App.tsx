@@ -5,7 +5,7 @@ import { load, reload, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, signOut, useSession } from "@/lib/session";
 import { usePresence } from "@/lib/presence";
-import { refreshPush } from "@/lib/push";
+import { enablePush, pushSupported, refreshPush } from "@/lib/push";
 import { useFresco } from "@/lib/fresco";
 import { chooseContext, loadContexts, useContexts } from "@/lib/contexts";
 import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
@@ -423,9 +423,19 @@ function Retry({ label = "Tentar outra vez" }: { label?: string }) {
  * que volta às áreas desta app — nunca um ecrã sem saída.
  */
 function AbrirConsola({ temOutras }: { temOutras: boolean }) {
+  const [perguntar, setPerguntar] = useState(devePerguntarPush);
+
   useEffect(() => {
-    irParaConsola();
-  }, []);
+    if (perguntar) return;
+    /*
+     * Quem já ligou as notificações: confirma-se a subscrição com o vínculo de
+     * staff antes de sair. A do arranque foi com o de família, que uma conta só
+     * de staff não tem. Dois segundos no máximo, que a consola não espera.
+     */
+    void Promise.race([refreshPush(true), new Promise((r) => setTimeout(r, 2000))]).finally(() => irParaConsola());
+  }, [perguntar]);
+
+  if (perguntar) return <PerguntarPushDoStaff temOutras={temOutras} onFeito={() => setPerguntar(false)} />;
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col items-center justify-center gap-5 px-6 py-10 text-center">
@@ -442,6 +452,102 @@ function AbrirConsola({ temOutras }: { temOutras: boolean }) {
         </a>
         {temOutras && (
           <button type="button" onClick={() => chooseContext("FAMILY")} className="text-[13px] text-ink-3 underline">
+            Ficar na app
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Pergunta-se ao treinador se quer os avisos no telemóvel, uma vez.
+ *
+ * ## Porque é que é aqui
+ *
+ * O interruptor das notificações vive no perfil da área de família, e quem só
+ * é staff nunca lá chega: escolhe Staff e a app passa logo para a consola. Os
+ * avisos de falta das famílias iam para o sino da consola e para mais lado
+ * nenhum. Um treinador no campo não tem a consola aberta.
+ *
+ * Só quando o telemóvel ainda não respondeu à permissão (`default`): a quem já
+ * disse que sim não se pergunta outra vez, e a quem bloqueou um botão não muda
+ * nada. "Agora não" vale trinta dias.
+ */
+const PERGUNTADO = "academia:push-do-staff";
+const TRINTA_DIAS = 30 * 86_400_000;
+
+function devePerguntarPush(): boolean {
+  if (!pushSupported() || Notification.permission !== "default") return false;
+  try {
+    const quando = Number(localStorage.getItem(PERGUNTADO) ?? 0);
+    return !quando || Date.now() - quando > TRINTA_DIAS;
+  } catch {
+    return false;
+  }
+}
+
+function marcarPerguntado() {
+  try {
+    localStorage.setItem(PERGUNTADO, String(Date.now()));
+  } catch {
+    /* Sem armazenamento pergunta-se outra vez da próxima. Não é grave. */
+  }
+}
+
+function PerguntarPushDoStaff({ temOutras, onFeito }: { temOutras: boolean; onFeito: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function ligar() {
+    setBusy(true);
+    setErro(null);
+    const r = await enablePush().catch((e: unknown) => ({ ok: false, reason: e instanceof Error ? e.message : undefined }));
+    marcarPerguntado();
+    setBusy(false);
+    if (r.ok) onFeito();
+    else setErro(r.reason ?? "Não foi possível ligar as notificações.");
+  }
+
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col justify-center gap-5 px-6 py-10">
+      <div>
+        <span className="flex size-11 items-center justify-center rounded-full bg-signal-soft text-signal-ink">
+          <Bell className="size-5" strokeWidth={1.9} />
+        </span>
+        <p className="mt-4 text-[19px] font-semibold tracking-[-0.01em] text-ink">Queres receber os avisos das famílias?</p>
+        <p className="mt-1 text-[14px] leading-relaxed text-ink-3">
+          Quando uma família avisar que um atleta não vai a um treino ou a um jogo, recebes uma notificação no telemóvel.
+        </p>
+      </div>
+
+      {erro && <p className="rounded-[var(--radius-sm)] bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">{erro}</p>}
+
+      <div className="flex flex-col gap-2">
+        {erro ? (
+          <button type="button" onClick={onFeito} className="cta-brand w-full">
+            Continuar para a consola
+          </button>
+        ) : (
+          <button type="button" onClick={() => void ligar()} disabled={busy} className="cta-brand w-full">
+            {busy ? "A ligar…" : "Ligar notificações"}
+          </button>
+        )}
+        {!erro && (
+          <button
+            type="button"
+            onClick={() => {
+              marcarPerguntado();
+              onFeito();
+            }}
+            disabled={busy}
+            className="cta-quiet w-full"
+          >
+            Agora não
+          </button>
+        )}
+        {temOutras && (
+          <button type="button" onClick={() => chooseContext("FAMILY")} className="mt-1 text-[13px] text-ink-3 underline">
             Ficar na app
           </button>
         )}

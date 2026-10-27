@@ -7,6 +7,7 @@ import { Segmented } from "@/components/filters";
 import { Lista } from "@/components/definicoes/ui";
 import { EquipasRail } from "@/components/EquipasRail";
 import { AttendanceDialog } from "@/components/AttendanceDialog";
+import { AvisosDeFalta } from "@/components/AvisosDeFalta";
 import { ArrowRight, CalendarDays, CircleCheck, ClipboardCheck, Clock, History } from "@/lib/icons";
 import { attendanceRate, coachById, listSessions, listTeams, teamById, today, unrecordedSessions } from "@/lib/api";
 import { useAttendanceRecords } from "@/lib/attendance";
@@ -504,6 +505,8 @@ function ASeguir({ sessions, mostrarEquipa, cores }: { sessions: TrainingSession
                     <div className="min-w-0 flex-1">
                       <NomeDaEquipa teamId={s.teamId} cores={cores} mostrar={mostrarEquipa} />
                       {s.venue && <div className="mt-0.5 truncate text-meta text-ink-3">{s.venue}</div>}
+                      {/* O que as famílias já disseram, antes de o treino acontecer. */}
+                      <AvisosDeFalta notices={s.notices} className="mt-1" />
                     </div>
                     {coachName ? (
                       <span className="flex shrink-0 items-center gap-1.5">

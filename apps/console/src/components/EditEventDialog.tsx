@@ -10,6 +10,7 @@ import { Settings, Trash2, TriangleAlert } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
+import { CampoQuemDaOTreino } from "./CampoQuemDaOTreino";
 import { Interruptor } from "./definicoes/ui";
 import { cx, SelectField } from "./primitives";
 import { ApagarEventoDialog, descreverEvento } from "./ApagarEventoDialog";
@@ -68,6 +69,8 @@ export function EditEventDialog({
   const [opponent, setOpponent] = useState(event.match?.opponent ?? "");
   const [isHome, setIsHome] = useState(event.match?.home ?? true);
   const [competitionId, setCompetitionId] = useState(event.match?.competition?.id ?? competicoes[0]?.id ?? "");
+  /** Quem dá o treino. O servidor manda o principal quando não há outro. Ver `CampoQuemDaOTreino`. */
+  const [coachId, setCoachId] = useState(event.coachId ?? "");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +124,8 @@ export function EditEventDialog({
       if (competitionId && competitionId !== event.match?.competition?.id) mudou.competitionId = competitionId;
     }
     if (podeIrParaOSite && isPublic !== (event.isPublic ?? false)) mudou.isPublic = isPublic;
+    // Vazio é "o treinador principal": o servidor guarda nulo e avisa quem sai.
+    if (event.kind === "training" && coachId !== (event.coachId ?? "")) mudou.coachId = coachId;
 
     // Nada mudou: fechar em silêncio é a resposta honesta — um pedido ao
     // servidor para não alterar nada só serviria para gerar um registo falso.
@@ -255,6 +260,10 @@ export function EditEventDialog({
           <DialogField label="Título">
             <input value={title} onChange={(e) => setTitle(e.target.value)} className={dialogInputClass} required />
           </DialogField>
+        )}
+
+        {event.kind === "training" && event.teamId && (
+          <CampoQuemDaOTreino teamId={event.teamId} value={coachId} onChange={setCoachId} />
         )}
 
         <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">

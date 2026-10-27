@@ -110,6 +110,19 @@ no arranque, filtrado em `navFor`), `/api/site` responde 403
 recusa ligar domínio. Mudar o plano no painel liga ou desliga tudo isto.
 Código em `apps/api/src/site/plano.ts`.
 
+**E no período experimental (desde 26/10/2026).** Migração
+`20261026120000_site_na_experiencia`: `app.academy_has_website` passa a ser
+`app.academy_website_by_plan` (a regra acima) **ou** `app.academy_in_trial`
+(`trialEndsAt` no futuro, sem subscrição ACTIVE/PAST_DUE, clube não cancelado
+nem suspenso, as mesmas regras de `estadoComercial` no painel). Nos 30 dias o
+clube tem o menu Website, a loja, a bilheteira e o site em
+`<slug>.website.academias.pt`, e a consola diz até quando
+(`academy.websiteNaExperiencia` no arranque). Quando a avaliação acaba sem o
+Connect Pro, tudo desaparece como numa descida de plano, e o que o clube
+montou fica guardado. **Ligar um domínio próprio continua a exigir o plano**
+(o domínio regista-se e paga-se). Teste: `npm run test:site-na-experiencia`
+(13, PGlite).
+
 Públicos (`site-publico.controller.ts`, sem sessão, tecto de 2000 pedidos por
 minuto porque os sites de todos os clubes saem dos mesmos servidores do Vercel):
 

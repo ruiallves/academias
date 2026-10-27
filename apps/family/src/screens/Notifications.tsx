@@ -45,6 +45,11 @@ const STYLE: Record<string, { icon: LucideIcon; cls: string; urgent?: boolean }>
   CONDUCT_REPORT_REPLIED: { icon: ShieldAlert, cls: "bg-signal-soft text-signal-ink", urgent: true },
   /* Chega a quem tem a app e também vê as denúncias na consola. */
   CONDUCT_REPORT_CREATED: { icon: ShieldAlert, cls: "bg-warn-soft text-warn" },
+  /* Para quem treina e também tem a app: uma família disse que o atleta não vai. */
+  ABSENCE_NOTICED: { icon: CalendarClock, cls: "bg-warn-soft text-warn" },
+  CALLUP_DECLINED: { icon: Trophy, cls: "bg-warn-soft text-warn" },
+  /* Quem foi escolhido para dar um treino no lugar do treinador principal. */
+  TRAINING_COACH_ASSIGNED: { icon: CalendarClock, cls: "bg-signal-soft text-signal-ink", urgent: true },
 };
 
 const FALLBACK = { icon: Bell, cls: "bg-sunken text-ink-2" };

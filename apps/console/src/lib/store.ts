@@ -69,8 +69,10 @@ type ApiBootstrap = {
     feesOnPayer?: boolean;
     /** O clube tem o canal euPago dele configurado. Sem isso não liga os pagamentos pela app. */
     eupagoConfigured?: boolean;
-    /** O plano inclui o site do clube (Connect Pro). */
+    /** O clube tem o site (Connect Pro, ou o período experimental). */
     websiteIncluido?: boolean;
+    /** O site está cá só por causa do período experimental. */
+    websiteNaExperiencia?: boolean;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -401,7 +403,7 @@ const EMPTY: State = {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
     billingDueDay: 8, billingMonths: [], billingNext: null, billingByTeam: false, billingTeams: [],
-    paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true, websiteIncluido: false,
+    paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true, websiteIncluido: false, websiteNaExperiencia: false,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
     association: "",
@@ -836,6 +838,22 @@ export function prefetchCalendarNeighbours(from: Date, to: Date): void {
   void ensureCalendarRange(new Date(from.getTime() - folga), new Date(to.getTime() + folga));
 }
 
+/**
+ * Volta a trazer os treinos e jogos das próximas semanas, mesmo que já cá estejam.
+ *
+ * `ensureCalendarRange` não repete uma janela já trazida, e é o certo para
+ * navegar. Mas um aviso de falta que chega depois de a consola abrir muda um
+ * treino que já está em memória: sem isto, o sino dizia "o Tomás não vai" e a
+ * lista dos treinos continuava sem o aviso até alguém recarregar a página.
+ * Chama-o `lib/notifications.ts` quando chega um aviso desses.
+ */
+export async function refrescarProximos(): Promise<void> {
+  const agora = Date.now();
+  const from = new Date(agora - 86_400_000);
+  const to = new Date(agora + 35 * 86_400_000);
+  await trazer(from, to, from.getTime(), to.getTime());
+}
+
 /** Une duas listas pelo `id`, ficando com a versão mais recente de cada. */
 function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
   if (novos.length === 0) return atuais;
@@ -1106,6 +1124,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       eupagoConfigured: boot.academy.eupagoConfigured ?? true,
       // Aqui ao contrário: sem a resposta do servidor, o site não está no plano.
       websiteIncluido: boot.academy.websiteIncluido ?? false,
+      websiteNaExperiencia: boot.academy.websiteNaExperiencia ?? false,
       feesOnPayer: boot.academy.feesOnPayer ?? false,
       billingNext: boot.academy.billingNextFrom
         ? {

@@ -20,6 +20,7 @@ import { cx, Monogram, Pill } from "./primitives";
 import { EditEventDialog } from "./EditEventDialog";
 import { ApagarEventoDialog, descreverEvento } from "./ApagarEventoDialog";
 import { EventFinance } from "./finance/EventFinance";
+import { AvisosDeFalta } from "./AvisosDeFalta";
 
 /**
  * O painel de detalhe.
@@ -296,6 +297,12 @@ export function EventDetail({
               pessoa da área técnica — a metodologia do clube ganha em ver-se. */}
           {event.kind === "training" && (
             <div className="space-y-2 px-5 py-4">
+              {/* Quem a família já disse que não vem, enquanto a folha não está gravada. */}
+              {meu &&
+                (() => {
+                  const treino = storeSessions.find((t) => t.id === event.id);
+                  return treino && !treino.attendance ? <AvisosDeFalta notices={treino.notices} className="pb-1" /> : null;
+                })()}
               {/* O plano é da equipa: quem não a acompanha não o abre (o servidor
                   recusa na mesma). Ver `lerPlano` em `training.service.ts`. */}
               {can(session, "training:read") && meu && (

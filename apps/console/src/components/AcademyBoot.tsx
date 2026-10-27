@@ -4,7 +4,7 @@ import { loadAcademy, reloadAcademy, useStore } from "@/lib/store";
 import { MensalidadeDaPlataformaPanel } from "@/components/MensalidadeDaPlataformaPanel";
 import { loadCatalogs } from "@/lib/catalogs";
 import { loadInvites } from "@/lib/invites";
-import { loadNotifications } from "@/lib/notifications";
+import { loadNotifications, useVigiarNotificacoes } from "@/lib/notifications";
 import { clearSession } from "@/lib/session";
 
 /**
@@ -57,6 +57,8 @@ export function AcademyBoot({ children }: { children: ReactNode }) {
     // O sino da barra lateral vive desta lista — ver `lib/notifications.ts`.
     void loadNotifications();
   }, [store.ready]);
+  // E relê-se sozinho, para um aviso de falta chegar sem recarregar a página.
+  useVigiarNotificacoes(store.ready && !store.suspenso);
 
   useEffect(() => {
     if (!store.ready || !store.academy.slug) return;
