@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
 import { WeekStrip } from "@/components/WeekStrip";
+import { AvisosDeFalta } from "@/components/AvisosDeFalta";
 import { Bar, Empty, Monogram, Panel, PanelHead, PanelLink, Pill } from "@/components/primitives";
 import { CalendarDays, ClipboardCheck, Gauge, MapPin, Users } from "@/lib/icons";
 import {
@@ -71,6 +72,9 @@ function NextSession({ training: s }: { training: TrainingSession }) {
   const start = new Date(s.start);
   const end = new Date(s.end);
   const roster = listAthletes(session).filter((a) => naEquipa(a, s.teamId) && a.status === "active");
+  /* Quem a família já disse que não vem: conta-se aqui, que é o que o treinador abre primeiro. */
+  const naoVem = new Set((s.notices ?? []).map((n) => n.athleteId));
+  const vem = roster.filter((a) => !naoVem.has(a.id)).length;
 
   return (
     <Panel className="overflow-hidden">
@@ -92,7 +96,7 @@ function NextSession({ training: s }: { training: TrainingSession }) {
 
         <dl className="flex flex-wrap items-center gap-x-8 gap-y-3">
           <Fact icon={MapPin} label="Local" value={s.venue} />
-          <Fact icon={Users} label="Plantel" value={`${roster.length} atletas`} />
+          <Fact icon={Users} label="Plantel" value={naoVem.size > 0 ? `${vem} de ${roster.length} vêm` : `${roster.length} atletas`} />
         </dl>
 
         {/* Um treino não tem convocatória — vai o plantel todo, e quem falta
@@ -113,6 +117,7 @@ function NextSession({ training: s }: { training: TrainingSession }) {
           </Link>
         </div>
       </div>
+      <AvisosDeFalta notices={s.notices} className="border-t border-line bg-risk-soft/40 px-5 py-2.5" />
     </Panel>
   );
 }

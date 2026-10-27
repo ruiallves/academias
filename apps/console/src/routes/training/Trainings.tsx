@@ -769,6 +769,12 @@ export default function Trainings() {
                                 <div className={cx("mt-0.5 text-[11px]", p ? "text-ink-3" : "text-warn")}>
                                   {p ? `${load!.volume} min · ${load!.label}${p.objective ? ` · ${p.objective}` : ""}` : "Por planear"}
                                 </div>
+                                {/* Quem já disse que não vem. Os nomes estão no plano, ao abrir. */}
+                                {!s.attendance && (s.notices?.length ?? 0) > 0 && (
+                                  <div className="mt-0.5 text-[11px] font-medium text-risk">
+                                    {s.notices!.length === 1 ? "1 não vem" : `${s.notices!.length} não vêm`}
+                                  </div>
+                                )}
                               </button>
                             );
                           })}

@@ -236,7 +236,9 @@ export function EventDetail({
               <Fact
                 icon={Whistle}
                 label={coachName ?? "Sem treinador atribuído"}
-                tone={coach ? undefined : "risk"}
+                /* Pelo nome, que vem com o evento: a ficha (`coach`) chega vazia a
+                   um treinador sem `staff:read`, e o nome dele aparecia a vermelho. */
+                tone={coachName ? undefined : "risk"}
               />
             )}
             {/* A prova de um jogo é um facto básico como a hora: é ela que sai

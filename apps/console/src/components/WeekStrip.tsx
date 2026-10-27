@@ -86,6 +86,12 @@ function SessionChip({ session: s }: { session: TrainingSession }) {
         {unassigned && <span className="font-semibold">sem treinador</span>}
       </div>
       <div className={cx("truncate font-medium", cancelled ? "line-through" : "text-ink")}>{team?.name}</div>
+      {/* Quem a família já disse que não vem. O nome e o motivo estão no treino. */}
+      {!cancelled && !s.attendance && (s.notices?.length ?? 0) > 0 && (
+        <div className="mt-0.5 font-medium text-risk">
+          {s.notices!.length === 1 ? "1 não vem" : `${s.notices!.length} não vêm`}
+        </div>
+      )}
     </div>
   );
 }
