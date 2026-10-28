@@ -11,6 +11,7 @@ import { FICHAS_PAGAS_PELA_FAMILIA } from "../members/socio-menor";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
 import { montarIdentificador } from "./identificador";
+import { diaPorOmissao, instanteDoPagamento } from "./dia-do-pagamento";
 import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
 import { EupagoFeesService } from "./eupago-fees";
 import { BilheteiraEmissao } from "../bilheteira/emissao.service";
@@ -956,6 +957,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       estado?: "OPEN" | "SETTLED";
       /** Como foram pagas, quando nascem pagas. Omitido fica numerário. */
       metodo?: MetodoManual;
+      /**
+       * O dia em que foram pagas (`AAAA-MM-DD`), o mesmo para todas. Omitido,
+       * cada uma fica paga no mês dela (`diaPorOmissao`): a de julho no dia de
+       * vencimento de julho, a deste mês hoje.
+       */
+      paidOn?: string;
       periods: string[];
       notes?: string;
       /**
@@ -981,6 +988,10 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     const alvo = input.alvo ?? "atletas";
     const pagas = input.estado === "SETTLED";
     const agora = new Date();
+    /* O dia do pagamento de cada mensalidade lançada paga. Ver `dia-do-pagamento.ts`. */
+    const diaEscolhido = pagas && input.paidOn ? lerDiaDoPagamento(input.paidOn, agora) : null;
+    const pagaEm = (period: string, dueDate: Date | null) =>
+      diaEscolhido ?? instanteDoPagamento(diaPorOmissao(period, dueDate, agora), agora);
     const idsDeAtletas = [...new Set(input.athleteIds ?? (input.athleteId ? [input.athleteId] : []))];
     const idsDeEquipas = [...new Set(input.teamIds ?? [])];
     if (alvo === "atletas" && idsDeAtletas.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
@@ -1053,6 +1064,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
                 period: true,
                 status: true,
                 amountCents: true,
+                dueDate: true,
                 payments: { select: { status: true, provider: true } },
               },
             })
@@ -1078,7 +1090,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
          * As que já estavam pagas ou anuladas ficam como estão. O valor é o da
          * mensalidade existente, e não o do lançamento: é o que a família deve.
          */
-        const aMarcar: { id: string; athleteId: string; amountCents: number }[] = [];
+        const aMarcar: { id: string; athleteId: string; amountCents: number; period: string; dueDate: Date }[] = [];
         const jaPagas = new Set<string>();
         let emPagamento = 0;
 
@@ -1135,7 +1147,15 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               } else if (existente.status === ChargeStatus.SETTLED) jaPagas.add(period);
               else if (existente.status !== ChargeStatus.OPEN) jaExistiam.add(period);
               else if (emVoo) emPagamento++;
-              else aMarcar.push({ id: existente.id, athleteId: a.id, amountCents: existente.amountCents });
+              else {
+                aMarcar.push({
+                  id: existente.id,
+                  athleteId: a.id,
+                  amountCents: existente.amountCents,
+                  period,
+                  dueDate: existente.dueDate,
+                });
+              }
               continue;
             }
             if (valor === undefined) {
@@ -1143,6 +1163,13 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               semPrecoContado = true;
               continue;
             }
+            /*
+             * O dia de vencimento é o do clube, como nas geradas — a família
+             * não tem de aprender um prazo diferente por a mensalidade ter
+             * sido lançada à mão. Um mês em atraso nasce vencido, e é o que
+             * se quer: é exactamente o que ele é.
+             */
+            const vence = diaDeVencimento(period, calendario(period).dia);
             aCriar.push({
               academyId: ctx.academyId,
               athleteId: a.id,
@@ -1151,16 +1178,14 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               slot: "",
               notes: input.notes?.trim() || null,
               amountCents: valor,
-              ...(pagas || nasceIsenta(valor) ? { status: ChargeStatus.SETTLED, settledAt: agora } : {}),
+              ...(pagas
+                ? { status: ChargeStatus.SETTLED, settledAt: pagaEm(period, vence) }
+                : nasceIsenta(valor)
+                  ? { status: ChargeStatus.SETTLED, settledAt: agora }
+                  : {}),
               ...(pagas ? quemMudou(ctx, agora) : {}),
               ...(input.amountCents === undefined && doMes.preco?.enrollmentId ? { enrollmentId: doMes.preco.enrollmentId } : {}),
-              /*
-               * O dia de vencimento é o do clube, como nas geradas — a família
-               * não tem de aprender um prazo diferente por a mensalidade ter
-               * sido lançada à mão. Um mês em atraso nasce vencido, e é o que
-               * se quer: é exactamente o que ele é.
-               */
-              dueDate: diaDeVencimento(period, calendario(period).dia),
+              dueDate: vence,
             });
           }
         }
@@ -1190,10 +1215,18 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
          * que as Finanças e a app da família já sabem ler.
          */
         if (pagas && aMarcar.length > 0) {
-          await db.charge.updateMany({
-            where: { id: { in: aMarcar.map((c) => c.id) }, status: ChargeStatus.OPEN },
-            data: { status: ChargeStatus.SETTLED, settledAt: agora, ...quemMudou(ctx, agora) },
-          });
+          /* Uma escrita por dia de pagamento, e não por linha: o clube todo em julho é uma só. */
+          const porDia = new Map<number, string[]>();
+          for (const c of aMarcar) {
+            const t = pagaEm(c.period, c.dueDate).getTime();
+            porDia.set(t, [...(porDia.get(t) ?? []), c.id]);
+          }
+          for (const [t, ids] of porDia) {
+            await db.charge.updateMany({
+              where: { id: { in: ids }, status: ChargeStatus.OPEN },
+              data: { status: ChargeStatus.SETTLED, settledAt: new Date(t), ...quemMudou(ctx, agora) },
+            });
+          }
         }
         /*
          * Sobrescrever: voltam a estar por pagar, como "Marcar como por pagar".
@@ -1238,7 +1271,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               method: input.metodo ?? PaymentMethod.CASH,
               status: PaymentStatus.PAID,
               provider: "manual",
-              paidAt: agora,
+              paidAt: pagaEm(c.period, c.dueDate),
             })),
           });
         }
@@ -1356,8 +1389,14 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
      * consola perguntar.
      */
     metodo: MetodoManual = PaymentMethod.CASH,
+    /**
+     * O dia em que foi paga (`AAAA-MM-DD`), quando se marca como paga. Omitido
+     * é hoje. Ver `dia-do-pagamento.ts`.
+     */
+    dia?: string,
   ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para alterar mensalidades");
+    const pagaEm = status === ChargeStatus.SETTLED ? lerDiaDoPagamento(dia) : null;
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const charge = await db.charge.findFirst({
@@ -1378,11 +1417,11 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               method: metodo,
               status: PaymentStatus.PAID,
               provider: "manual",
-              paidAt: new Date(),
+              paidAt: pagaEm,
             },
           });
         }
-        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: new Date(), ...quemMudou(ctx) } });
+        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: pagaEm, ...quemMudou(ctx) } });
       } else {
         // Voltar a "por pagar" ou anular: um pagamento manual anterior passa a
         // reembolsado, para o registo não continuar a dizer que foi pago.
@@ -3107,6 +3146,15 @@ export type MetodoManual = (typeof METODOS_MANUAIS)[number];
  */
 function quemMudou(ctx: RequestContext, quando: Date = new Date()) {
   return { statusChangedById: ctx.userId, statusChangedAt: quando };
+}
+
+/** O dia do pagamento escolhido na consola, com a recusa dita em português. */
+function lerDiaDoPagamento(dia: string | undefined, agora = new Date()): Date {
+  try {
+    return instanteDoPagamento(dia, agora);
+  } catch (e) {
+    throw new BadRequestException(e instanceof Error ? e.message : "A data do pagamento não é válida");
+  }
 }
 
 /** As equipas da época corrente, com os seus meses. Só no modo por escalão interessam. */

@@ -202,6 +202,11 @@ class CreateManualFeesDto {
   @IsIn([...METODOS_MANUAIS])
   metodo?: MetodoManual;
 
+  /** O dia em que foram pagas. Omitido, cada uma no mês dela. Ver `dia-do-pagamento.ts`. */
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "Data do pagamento inválida (esperado AAAA-MM-DD)" })
+  paidOn?: string;
+
   @IsArray()
   @ArrayMaxSize(24)
   @Matches(/^\d{4}-\d{2}$/, { each: true, message: "Mês inválido (esperado AAAA-MM)" })
@@ -225,6 +230,11 @@ class SetChargeStatusDto {
   @IsOptional()
   @IsIn([...METODOS_MANUAIS])
   method?: MetodoManual;
+
+  /** O dia em que foi paga, ao marcar como paga. Omitido é hoje. */
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "Data do pagamento inválida (esperado AAAA-MM-DD)" })
+  paidOn?: string;
 }
 
 /** O preço, em cêntimos — entre 1 € e 1000 €, validado outra vez no serviço. */
@@ -1005,7 +1015,7 @@ export class AcademyController {
 
   @Patch("charges/:id/status")
   setChargeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetChargeStatusDto) {
-    return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus, body.method);
+    return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus, body.method, body.paidOn);
   }
 
   /**

@@ -145,11 +145,15 @@ export function FeeStatusControl({ fee }: { fee: Fee }) {
     await gravar(value);
   }
 
-  async function gravar(value: string, method?: MetodoManual) {
+  async function gravar(value: string, method?: MetodoManual, paidOn?: string) {
     setBusy(true);
     setErro(null);
     try {
-      await apiPatch(`/api/charges/${fee.id}/status`, { status: value, ...(method ? { method } : {}) });
+      await apiPatch(`/api/charges/${fee.id}/status`, {
+        status: value,
+        ...(method ? { method } : {}),
+        ...(paidOn ? { paidOn } : {}),
+      });
       setAPagar(false);
       await reloadFees();
     } catch (err) {
@@ -266,8 +270,10 @@ export function FeeStatusControl({ fee }: { fee: Fee }) {
                 titulo={`${shortName(athleteById(fee.athleteId)?.name ?? "")} · ${
                   fee.extra ? (fee.title ?? "Cobrança") : periodLabel(fee.period)
                 } · ${money(fee.amountCents)}`}
+                period={fee.period}
+                dueDate={fee.dueDate}
                 busy={busy}
-                onConfirm={(m) => void gravar("SETTLED", m)}
+                onConfirm={(m, dia) => void gravar("SETTLED", m, dia)}
                 onClose={() => setAPagar(false)}
               />
             )}

@@ -154,8 +154,8 @@ export default function Finance() {
                   [
                     data.mensalidadesMes > 0 ? `${euros(data.mensalidadesMes)} de mensalidades e cobranças` : null,
                     (data.quotasMes ?? 0) > 0 ? `${euros(data.quotasMes ?? 0)} de quotas` : null,
-                    /* O que entrou este mês de meses anteriores conta no mês dele: diz-se, para bater com o banco. */
-                    (data.recebidoDeMesesAnteriores ?? 0) > 0 ? `mais ${euros(data.recebidoDeMesesAnteriores ?? 0)} pagos este mês de meses anteriores` : null,
+                    /* Já está nas receitas (contam no mês em que foram pagas): diz-se de onde veio. */
+                    (data.recebidoDeMesesAnteriores ?? 0) > 0 ? `${euros(data.recebidoDeMesesAnteriores ?? 0)} de meses anteriores` : null,
                   ]
                     .filter(Boolean)
                     .join(" · ") || null,
@@ -192,7 +192,7 @@ export default function Finance() {
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             {/* A evolução — seis meses de entradas e saídas, lado a lado. */}
             <Panel>
-              <PanelHead title="Receitas e despesas" hint="últimos 6 meses · mensalidades e quotas no mês a que respeitam" />
+              <PanelHead title="Receitas e despesas" hint="últimos 6 meses · mensalidades e quotas no mês em que foram pagas" />
               <MonthlyChart monthly={data.monthly} />
             </Panel>
 

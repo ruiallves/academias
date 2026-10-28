@@ -107,17 +107,19 @@ export class FinanceService {
       const inicioDaSerie = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
       const serieDesde = maisTarde(inicioDaSerie, desde);
       /*
-       * As mensalidades e as quotas contam no mês a que dizem respeito, e não no
-       * dia em que foram pagas: a de setembro paga a 12 de outubro é receita de
-       * setembro. O saldo continua pelo dia do pagamento. Ver `mes-da-receita.ts`.
+       * As mensalidades e as quotas contam no mês em que foram pagas: o
+       * dinheiro entra nas contas do clube no dia em que entrou. A de julho
+       * paga hoje é receita deste mês, como no saldo.
        *
-       * Lêem-se as que respeitam aos seis meses da série e as pagas este mês
-       * (para dizer quanto entrou de meses anteriores), sempre depois do saldo
+       * Entre 25/10 e 28/10/2026 contaram no mês a que respeitavam; o Rui
+       * voltou a pô-las no mês do pagamento (28/10). Para registar uma
+       * mensalidade antiga no mês certo, escolhe-se a data do pagamento ao
+       * marcá-la paga (ver `billing/dia-do-pagamento.ts`).
+       *
+       * Lêem-se as pagas nos seis meses da série, sempre depois do saldo
        * inicial: o que foi pago antes dele já está nele.
        */
-      const primeiroMes = chaveDoMes(inicioDaSerie);
-      const pagasDesde = desde ? { settledAt: { gte: desde } } : {};
-      const daSerieOuPagasEsteMes = { OR: [{ period: { gte: primeiroMes } }, { settledAt: { gte: desdeOMes } }] };
+      const pagasNaSerie = { settledAt: { gte: serieDesde } };
 
       const [totais, porVir, movimentosDaSerie, chargesDaSerie, autoTotal, catalogo, quotasDaSerie, quotasTotal] = await Promise.all([
         // Receitas e despesas do período inteiro, numa pergunta em vez de duas.
@@ -154,7 +156,7 @@ export class FinanceService {
         // As mensalidades pagas — a fonte automática. Ver a regra 2 do topo.
         settings.includeFees
           ? db.charge.findMany({
-              where: { status: "SETTLED", ...pagasDesde, ...daSerieOuPagasEsteMes },
+              where: { status: "SETTLED", ...pagasNaSerie },
               select: { amountCents: true, settledAt: true, period: true },
             })
           : Promise.resolve([]),
@@ -173,7 +175,7 @@ export class FinanceService {
         // As quotas dos sócios pagas: a outra fonte automática, com a mesma regra.
         settings.includeQuotas
           ? db.memberFee.findMany({
-              where: { status: "SETTLED", ...pagasDesde, ...daSerieOuPagasEsteMes },
+              where: { status: "SETTLED", ...pagasNaSerie },
               select: { amountCents: true, settledAt: true, period: true, coversFrom: true },
             })
           : Promise.resolve([]),
@@ -190,20 +192,21 @@ export class FinanceService {
 
       const somaCharges = (rows: { amountCents: number }[]) => rows.reduce((s, c) => s + c.amountCents, 0);
       const autoDesdeOInicial = autoTotal;
-      /* O mês a que cada uma respeita. Ver `mesDaReceita`. */
-      const mesDe = (c: { period: string; settledAt: Date | null; coversFrom?: Date | null }) =>
-        mesDaReceita(c.period, { coversFrom: c.coversFrom ?? null, pagaEm: c.settledAt });
+      /* O mês em que cada uma foi paga, na hora do clube. */
+      const mesDe = (c: { settledAt: Date | null }) => (c.settledAt ? chaveDoMes(c.settledAt) : null);
       const mesAtual = chaveDoMes(hoje);
       const autoMes = somaCharges(chargesDaSerie.filter((c) => mesDe(c) === mesAtual));
       const quotasMes = somaCharges(quotasDaSerie.filter((q) => mesDe(q) === mesAtual));
       /*
-       * O que entrou este mês mas respeita a meses anteriores (a mensalidade de
-       * setembro paga em outubro). Não conta nas receitas deste mês; diz-se à
-       * parte, para quem compara com o banco saber porque é que os números não
-       * batem.
+       * Das receitas deste mês, quanto é de mensalidades e quotas de meses
+       * anteriores (a de julho paga hoje). Já está nas receitas; diz-se à
+       * parte para se perceber de onde veio.
        */
       const deMesesAnteriores = somaCharges(
-        [...chargesDaSerie, ...quotasDaSerie].filter((c) => c.settledAt && c.settledAt >= desdeOMes && (mesDe(c) ?? mesAtual) < mesAtual),
+        [...chargesDaSerie, ...quotasDaSerie].filter(
+          (c: { period: string; settledAt: Date | null; coversFrom?: Date | null }) =>
+            mesDe(c) === mesAtual && (mesDaReceita(c.period, { coversFrom: c.coversFrom ?? null, pagaEm: c.settledAt }) ?? mesAtual) < mesAtual,
+        ),
       );
 
       /* --------------------------------------------------------- o mês --- */
@@ -254,7 +257,7 @@ export class FinanceService {
         const b = balde(t.occurredAt);
         if (b) b[t.kind === "INCOME" ? "income" : "expense"] += t.amountCents;
       }
-      // As mensalidades e as quotas no mês a que respeitam, não no do pagamento.
+      // As mensalidades e as quotas no mês em que foram pagas.
       for (const c of [...chargesDaSerie, ...quotasDaSerie]) {
         const chave = mesDe(c);
         const b = chave ? meses.get(chave) : undefined;
@@ -271,7 +274,7 @@ export class FinanceService {
         resultadoMes: receitasMes + autoMes + quotasMes - despesasMes,
         mensalidadesMes: autoMes,
         quotasMes,
-        /** Pago este mês, mas de meses anteriores: não está nas receitas deste mês. */
+        /** Das receitas deste mês, o que é de mensalidades e quotas de meses anteriores. */
         recebidoDeMesesAnteriores: deMesesAnteriores,
         receitasPrevistas,
         despesasPrevistas,

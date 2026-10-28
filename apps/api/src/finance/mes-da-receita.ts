@@ -3,13 +3,12 @@ import { partesNoFuso } from "../common/fuso";
 /**
  * O mês a que uma mensalidade ou uma quota diz respeito.
  *
- * ## Porque é que as Contas não usam o dia do pagamento
+ * ## Onde se usa
  *
- * Usavam. Uma mensalidade de setembro paga a 12 de outubro entrava nas
- * receitas de outubro, e um clube queixou-se (25/10/2026): para quem gere o
- * clube, esse dinheiro é de setembro. O dia do pagamento continua a ser o que
- * conta para o **saldo** (é o que o banco diz); as receitas do mês e o gráfico
- * contam pelo mês a que a mensalidade respeita.
+ * As receitas das Contas contam pelo dia do pagamento (decisão do Rui a
+ * 28/10/2026; entre 25/10 e 28/10 contaram por este mês). Isto serve agora só
+ * para dizer de que mês é o que entrou: o "de meses anteriores" do painel e o
+ * `referenteA` dos movimentos.
  *
  * Vive aqui, sem base de dados, para se poder provar sozinho
  * (`npm run test:mes-da-receita`).

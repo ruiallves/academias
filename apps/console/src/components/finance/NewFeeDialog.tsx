@@ -13,11 +13,13 @@ import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
 import { paraCentimos } from "./ChargeFamilyDialog";
 import { CustoDoPagamento } from "./CustoDoPagamento";
-import { EscolherMetodo, type MetodoManual } from "./MetodoDePagamento";
+import { DataDoPagamento, diaValido, EscolherMetodo, hojeISO, type MetodoManual } from "./MetodoDePagamento";
 
 type Alvo = "atletas" | "equipas" | "todos";
 type ModoValor = "preco" | "fixo";
 type Estado = "OPEN" | "SETTLED";
+/** Lançadas pagas: cada uma no mês dela, ou todas no mesmo dia. */
+type Quando = "mes" | "dia";
 
 type Resultado = {
   criadas: number;
@@ -101,6 +103,8 @@ export function NewFeeDialog({
   const [modo, setModo] = useState<ModoValor>("preco");
   const [estado, setEstado] = useState<Estado>("OPEN");
   const [metodo, setMetodo] = useState<MetodoManual | null>(null);
+  const [quando, setQuando] = useState<Quando>("mes");
+  const [dia, setDia] = useState(hojeISO);
   const [valor, setValor] = useState("");
   const [ano, setAno] = useState(new Date().getFullYear());
   const [meses, setMeses] = useState<Set<string>>(new Set());
@@ -144,7 +148,11 @@ export function NewFeeDialog({
    */
   const valorValido = modo === "preco" || (cents !== null && (cents === 0 || cents >= 50));
   // Lançadas como pagas, tem de se dizer como: não há método por omissão.
-  const valido = abrangidos.length > 0 && meses.size > 0 && valorValido && (estado === "OPEN" || metodo !== null);
+  const valido =
+    abrangidos.length > 0 &&
+    meses.size > 0 &&
+    valorValido &&
+    (estado === "OPEN" || (metodo !== null && (quando === "mes" || diaValido(dia))));
 
   function mudarAlvo(novo: Alvo) {
     setAlvo(novo);
@@ -212,6 +220,8 @@ export function NewFeeDialog({
         ...(modo === "fixo" && cents !== null ? { amountCents: cents } : {}),
         estado,
         ...(estado === "SETTLED" && metodo ? { metodo } : {}),
+        // Sem dia, o servidor põe cada uma no mês dela.
+        ...(estado === "SETTLED" && quando === "dia" ? { paidOn: dia } : {}),
         periods: [...meses].sort(),
         notes: nota.trim() || undefined,
         ...(sobrescreverPagas !== undefined ? { sobrescreverPagas } : {}),
@@ -410,12 +420,44 @@ export function NewFeeDialog({
           <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
             {estado === "OPEN"
               ? "A família é avisada na app e pode pagar por lá."
-              : "Ficam registadas como pagas, com a data de hoje. A família não recebe aviso."}
+              : "Ficam registadas como pagas. A família não recebe aviso."}
           </p>
           {estado === "SETTLED" && (
             <div className="mt-2.5">
               <p className="mb-1.5 text-meta font-medium text-ink">Como foram pagas</p>
               <EscolherMetodo value={metodo} onChange={setMetodo} />
+            </div>
+          )}
+          {/*
+            Quando foram pagas. Por omissão, cada uma no mês dela: quem regista
+            julho em outubro quer julho nas contas de julho.
+          */}
+          {estado === "SETTLED" && (
+            <div className="mt-4">
+              <p className="mb-1.5 text-meta font-medium text-ink">Quando foram pagas</p>
+              <Segmented<Quando>
+                value={quando}
+                onChange={setQuando}
+                label="Quando foram pagas"
+                options={[
+                  { value: "mes", label: "No mês de cada uma" },
+                  { value: "dia", label: "Num dia certo" },
+                ]}
+              />
+              {quando === "mes" ? (
+                <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                  Cada uma entra nas contas do mês dela. As de meses que já passaram ficam pagas no dia de vencimento, as
+                  deste mês com a data de hoje.
+                </p>
+              ) : (
+                <div className="mt-2.5">
+                  <DataDoPagamento
+                    value={dia}
+                    onChange={setDia}
+                    plural={meses.size !== 1 || abrangidos.length !== 1}
+                  />
+                </div>
+              )}
             </div>
           )}
         </fieldset>
