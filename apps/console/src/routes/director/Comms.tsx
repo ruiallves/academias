@@ -4,7 +4,7 @@ import { Bar, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } f
 import { NewAnnouncementDialog } from "@/components/NewAnnouncementDialog";
 import { SondagensPanel } from "@/components/Sondagens";
 import { can } from "@/lib/permissions";
-import { Megaphone, Pencil, Send, Trash2 } from "@/lib/icons";
+import { Megaphone, Paperclip, Pencil, Send, Trash2 } from "@/lib/icons";
 import { coachById, listAnnouncements, listGuardians, today } from "@/lib/api";
 import { apiDelete } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
@@ -109,6 +109,31 @@ export default function Comms() {
                     </div>
 
                     <p className="mb-3 max-w-[60ch] whitespace-pre-wrap text-body text-ink-2">{a.body}</p>
+
+                    {a.files.length > 0 && (
+                      <ul className="mb-3 flex flex-wrap gap-x-4 gap-y-1.5">
+                        {a.files.map((f) => (
+                          <li key={f.key} className="min-w-0">
+                            {f.url ? (
+                              <a
+                                href={f.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex min-w-0 items-center gap-1.5 text-meta font-medium text-signal-ink hover:underline"
+                              >
+                                <Paperclip className="size-3.5 shrink-0" strokeWidth={1.75} />
+                                <span className="truncate">{f.name}</span>
+                              </a>
+                            ) : (
+                              <span className="flex min-w-0 items-center gap-1.5 text-meta text-ink-3">
+                                <Paperclip className="size-3.5 shrink-0" strokeWidth={1.75} />
+                                <span className="truncate">{f.name}</span>
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                       {authorName && (

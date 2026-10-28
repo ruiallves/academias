@@ -1,4 +1,24 @@
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, Length } from "class-validator";
+import { Type } from "class-transformer";
+import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, Length, MaxLength, ValidateNested } from "class-validator";
+
+/** Pedir para carregar um anexo: só o tipo, que decide a extensão da chave. */
+export class AnnouncementUploadDto {
+  @IsString()
+  @MaxLength(120)
+  contentType!: string;
+}
+
+/** Um anexo: a chave que o upload devolveu e o nome do ficheiro no computador de quem o carregou. */
+export class AnnouncementFileDto {
+  @IsString()
+  @MaxLength(200)
+  key!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  name?: string;
+}
 
 /**
  * O corpo de uma comunicação.
@@ -36,6 +56,14 @@ export class CreateAnnouncementDto {
   @IsString({ each: true })
   @Length(1, 40, { each: true })
   teamIds?: string[];
+
+  /** Os anexos já carregados (PDF, fotografias, Word). O serviço confirma que chegaram. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => AnnouncementFileDto)
+  files?: AnnouncementFileDto[];
 }
 
 /**
@@ -44,6 +72,8 @@ export class CreateAnnouncementDto {
  * Só o texto muda — **não o público**. Quem já recebeu, recebeu; mudar a audiência
  * de um aviso enviado significaria notificar uns e des-notificar outros, o que não
  * existe. Corrige-se a mensagem, não para quem foi.
+ *
+ * Os anexos mudam: `files` é a lista inteira (ausente = ficam como estavam).
  */
 export class UpdateAnnouncementDto {
   @IsString()
@@ -53,4 +83,11 @@ export class UpdateAnnouncementDto {
   @IsString()
   @Length(1, 2000)
   body!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => AnnouncementFileDto)
+  files?: AnnouncementFileDto[];
 }

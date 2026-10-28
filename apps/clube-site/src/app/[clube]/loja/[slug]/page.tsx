@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Package, ShieldCheck, Truck } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { fonte } from "@/dados/fonte";
 import { clubeOu404 } from "@/lib/clube";
 import { euro } from "@/lib/formatar";
+import { esgotado, fotosDoProduto } from "@/lib/loja";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
-import { TituloSeccao } from "@/componentes/Seccao";
+import { servicosDaLoja } from "@/componentes/loja/servicos";
 import { Galeria } from "./Galeria";
 import { Comprar } from "./Comprar";
 
@@ -20,80 +21,113 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return p ? { title: p.name, description: p.description, openGraph: { images: p.image ? [{ url: p.image }] : undefined } } : {};
 }
 
-/** Um produto: fotografias, preço, tamanho, juntar ao carrinho, e como se entrega. */
+/**
+ * Um artigo, ao jeito das lojas de equipamento: as fotografias em grande à
+ * esquerda e, à direita, uma coluna que fica presa enquanto se vê a
+ * galeria, com o nome, o preço, o tamanho e o botão. Como se recebe e como
+ * se paga abre por baixo, para não empurrar o botão para fora do ecrã.
+ */
 export default async function Produto({ params }: Props) {
   const clube = await clubeOu404(params);
   const { slug: id } = await params;
   const produto = await fonte.produto(clube.slug, id);
   if (!produto) notFound();
-  const outros = (await fonte.produtos(clube.slug)).filter((p) => p.id !== produto.id && p.category === produto.category).slice(0, 4);
+  const todos = await fonte.produtos(clube.slug);
+  // Primeiro os da mesma categoria, depois os outros; os esgotados no fim.
+  const outros = todos
+    .filter((p) => p.id !== produto.id)
+    .map((p, i) => ({ p, chave: (esgotado(p) ? 2 : 0) + (p.category === produto.category ? 0 : 1), i }))
+    .sort((a, b) => a.chave - b.chave || a.i - b.i)
+    .slice(0, 8)
+    .map((x) => x.p);
   const loja = clube.loja;
   const compraOnline = loja?.compraOnline ?? false;
+  const { entrega, pagamento } = servicosDaLoja(loja);
 
   return (
     <>
-      <div className="container-site pt-8">
-        <Link href="/loja" className="inline-flex h-11 items-center gap-1.5 text-sm font-semibold text-ink-2 hover:text-ink">
-          <ArrowLeft size={16} aria-hidden />
-          Loja
-        </Link>
-      </div>
-      <div className="container-site mt-4 grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:gap-14">
-        <Galeria imagens={produto.images?.length ? produto.images : produto.image ? [produto.image] : []} nome={produto.name} />
-        <div className="lg:py-6">
-          <p className="eyebrow text-signal-ink">{produto.category}</p>
-          <h1 className="mt-2 text-3xl sm:text-4xl">{produto.name}</h1>
-          <p className="display mt-4 text-4xl tabular">{euro(produto.price)}</p>
-          <p className="mt-6 text-ink-2">{produto.description}</p>
+      <nav aria-label="Caminho" className="container-site pt-5 sm:pt-6">
+        <ol className="flex items-center gap-2 text-sm text-ink-3">
+          <li>
+            <Link href="/loja" className="inline-flex h-11 items-center font-medium hover:text-ink">
+              Loja
+            </Link>
+          </li>
+          <li aria-hidden>/</li>
+          <li>
+            <Link href={`/loja?categoria=${encodeURIComponent(produto.category)}`} className="inline-flex h-11 items-center font-medium hover:text-ink">
+              {produto.category}
+            </Link>
+          </li>
+        </ol>
+      </nav>
+
+      <div className="container-site mt-1 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:gap-12 xl:gap-16">
+        <Galeria imagens={fotosDoProduto(produto)} nome={produto.name} />
+
+        <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--topo)+1.5rem)]">
+          <p className="text-sm font-semibold text-ink-3">{produto.category}</p>
+          <h1 className="titulo-loja mt-2 text-[clamp(2.5rem,5vw,3.75rem)]">{produto.name}</h1>
+          <p className="mt-5 text-2xl font-bold tabular text-ink">{euro(produto.price)}</p>
 
           <Comprar slug={clube.slug} produto={produto} compraOnline={compraOnline} />
 
-          <ul className="mt-8 space-y-2 border-t border-line pt-6 text-sm text-ink-2">
-            {loja?.levantamento && (
-              <li className="flex gap-2">
-                <Package size={18} className="shrink-0 text-ink-3" aria-hidden />
-                <span>
-                  Levantamento{loja.levantamento.local ? ` em ${loja.levantamento.local}` : " no clube"}, sem custos
-                  {loja.levantamento.nota ? `. ${loja.levantamento.nota}` : ""}
-                </span>
-              </li>
+          {produto.description && <p className="mt-10 text-[1.0625rem] leading-relaxed text-ink-2">{produto.description}</p>}
+
+          <div className="mt-8 border-t border-line">
+            <Abrir titulo={entrega.length > 1 ? "Entrega e levantamento" : entrega[0].titulo} aberto>
+              <ul className="space-y-3">
+                {entrega.map((s) => (
+                  <li key={s.titulo}>
+                    {entrega.length > 1 && <p className="font-semibold text-ink">{s.titulo}</p>}
+                    <p>{s.texto}</p>
+                  </li>
+                ))}
+              </ul>
+            </Abrir>
+            {pagamento && (
+              <Abrir titulo="Pagamento">
+                <p className="font-semibold text-ink">{pagamento.titulo}</p>
+                <p>{pagamento.texto}</p>
+              </Abrir>
             )}
-            {loja?.envio && (
-              <li className="flex gap-2">
-                <Truck size={18} className="shrink-0 text-ink-3" aria-hidden />
-                <span>
-                  Envio pelo correio: {loja.envio.preco === 0 ? "grátis" : euro(loja.envio.preco)}
-                  {loja.envio.gratisAPartirDe !== null && loja.envio.preco > 0 ? `, grátis a partir de ${euro(loja.envio.gratisAPartirDe)}` : ""}
-                  {loja.envio.nota ? `. ${loja.envio.nota}` : ""}
-                </span>
-              </li>
-            )}
-            {!loja?.levantamento && !loja?.envio && (
-              <li className="flex gap-2">
-                <Package size={18} className="shrink-0 text-ink-3" aria-hidden />
-                Levantamento na sede do clube
-              </li>
-            )}
-            {compraOnline && (
-              <li className="flex gap-2">
-                <ShieldCheck size={18} className="shrink-0 text-ink-3" aria-hidden />
-                Pagamento por MB WAY ou Multibanco, direto para o clube
-              </li>
-            )}
-          </ul>
+          </div>
         </div>
       </div>
 
       {outros.length > 0 && (
-        <section className="container-site mt-20 border-t border-line pt-12">
-          <TituloSeccao eyebrow={produto.category} titulo="Também na loja" href="/loja" hrefLabel="Ver a loja" />
-          <div className="mt-8 grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-4">
-            {outros.map((p) => (
-              <CartaoProduto key={p.id} produto={p} />
-            ))}
+        <section className="mt-24 sm:mt-32">
+          <div className="container-site flex items-end justify-between gap-4">
+            <h2 className="titulo-loja text-[clamp(2rem,4vw,3rem)]">Também na loja</h2>
+            <Link href="/loja" className="inline-flex h-11 shrink-0 items-center font-semibold text-ink underline decoration-2 underline-offset-[6px] hover:decoration-signal">
+              Ver tudo
+            </Link>
+          </div>
+          {/* Uma fila que se arrasta: no telemóvel a seguinte espreita à direita; no computador cabem quatro certas. */}
+          <div className="container-site mt-8">
+            <ul className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto scroll-px-4 px-4 pb-4 [scrollbar-width:thin] sm:mx-0 sm:scroll-px-0 sm:gap-4 sm:px-0">
+              {outros.map((p) => (
+                <li key={p.id} className="w-[46%] shrink-0 snap-start sm:w-[calc((100%-2rem)/3)] lg:w-[calc((100%-3rem)/4)]">
+                  <CartaoProduto produto={p} sizes="(min-width: 1024px) 290px, 46vw" />
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
       )}
     </>
+  );
+}
+
+/** Uma secção que abre e fecha, sem JavaScript. */
+function Abrir({ titulo, aberto = false, children }: { titulo: string; aberto?: boolean; children: React.ReactNode }) {
+  return (
+    <details open={aberto} className="group/abrir border-b border-line">
+      <summary className="flex min-h-14 list-none items-center justify-between gap-4 py-3 text-[1.0625rem] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+        {titulo}
+        <ChevronDown size={20} className="shrink-0 transition-transform duration-200 group-open/abrir:rotate-180" aria-hidden />
+      </summary>
+      <div className="pb-5 text-[0.9375rem] text-ink-2">{children}</div>
+    </details>
   );
 }

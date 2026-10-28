@@ -1,9 +1,10 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { listAthletes, listGuardians, listTeams } from "@/lib/api";
 import { guessMaxAge, teamAgeLabel } from "@/lib/team-age";
 import { can, type Session } from "@/lib/permissions";
+import { FileText, Upload, X } from "@/lib/icons";
 import type { Announcement } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx } from "./primitives";
@@ -57,6 +58,28 @@ const AUDIENCE_META: { value: Audience; label: string; hint: string }[] = [
 const publicosDe = (session: Session) =>
   AUDIENCE_META.filter((a) => a.value !== "members" || can(session, "member:read"));
 
+/** O que o servidor aceita (`DOC_TIPOS`). O `accept` é uma ajuda; quem decide é ele. */
+const ACEITA =
+  "image/jpeg,image/png,image/webp,application/pdf,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MAX_ANEXOS = 10;
+
+type Anexo = { key: string; name: string };
+
+/**
+ * Carrega um anexo: o servidor autoriza a chave, o ficheiro vai direto do browser
+ * para o armazenamento, e o aviso só aponta para ele ao publicar.
+ */
+async function carregarAnexo(file: File): Promise<Anexo> {
+  const a = await apiPost<{ url: string; headers?: Record<string, string>; key: string; maxBytes: number }>(
+    "/api/announcements/anexos/upload",
+    { contentType: file.type },
+  );
+  if (file.size > a.maxBytes) throw new Error(`«${file.name}» tem mais de ${Math.round(a.maxBytes / 1024 / 1024)} MB`);
+  const r = await fetch(a.url, { method: "PUT", headers: { "Content-Type": file.type, ...(a.headers ?? {}) }, body: file });
+  if (!r.ok) throw new Error(`Não foi possível carregar «${file.name}»`);
+  return { key: a.key, name: file.name };
+}
+
 export function NewAnnouncementDialog({
   session,
   editing,
@@ -81,6 +104,32 @@ export function NewAnnouncementDialog({
   const [body, setBody] = useState(editing?.body ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Os anexos já carregados. Ao editar, começa com os que o aviso tem. */
+  const [anexos, setAnexos] = useState<Anexo[]>(() => (editing?.files ?? []).map((f) => ({ key: f.key, name: f.name })));
+  /** Os nomes dos que estão a subir agora. */
+  const [aCarregar, setACarregar] = useState<string[]>([]);
+  const picker = useRef<HTMLInputElement>(null);
+  const totalAnexos = anexos.length + aCarregar.length;
+
+  async function escolherAnexos(lista: File[]) {
+    const files = lista.slice(0, Math.max(0, MAX_ANEXOS - totalAnexos));
+    if (files.length === 0) return;
+    setError(null);
+    setACarregar((xs) => [...xs, ...files.map((f) => f.name)]);
+    for (const file of files) {
+      try {
+        const a = await carregarAnexo(file);
+        setAnexos((xs) => [...xs, a]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Não foi possível carregar «${file.name}»`);
+      } finally {
+        setACarregar((xs) => {
+          const i = xs.indexOf(file.name);
+          return i < 0 ? xs : [...xs.slice(0, i), ...xs.slice(i + 1)];
+        });
+      }
+    }
+  }
 
   /*
    * O treinador escolhe entre os pais e os atletas das suas equipas — os dois
@@ -111,7 +160,7 @@ export function NewAnnouncementDialog({
     return guardians.filter((g) => g.athleteIds.some((id) => alvo.has(id))).length;
   }, [athletes, guardians, teamIds, audience]);
 
-  const valid = title.trim().length >= 2 && body.trim().length >= 1;
+  const valid = title.trim().length >= 2 && body.trim().length >= 1 && aCarregar.length === 0;
 
   function toggleTeam(id: string) {
     setTeamIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
@@ -124,12 +173,14 @@ export function NewAnnouncementDialog({
     setError(null);
     try {
       if (isEditing) {
-        await apiPatch(`/api/announcements/${editing.id}`, { title: title.trim(), body: body.trim() });
+        // A lista inteira: o que se tirou daqui sai do aviso.
+        await apiPatch(`/api/announcements/${editing.id}`, { title: title.trim(), body: body.trim(), files: anexos });
       } else {
         await apiPost("/api/announcements", {
           title: title.trim(),
           body: body.trim(),
           audience,
+          ...(anexos.length > 0 ? { files: anexos } : {}),
           // Só quando há recorte, e só quando o recorte se aplica: mandar
           // `teamIds` com "Treinadores" é um pedido que o servidor recusa.
           ...(porEscalao && teamIds.length > 0 ? { teamIds } : {}),
@@ -254,6 +305,67 @@ export function NewAnnouncementDialog({
             required
           />
         </DialogField>
+
+        {/*
+          Os anexos. Não vão num `DialogField`: o rótulo dele é um <label>, e
+          nada que se carrega pode viver dentro de um.
+        */}
+        <div>
+          <p className="mb-1.5 text-meta font-medium text-ink-2">Anexos</p>
+          {totalAnexos > 0 && (
+            <ul className="mb-2 overflow-hidden rounded-[var(--radius-control)] border border-line">
+              {anexos.map((f) => (
+                <li key={f.key} className="flex items-center gap-2 border-b border-line px-3 py-2 last:border-0">
+                  <FileText className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
+                  <span className="min-w-0 flex-1 truncate text-meta text-ink">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAnexos((xs) => xs.filter((x) => x.key !== f.key))}
+                    disabled={busy}
+                    aria-label={`Tirar ${f.name}`}
+                    className="shrink-0 rounded p-1 text-ink-4 hover:bg-sunken hover:text-ink disabled:opacity-50"
+                  >
+                    <X className="size-3.5" strokeWidth={2} />
+                  </button>
+                </li>
+              ))}
+              {aCarregar.map((nome, i) => (
+                <li key={`${nome}-${i}`} className="flex items-center gap-2 border-b border-line px-3 py-2 last:border-0">
+                  <FileText className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
+                  <span className="min-w-0 flex-1 truncate text-meta text-ink-3">{nome}</span>
+                  <span className="shrink-0 text-[11px] text-ink-4">a carregar…</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            accept={ACEITA}
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(e) => {
+              // Copiar antes de limpar: a `FileList` fica vazia com `value = ""`.
+              const escolhidos = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              void escolherAnexos(escolhidos);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => picker.current?.click()}
+            disabled={busy || totalAnexos >= MAX_ANEXOS}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-dashed border-line-strong text-meta font-medium text-ink-3 transition-colors duration-[120ms] hover:border-ink-3 hover:text-ink disabled:opacity-50"
+          >
+            <Upload className="size-4" strokeWidth={1.75} />
+            Juntar PDF, fotografias ou documentos
+          </button>
+          <p className="mt-1.5 text-[11px] text-ink-4">
+            Imagens (JPEG, PNG, WebP), PDF ou Word, até 50 MB cada e {MAX_ANEXOS} por aviso. Quem recebe o aviso abre-os na app.
+          </p>
+        </div>
 
         {error && (
           <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>

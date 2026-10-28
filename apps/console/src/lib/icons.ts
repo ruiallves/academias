@@ -23,6 +23,8 @@ export {
   Megaphone,
   Gauge,
   FileText,
+  /* Os anexos de um aviso. */
+  Paperclip,
   GraduationCap,
   /* Assinar as condições da subscrição — a caneta é o gesto de assinar. */
   PenLine,

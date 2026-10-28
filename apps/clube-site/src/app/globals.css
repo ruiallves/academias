@@ -53,6 +53,8 @@
   --signal-on-rgb: 255 255 255;
   --signal-lift: #277a72;
   --signal-deep: #0b4d46;
+  /* A altura do cabeçalho fixo, para o que fica preso por baixo dele (a coluna do artigo na loja). */
+  --topo: 6.75rem;
 }
 
 /* Tema Holofote: a estrutura do fcporto.pt com as cores claras da casa.
@@ -60,7 +62,11 @@
    branco é o que separa a barra lateral do conteúdo. */
 [data-layout="holofote"] {
   --color-canvas: #ffffff;
+  --topo: 3.5rem;
   background-color: var(--color-canvas);
+  @media (width >= 64rem) {
+    --topo: 2.75rem;
+  }
 }
 
 @layer base {
@@ -141,6 +147,18 @@
   text-transform: uppercase;
 }
 
+/* O título da loja: a mesma Archivo, mais estreita e mais pesada, ao jeito
+   das lojas de equipamento desportivo. Só na loja, para o resto do site
+   continuar a falar como cartaz de jogo. */
+@utility titulo-loja {
+  font-variation-settings: "wdth" 72;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  line-height: 0.86;
+  text-transform: uppercase;
+  color: var(--color-ink);
+}
+
 /* A etiqueta pequena por cima de um título: "Notícias", "Próximo jogo". */
 @utility eyebrow {
   font-size: 0.75rem;
@@ -166,6 +184,19 @@
 
 @keyframes socio-entrar {
   from { opacity: 0; transform: translateY(8px); }
+}
+
+/* A loja: o aviso "no carrinho" desce do topo; a barra de compra do telemóvel sobe do fundo. */
+@keyframes loja-descer {
+  from { opacity: 0; transform: translateY(-12px); }
+}
+@keyframes loja-subir {
+  from { transform: translateY(100%); }
+}
+
+/* Um tamanho esgotado: riscado na diagonal, como nas lojas de desporto. */
+.tamanho-esgotado {
+  background-image: linear-gradient(to top right, transparent calc(50% - 0.5px), var(--color-line-strong) calc(50% - 0.5px), var(--color-line-strong) calc(50% + 0.5px), transparent calc(50% + 0.5px));
 }
 
 /* ---------------------------------------------------------------------------

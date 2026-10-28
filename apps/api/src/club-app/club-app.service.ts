@@ -25,6 +25,7 @@ import {
 } from "../members/member-fees.service";
 import { PHOTO_BUCKET, PHOTO_TTL, PhotosService } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
+import { anexosDasNotificacoes, assinarAnexosDosAvisos, avisoDaNotificacao } from "../academy/anexos-do-aviso";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
 import { fichaDeSocioDaConta } from "../members/socio-menor";
 import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
@@ -292,13 +293,16 @@ export class ClubAppService {
     const userId = eu.userId;
     if (!userId) return [];
 
-    const rows = await this.prisma.runAs(academyId, (db) =>
-      db.notification.findMany({
+    const { rows, anexos } = await this.prisma.runAs(academyId, async (db) => {
+      const rows = await db.notification.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
         take: 50,
-      }),
-    );
+      });
+      return { rows, anexos: await anexosDasNotificacoes(db, rows) };
+    });
+    // Os anexos dos avisos aos sócios, com link de leitura (fora da transação).
+    const assinados = await assinarAnexosDosAvisos(this.storage, anexos);
 
     return rows.map((n) => {
       const payload = (n.payload ?? {}) as Record<string, unknown>;
@@ -316,6 +320,7 @@ export class ClubAppService {
         route: endereco("route"),
         readAt: n.readAt,
         createdAt: n.createdAt,
+        files: assinados.get(avisoDaNotificacao(n.payload) ?? "") ?? [],
       };
     });
   }

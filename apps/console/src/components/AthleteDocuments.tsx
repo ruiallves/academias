@@ -238,11 +238,17 @@ function DocumentoDialog({
 
   function escolher(lista: FileList | null) {
     if (!lista) return;
+    /*
+     * Copiar já. A `FileList` do seletor é viva: o `onChange` limpa o seletor a
+     * seguir (`value = ""`) e ela fica vazia. O atualizador de estado corre mais
+     * tarde, e lia-a vazia: o ficheiro escolhido não entrava na lista.
+     */
+    const novos = Array.from(lista);
     setError(null);
     setEscolhidos((antes) => {
       const juntos = [...antes];
       // O mesmo ficheiro escolhido duas vezes não entra duas vezes.
-      for (const f of Array.from(lista)) {
+      for (const f of novos) {
         if (!juntos.some((x) => x.name === f.name && x.size === f.size)) juntos.push(f);
       }
       return juntos;

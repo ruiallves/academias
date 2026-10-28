@@ -1,6 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { StorageService } from "../storage/storage.service";
+import { anexosDasNotificacoes, assinarAnexosDosAvisos, avisoDaNotificacao } from "../academy/anexos-do-aviso";
 
 export type NotificationInput = {
   academyId: string;
@@ -34,7 +36,11 @@ export class NotificationsService {
   private readonly log = new Logger(NotificationsService.name);
   private readonly channels: NotificationChannel[] = [];
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /** Para os links dos anexos dos avisos. Opcional só para os testes que constroem o serviço à mão. */
+    @Optional() private readonly storage?: StorageService,
+  ) {}
 
   register(channel: NotificationChannel) {
     this.channels.push(channel);
@@ -262,13 +268,16 @@ export class NotificationsService {
    * navegaram.
    */
   async listForUser(userId: string, academyId: string) {
-    const rows = await this.prisma.runAs(academyId, (db) =>
-      db.notification.findMany({
+    const { rows, anexos } = await this.prisma.runAs(academyId, async (db) => {
+      const rows = await db.notification.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
         take: 50,
-      }),
-    );
+      });
+      return { rows, anexos: await anexosDasNotificacoes(db, rows) };
+    });
+    // Os anexos de um aviso vêm com a notificação dele: é aí que a app o mostra por inteiro.
+    const assinados = this.storage ? await assinarAnexosDosAvisos(this.storage, anexos) : new Map();
 
     return rows.map((n) => {
       const payload = (n.payload ?? {}) as Record<string, unknown>;
@@ -289,6 +298,8 @@ export class NotificationsService {
         route: endereco("route"),
         readAt: n.readAt,
         createdAt: n.createdAt,
+        /** Os anexos do aviso, com link de leitura. Vazio para tudo o resto. */
+        files: assinados.get(avisoDaNotificacao(n.payload) ?? "") ?? [],
       };
     });
   }

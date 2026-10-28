@@ -212,6 +212,23 @@ export function esgotado(p: Produto): boolean {
   return valores.length > 0 && valores.every((n) => n !== null && n <= 0);
 }
 
+/**
+ * Restam poucas unidades do produto todo? Só quando todos os tamanhos se
+ * contam: com um tamanho sem contagem não se sabe, e não se diz.
+ */
+export function poucasUnidades(p: Produto): boolean {
+  if (!p.stock || esgotado(p)) return false;
+  const valores = Object.values(p.stock);
+  if (valores.length === 0 || valores.some((n) => n === null)) return false;
+  const total = valores.reduce<number>((s, n) => s + Math.max(0, n ?? 0), 0);
+  return total > 0 && total < POUCAS_UNIDADES;
+}
+
+/** As fotografias de um produto, a principal primeiro e sem repetidas. */
+export function fotosDoProduto(p: Produto): string[] {
+  return [...new Set([p.image, ...(p.images ?? [])].filter((s): s is string => !!s))];
+}
+
 /* -------------------------------------------------------------------------- */
 /* Demonstração                                                                 */
 /* -------------------------------------------------------------------------- */

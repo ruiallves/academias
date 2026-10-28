@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { destinoDaNotificacao } from "@/lib/rotas";
 import { chooseContext } from "@/lib/contexts";
-import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope, ShieldAlert } from "lucide-react";
+import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope, ShieldAlert, Paperclip as Anexo } from "lucide-react";
 import { activeArea } from "@/lib/area";
 import { carregarNotificacoes, marcarLidas, useNotificacoes } from "@/lib/notificacoes";
 import type { ApiNotification } from "@/lib/store";
@@ -170,7 +170,15 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
    * mesma sensação de "não leva a lado nenhum" que um cartão morto, com o
    * agravante de ter prometido. Aqui não promete.
    */
-  const destino = achado && achado.area === "FAMILY" && achado.rota === pathname ? null : achado;
+  /*
+   * Um aviso do clube nunca leva a outro lado: é aqui que se lê, com os anexos.
+   * Na área de sócio apontava para o `/notificacoes` da família e mudava de área.
+   */
+  const destino =
+    n.type === "ANNOUNCEMENT_PUBLISHED" || (achado && achado.area === "FAMILY" && achado.rota === pathname)
+      ? null
+      : achado;
+  const anexos = n.files ?? [];
   /*
    * Tocar é ler.
    *
@@ -195,7 +203,32 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
             {whenLabel(new Date(n.createdAt), new Date())}
           </span>
         </span>
-        <span className="mt-0.5 block text-meta leading-relaxed text-ink-2">{n.body}</span>
+        <span className="mt-0.5 block whitespace-pre-wrap text-meta leading-relaxed text-ink-2">{n.body}</span>
+        {anexos.length > 0 && (
+          <span className="mt-2.5 flex flex-col gap-1.5">
+            {anexos.map((f) =>
+              f.url ? (
+                <a
+                  key={f.key}
+                  href={f.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={ler}
+                  className="flex min-h-11 items-center gap-2.5 rounded-[12px] bg-sunken px-3 py-2 active:scale-[0.99]"
+                >
+                  <Anexo className="size-[18px] shrink-0 text-ink-3" strokeWidth={1.9} />
+                  <span className="min-w-0 flex-1 truncate text-meta font-medium text-ink">{f.name}</span>
+                  <span className="shrink-0 text-[12px] font-semibold text-signal-ink">Abrir</span>
+                </a>
+              ) : (
+                <span key={f.key} className="flex min-h-11 items-center gap-2.5 rounded-[12px] bg-sunken px-3 py-2 opacity-60">
+                  <Anexo className="size-[18px] shrink-0 text-ink-3" strokeWidth={1.9} />
+                  <span className="min-w-0 flex-1 truncate text-meta text-ink-3">{f.name}</span>
+                </span>
+              ),
+            )}
+          </span>
+        )}
       </span>
 
       {/* Por ler: um ponto, não um "NOVO" a piscar. */}

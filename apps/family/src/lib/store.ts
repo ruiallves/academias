@@ -261,6 +261,8 @@ export type ApiNotification = {
   route: string | null;
   readAt: string | null;
   createdAt: string;
+  /** Os anexos de um aviso do clube, com link que dura uma hora. Ausente num servidor antigo. */
+  files?: { key: string; name: string; type: string; url: string | null }[];
 };
 
 /* -------------------------------------------------------------------------- */

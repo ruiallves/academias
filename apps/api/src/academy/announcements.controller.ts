@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AnnouncementsService } from "./announcements.service";
-import { CreateAnnouncementDto, UpdateAnnouncementDto } from "./announcements.dto";
+import { AnnouncementUploadDto, CreateAnnouncementDto, UpdateAnnouncementDto } from "./announcements.dto";
 
 /**
  * Comunicações.
@@ -16,6 +17,13 @@ export class AnnouncementsController {
   @Get()
   list(@Req() req: AuthedRequest) {
     return this.announcements.list(req.ctx);
+  }
+
+  /** Autorizar o upload de um anexo. Antes de `:id` para não ser lido como um id. */
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Post("anexos/upload")
+  anexoUploadUrl(@Req() req: AuthedRequest, @Body() body: AnnouncementUploadDto) {
+    return this.announcements.anexoUploadUrl(req.ctx, body.contentType);
   }
 
   /** Publicar. A permissão (`comms:write`) e o público permitido são verificados no serviço. */

@@ -2520,8 +2520,10 @@ model Announcement {
 
   title    String
   body     String
-  /// { "teamIds": [...] } ou { "all": true }.
+  /// { kind: "all"|"guardians"|"athletes"|"coaches"|"members", teamIds?: [...] }.
   audience Json
+  /// Os anexos: [{ key, name, type }] no bucket `documentos`, em {academyId}/comunicacoes/.
+  files    Json   @default("[]")
 
   publishedAt DateTime?
   createdAt   DateTime  @default(now())

@@ -1,9 +1,24 @@
+import { randomBytes } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { NotificationType, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { StorageService } from "../storage/storage.service";
+import { EspacoService } from "../storage/espaco.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { contasDasEquipas } from "./athlete-accounts";
+import {
+  DOC_TIPOS,
+  DOCUMENT_BUCKET,
+  ficheirosDe,
+  nomeDoFicheiro,
+  tipoDaChave,
+  type FicheiroDoDocumento,
+} from "./ficha-do-atleta";
+import { AVISO_MAX_ANEXOS, AVISO_MAX_BYTES, assinarAnexos, chaveDeAviso, pastaDosAvisos } from "./anexos-do-aviso";
+
+/** Um anexo como chega do cliente: a chave devolvida pelo upload e o nome original. */
+type PedidoDeAnexo = { key?: unknown; name?: unknown };
 
 type AudienceKind = "all" | "guardians" | "athletes" | "coaches" | "members";
 
@@ -47,13 +62,15 @@ export class AnnouncementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
+    private readonly espaco: EspacoService,
   ) {}
 
-  /** As comunicações publicadas, com a taxa de leitura. */
+  /** As comunicações publicadas, com a taxa de leitura e os anexos. */
   async list(ctx: RequestContext) {
     if (!can(ctx, "comms:read")) throw new ForbiddenException("Sem acesso a comunicações");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const avisos = await this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.announcement.findMany({
         where: { publishedAt: { not: null } },
         orderBy: { publishedAt: "desc" },
@@ -63,6 +80,7 @@ export class AnnouncementsService {
           title: true,
           body: true,
           audience: true,
+          files: true,
           publishedAt: true,
           authorId: true,
           author: { select: { user: { select: { name: true } } } },
@@ -131,10 +149,62 @@ export class AnnouncementsService {
           publishedAt: a.publishedAt,
           reach,
           read,
+          files: a.files,
         });
       }
       return out;
     });
+
+    // Os links dos anexos assinam-se fora da transação: são chamadas de rede.
+    return Promise.all(avisos.map(async (a) => ({ ...a, files: await assinarAnexos(this.storage, a.files) })));
+  }
+
+  /**
+   * O primeiro dos três passos de um anexo: autoriza o upload de um ficheiro.
+   *
+   * O browser carrega direto para o armazenamento, e o aviso só aponta para a
+   * chave depois (`create`/`update`), que confirma que o ficheiro lá está.
+   */
+  async anexoUploadUrl(ctx: RequestContext, contentType: string) {
+    if (!can(ctx, "comms:write")) throw new ForbiddenException("Sem permissão para comunicar");
+    const ext = DOC_TIPOS[contentType];
+    if (!ext) throw new BadRequestException("O anexo tem de ser uma imagem (JPEG, PNG, WebP), um PDF ou um Word");
+    await this.espaco.garantirEspaco(ctx.academyId);
+    await this.storage.ensureBucket({ name: DOCUMENT_BUCKET, fileSizeLimit: AVISO_MAX_BYTES, allowedMimeTypes: Object.keys(DOC_TIPOS) });
+    const key = `${pastaDosAvisos(ctx.academyId)}/${randomBytes(8).toString("hex")}${ext}`;
+    const signed = await this.storage.signUpload(DOCUMENT_BUCKET, key);
+    return { ...signed, key, maxBytes: AVISO_MAX_BYTES };
+  }
+
+  /**
+   * Os anexos pedidos, confirmados: a chave é deste clube e o ficheiro chegou.
+   *
+   * `jaGravados` são os que o aviso já tinha: mantêm-se sem voltar a perguntar
+   * ao armazenamento, e com o nome que já tinham.
+   */
+  private async confirmarAnexos(
+    ctx: RequestContext,
+    pedidos: PedidoDeAnexo[] | undefined,
+    jaGravados: FicheiroDoDocumento[] = [],
+  ): Promise<FicheiroDoDocumento[]> {
+    if (pedidos === undefined) return [];
+    if (!Array.isArray(pedidos)) throw new BadRequestException("Anexos inválidos");
+    if (pedidos.length > AVISO_MAX_ANEXOS) throw new BadRequestException(`Um aviso leva no máximo ${AVISO_MAX_ANEXOS} anexos`);
+    const out: FicheiroDoDocumento[] = [];
+    for (const p of pedidos) {
+      if (!chaveDeAviso(p?.key, ctx.academyId)) throw new BadRequestException("Anexo inválido");
+      if (out.some((f) => f.key === p.key)) continue;
+      const antigo = jaGravados.find((f) => f.key === p.key);
+      if (antigo) {
+        out.push(antigo);
+        continue;
+      }
+      if (!(await this.storage.exists(DOCUMENT_BUCKET, p.key))) {
+        throw new BadRequestException("Um dos anexos não chegou a ser carregado. Tenta outra vez.");
+      }
+      out.push({ key: p.key, name: nomeDoFicheiro(p.name, p.key), type: tipoDaChave(p.key) });
+    }
+    return out;
   }
 
   /**
@@ -157,7 +227,7 @@ export class AnnouncementsService {
    */
   async create(
     ctx: RequestContext,
-    dto: { title: string; body: string; audience: AudienceKind; teamIds?: string[] },
+    dto: { title: string; body: string; audience: AudienceKind; teamIds?: string[]; files?: PedidoDeAnexo[] },
   ) {
     if (!can(ctx, "comms:write")) throw new ForbiddenException("Sem permissão para comunicar");
 
@@ -196,6 +266,8 @@ export class AnnouncementsService {
 
     const title = dto.title.trim();
     const body = dto.body.trim();
+    // Antes da transação: confirmar que o ficheiro chegou é uma ida ao armazenamento.
+    const files = await this.confirmarAnexos(ctx, dto.files);
 
     const { announcement, userIds, label } = await this.prisma.runAs(ctx.academyId, async (db) => {
       if (escolhidos.length > 0) {
@@ -229,6 +301,7 @@ export class AnnouncementsService {
           title,
           body,
           audience,
+          files,
           publishedAt: new Date(),
         },
         select: { id: true, publishedAt: true },
@@ -266,6 +339,7 @@ export class AnnouncementsService {
       publishedAt: announcement.publishedAt,
       reach: recipients.length,
       read: 0,
+      files: await assinarAnexos(this.storage, files),
     };
   }
 
@@ -276,26 +350,38 @@ export class AnnouncementsService {
    * app vê o texto corrigido, não o antigo. O empurrão que já chegou ao telemóvel
    * não se altera — esse já saiu, e não há como o recolher —, mas essa é a única
    * cópia que fica desactualizada, e é a menos consultada.
+   *
+   * `files`, quando vem, é a lista inteira dos anexos: o que lá não estiver sai
+   * do aviso e do armazenamento. Ausente, os anexos ficam como estavam. Os anexos
+   * lêem-se do aviso, por isso quem já o recebeu vê a lista nova.
    */
-  async update(ctx: RequestContext, id: string, dto: { title: string; body: string }) {
+  async update(ctx: RequestContext, id: string, dto: { title: string; body: string; files?: PedidoDeAnexo[] }) {
     if (!can(ctx, "comms:write")) throw new ForbiddenException("Sem permissão para editar avisos");
 
     const title = dto.title.trim();
     const body = dto.body.trim();
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      const existing = await db.announcement.findFirst({ where: { id }, select: { id: true, authorId: true } });
+    const antes = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const existing = await db.announcement.findFirst({ where: { id }, select: { id: true, authorId: true, files: true } });
       if (!existing) throw new NotFoundException("Aviso não encontrado");
       this.assertMayManage(ctx, existing.authorId);
+      return ficheirosDe(existing.files);
+    });
+    const files = dto.files === undefined ? antes : await this.confirmarAnexos(ctx, dto.files, antes);
 
-      await db.announcement.update({ where: { id }, data: { title, body } });
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.announcement.update({ where: { id }, data: { title, body, files } });
       // As notificações na app deste aviso passam a mostrar o texto corrigido.
       await db.notification.updateMany({
         where: { payload: { path: ["announcementId"], equals: id } },
         data: { title, body },
       });
-      return { id, title, body };
     });
+
+    // Só depois de gravado: um ficheiro apagado com o aviso ainda a apontar para ele seria um link morto.
+    for (const f of antes) if (!files.some((x) => x.key === f.key)) await this.storage.remove(DOCUMENT_BUCKET, f.key);
+
+    return { id, title, body, files: await assinarAnexos(this.storage, files) };
   }
 
   /**
@@ -307,15 +393,18 @@ export class AnnouncementsService {
   async remove(ctx: RequestContext, id: string) {
     if (!can(ctx, "comms:write")) throw new ForbiddenException("Sem permissão para eliminar avisos");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      const existing = await db.announcement.findFirst({ where: { id }, select: { id: true, authorId: true } });
+    const files = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const existing = await db.announcement.findFirst({ where: { id }, select: { id: true, authorId: true, files: true } });
       if (!existing) throw new NotFoundException("Aviso não encontrado");
       this.assertMayManage(ctx, existing.authorId);
 
       await db.notification.deleteMany({ where: { payload: { path: ["announcementId"], equals: id } } });
       await db.announcement.delete({ where: { id } });
-      return { id, deleted: true };
+      return ficheirosDe(existing.files);
     });
+    // Os anexos saem do armazenamento depois de o aviso já não existir.
+    for (const f of files) await this.storage.remove(DOCUMENT_BUCKET, f.key);
+    return { id, deleted: true };
   }
 
   /* ------------------------------------------------------------------------ */

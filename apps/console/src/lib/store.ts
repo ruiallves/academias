@@ -351,6 +351,8 @@ type ApiCharge = {
 type ApiAnnouncement = {
   id: string; title: string; body: string; audience: string;
   authorId: string; authorName: string; publishedAt: string | null; reach: number; read: number;
+  /** Os anexos, com link de leitura. Ausente num servidor antigo. */
+  files?: { key: string; name: string; type: string; url: string | null }[];
 };
 
 /* -------------------------------------------------------------------------- */
@@ -1194,6 +1196,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       authorName: a.authorName,
       reach: a.reach,
       read: a.read,
+      files: Array.isArray(a.files) ? a.files : [],
     })),
   };
 }

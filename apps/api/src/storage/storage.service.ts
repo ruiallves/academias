@@ -26,6 +26,9 @@ import { ConfigService } from "@nestjs/config";
  * mais útil do que um bucket que não existe.
  */
 
+/** O que o Supabase devolve de um bucket que já existe (só o que se usa). */
+type BucketAtual = { public?: boolean; file_size_limit?: number | null; allowed_mime_types?: string[] | null };
+
 export type BucketSpec = {
   name: string;
   /** O limite que se **gostaria** de ter. O projecto tem a última palavra. */
@@ -73,18 +76,51 @@ export class StorageService {
    * arranque não criarem o bucket duas vezes e não passarem os dois por um 409.
    */
   async ensureBucket(spec: BucketSpec): Promise<void> {
-    const cached = this.ready.get(spec.name);
+    // Pelo nome e pelo limite: o mesmo bucket pedido com um limite maior (os anexos
+    // dos avisos no `documentos`) volta a passar por cá para o subir.
+    const chave = `${spec.name}:${spec.fileSizeLimit ?? ""}`;
+    const cached = this.ready.get(chave);
     if (cached) return cached;
 
     const work = this.createBucket(spec).catch((error) => {
       // Uma falha não fica em cache: a próxima tentativa volta a tentar, porque o
       // que falhou pode ter sido a rede.
-      this.ready.delete(spec.name);
+      this.ready.delete(chave);
       throw error;
     });
 
-    this.ready.set(spec.name, work);
+    this.ready.set(chave, work);
     return work;
+  }
+
+  /**
+   * Sobe o limite por ficheiro de um bucket que já existe, se for menor do que o pedido.
+   *
+   * Só sobe, nunca desce: o `documentos` serve várias coisas, e quem pede 20 MB
+   * não pode cortar os 50 MB de outra. Cada funcionalidade confirma o tamanho
+   * dela (`maxBytes`); o bucket é o tecto de todas. Um bucket sem limite herda o
+   * do projeto e fica como está. Uma recusa não impede o upload de ficheiros
+   * pequenos, por isso só fica no log.
+   */
+  private async subirLimite(spec: BucketSpec, atual: BucketAtual) {
+    const limite = atual.file_size_limit;
+    if (!spec.fileSizeLimit || limite === null || limite === undefined || limite >= spec.fileSizeLimit) return;
+    const res = await fetch(`${this.url}/storage/v1/bucket/${encodeURIComponent(spec.name)}`, {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify({
+        public: atual.public === true,
+        file_size_limit: spec.fileSizeLimit,
+        allowed_mime_types: atual.allowed_mime_types ?? spec.allowedMimeTypes ?? null,
+      }),
+    }).catch(() => null);
+    if (res?.ok) {
+      this.log.log(`Limite de "${spec.name}" subiu de ${limite} para ${spec.fileSizeLimit} bytes.`);
+      return;
+    }
+    this.log.warn(
+      `Não foi possível subir o limite de "${spec.name}" para ${spec.fileSizeLimit} bytes: ${res ? `${res.status} ${await res.text()}` : "sem resposta"}`,
+    );
   }
 
   /**
@@ -115,7 +151,11 @@ export class StorageService {
     const found = await fetch(`${this.url}/storage/v1/bucket/${encodeURIComponent(spec.name)}`, {
       headers: this.headers(),
     }).catch(() => null);
-    if (found?.ok) return;
+    if (found?.ok) {
+      const atual = (await found.json().catch(() => ({}))) as BucketAtual;
+      await this.subirLimite(spec, atual);
+      return;
+    }
 
     const attempt = async (withLimit: boolean) => {
       const res = await fetch(`${this.url}/storage/v1/bucket`, {

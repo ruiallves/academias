@@ -622,7 +622,11 @@ export type Announcement = {
   /** Quantas notificações saíram e quantas foram lidas. */
   reach: number;
   read: number;
+  /** Os anexos (PDF, fotografias, Word), com link de leitura que dura uma hora. */
+  files: AnnouncementFile[];
 };
+
+export type AnnouncementFile = { key: string; name: string; type: string; url: string | null };
 
 /** Uma linha de "Precisa de atenção". Um facto, um verbo, um destino. */
 export type AttentionItem = {

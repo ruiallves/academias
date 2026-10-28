@@ -2,32 +2,43 @@ import Link from "next/link";
 import { Foto } from "@/componentes/Foto";
 import type { Produto } from "@/dados/tipos";
 import { euro } from "@/lib/formatar";
-import { esgotado } from "@/lib/loja";
+import { esgotado, fotosDoProduto, poucasUnidades } from "@/lib/loja";
 
-/** Um produto na montra: foto ao alto, nome, preço. Esgotado diz-se na foto. */
-export function CartaoProduto({ produto: p, prioridade = false }: { produto: Produto; prioridade?: boolean }) {
-  // Esgotado em todos os tamanhos (ou com o interruptor do clube ligado).
-  const produto = { ...p, soldOut: esgotado(p) };
+/**
+ * Um produto na montra, ao jeito das lojas de desporto: a fotografia manda,
+ * sem moldura, e o texto vem por baixo, curto. Com uma segunda fotografia,
+ * o rato troca para ela. Por cima do nome, uma nota só quando diz alguma
+ * coisa (esgotado, últimas unidades); sem cápsulas nem etiquetas pintadas.
+ */
+export function CartaoProduto({ produto: p, prioridade = false, sizes }: { produto: Produto; prioridade?: boolean; sizes?: string }) {
+  const fora = esgotado(p);
+  const [principal, segunda] = fotosDoProduto(p);
+  const nota = fora ? "Esgotado" : poucasUnidades(p) ? "Últimas unidades" : null;
+  const tamanhos = p.variants?.options.length ?? 0;
+  const tam = sizes ?? "(min-width: 1024px) 33vw, 50vw";
+
   return (
     <article className="group">
-      <Link href={`/loja/${produto.slug}`} className="block">
-        <div className="relative aspect-[9/11] overflow-hidden rounded-card bg-sunken">
+      <Link href={`/loja/${p.slug}`} className="block focus-visible:outline-offset-4">
+        <div className="relative aspect-[4/5] overflow-hidden bg-sunken">
           <Foto
-            src={produto.image}
-            alt={produto.name}
-            sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+            src={principal}
+            alt={p.name}
+            sizes={tam}
             priority={prioridade}
-            className={`transition-transform duration-500 ease-out group-hover:scale-[1.03] ${produto.soldOut ? "opacity-60" : ""}`}
+            className={`transition duration-700 ease-out group-hover:scale-[1.04] ${segunda ? "group-hover:opacity-0" : ""} ${fora ? "opacity-55 grayscale" : ""}`}
           />
-          {produto.soldOut && (
-            <span className="absolute left-3 top-3 rounded-sm bg-night px-2 py-1 text-xs font-bold uppercase tracking-wider text-night-ink">
-              Esgotado
-            </span>
-          )}
+          {segunda && <Foto src={segunda} alt="" sizes={tam} className="opacity-0 transition-opacity duration-500 group-hover:opacity-100" />}
         </div>
-        <p className="eyebrow mt-3 text-ink-3">{produto.category}</p>
-        <h3 className="mt-1 text-base leading-snug text-ink transition group-hover:text-signal-ink">{produto.name}</h3>
-        <p className="mt-1 font-semibold tabular text-ink">{euro(produto.price)}</p>
+        <div className="mt-3 pr-2">
+          {nota && <p className={`text-sm font-semibold ${fora ? "text-ink-3" : "text-signal-ink"}`}>{nota}</p>}
+          <h3 className="text-[0.9375rem] font-semibold leading-snug text-ink sm:text-base">{p.name}</h3>
+          <p className="mt-0.5 text-sm text-ink-3">
+            {p.category}
+            {tamanhos > 1 && <span className="hidden sm:inline"> · {tamanhos} tamanhos</span>}
+          </p>
+          <p className="mt-2 font-semibold tabular text-ink">{euro(p.price)}</p>
+        </div>
       </Link>
     </article>
   );
