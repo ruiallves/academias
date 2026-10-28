@@ -144,4 +144,16 @@ export class ConductController {
   documentoApagar(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.conduct.documentoApagar(req.ctx, id);
   }
+
+  /** A app avisa que a pessoa abriu um ficheiro do documento. */
+  @Post("conduta/documentos/:id/aberto")
+  documentoAberto(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.conduct.documentoAberto(req.ctx, id);
+  }
+
+  /** Quem abriu o documento: pais e atletas, com os escalões, para as Definições. */
+  @Get("conduta/documentos/:id/leituras")
+  documentoLeituras(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.conduct.documentoLeituras(req.ctx, id);
+  }
 }

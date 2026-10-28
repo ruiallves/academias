@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BookOpen, ChevronLeft, Download } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { documentosDoClube, type DocumentoDoClube } from "@/lib/conduta";
+import { documentosDoClube, marcarDocumentoAberto, type DocumentoDoClube } from "@/lib/conduta";
 import { dateShort } from "@/ui";
 
 /**
@@ -67,7 +67,13 @@ export default function DocumentosDoClube() {
                 {d.files.map((f) => (
                   <li key={f.key} className="border-b border-line last:border-0">
                     {f.url ? (
-                      <a href={f.url} target="_blank" rel="noreferrer" className="flex min-h-12 items-center gap-3 px-4 py-2.5 active:bg-sunken/60">
+                      <a
+                        href={f.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => void marcarDocumentoAberto(d.id)}
+                        className="flex min-h-12 items-center gap-3 px-4 py-2.5 active:bg-sunken/60"
+                      >
                         <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{f.name}</span>
                         <Download className="size-[18px] shrink-0 text-ink-3" strokeWidth={1.9} />
                       </a>

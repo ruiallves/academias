@@ -84,9 +84,31 @@ export type DocumentoDeConduta = {
   updatedAt: string;
   createdByName: string | null;
   files: FicheiroDeConduta[];
+  /** Quantos pais abriram (só para quem gere os documentos). Ausente num servidor antigo. */
+  reads?: { opened: number; total: number };
 };
 
 export const listarDocumentosDeConduta = () => apiGet<DocumentoDeConduta[]>("/api/conduta/documentos");
+
+/** Uma pessoa na lista "Quem abriu": um encarregado ou um atleta com conta. */
+export type LeitorDeConduta = {
+  userId: string;
+  kind: "GUARDIAN" | "ATHLETE";
+  name: string;
+  email: string | null;
+  athletes: { id: string; name: string; teams: { id: string; name: string }[] }[];
+  firstViewedAt: string | null;
+  lastViewedAt: string | null;
+  count: number;
+};
+
+export type LeiturasDeConduta = {
+  document: { id: string; title: string; updatedAt: string };
+  teams: { id: string; name: string }[];
+  people: LeitorDeConduta[];
+};
+
+export const leiturasDoDocumento = (id: string) => apiGet<LeiturasDeConduta>(`/api/conduta/documentos/${id}/leituras`);
 
 /*
  * A última lista que chegou, guardada fora do ecrã.

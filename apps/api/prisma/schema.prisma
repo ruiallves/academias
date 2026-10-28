@@ -289,6 +289,7 @@ model Academy {
   /// Conduta: o canal de denúncia e os documentos (código de ética, manual). Ver `ConductReport`.
   conductReports      ConductReport[]
   conductDocuments    ConductDocument[]
+  conductDocumentViews ConductDocumentView[]
   matches             Match[]
   events              CalendarEvent[]
   invites             StaffInvite[]
@@ -7632,7 +7633,28 @@ model ConductDocument {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  views ConductDocumentView[]
+
   @@index([academyId, order])
+}
+
+/// Quem abriu um documento de conduta na app. Uma linha por pessoa e documento:
+/// a primeira vez, a última, e quantas vezes. Lê-se nas Definições → Conduta.
+model ConductDocumentView {
+  id         String          @id @default(cuid())
+  academyId  String
+  academy    Academy         @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  documentId String
+  document   ConductDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// A pessoa, não o papel: um encarregado que também é staff conta uma vez.
+  userId     String
+
+  firstViewedAt DateTime @default(now())
+  lastViewedAt  DateTime @default(now())
+  count         Int      @default(1)
+
+  @@unique([documentId, userId])
+  @@index([academyId, documentId])
 }
 
 /**

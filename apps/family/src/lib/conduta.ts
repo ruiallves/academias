@@ -65,6 +65,13 @@ export type DocumentoDoClube = {
 
 export const documentosDoClube = () => apiGet<DocumentoDoClube[]>("/api/conduta/documentos");
 
+/**
+ * Diz ao clube que esta pessoa abriu o documento (é o que aparece em "Quem abriu",
+ * nas Definições). Em silêncio: uma falha aqui não pode impedir ninguém de ler.
+ */
+export const marcarDocumentoAberto = (id: string) =>
+  apiPost<{ ok: true }>(`/api/conduta/documentos/${id}/aberto`).catch(() => undefined);
+
 /** O que o estado quer dizer para quem enviou, numa frase curta. */
 export const FRASE_DO_ESTADO: Record<Denuncia["status"], string> = {
   NEW: "Enviada. O clube ainda não a abriu.",

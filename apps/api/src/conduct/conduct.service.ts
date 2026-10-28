@@ -296,13 +296,18 @@ export class ConductService {
 
   /** Qualquer pessoa do clube lê: é para isso que existem. */
   async documentos(ctx: RequestContext) {
-    const docs = await this.prisma.runAs(ctx.academyId, (db) =>
-      db.conductDocument.findMany({
+    // Quem gere os documentos vê também quantos pais abriram cada um.
+    const gere = !daFamilia(ctx) && can(ctx, "settings:write");
+    const { docs, leituras } = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const docs = await db.conductDocument.findMany({
         orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         select: { id: true, title: true, description: true, files: true, createdAt: true, updatedAt: true, createdByName: true },
-      }),
+      });
+      return { docs, leituras: gere ? await this.leiturasDosPais(db, docs.map((d) => d.id)) : null };
+    });
+    return Promise.all(
+      docs.map(async (d) => ({ ...(await this.saidaDoDocumento(d)), ...(leituras ? { reads: leituras.get(d.id) } : {}) })),
     );
-    return Promise.all(docs.map((d) => this.saidaDoDocumento(d)));
   }
 
   async documentoUploadUrl(ctx: RequestContext, contentType: string) {
@@ -368,6 +373,115 @@ export class ConductService {
     });
     if (tinha) await this.storage.remove(DOCUMENT_BUCKET, key);
     return { ok: true as const };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Quem abriu os documentos                                                  */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * A pessoa abriu um ficheiro do documento na app. Grava a primeira vez, a
+   * última e quantas vezes. Qualquer pessoa do clube que o pode ler o pode abrir.
+   */
+  async documentoAberto(ctx: RequestContext, id: string) {
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      await this.documento(db, id);
+      await db.conductDocumentView.upsert({
+        where: { documentId_userId: { documentId: id, userId: ctx.userId } },
+        create: { academyId: ctx.academyId, documentId: id, userId: ctx.userId },
+        update: { lastViewedAt: new Date(), count: { increment: 1 } },
+      });
+    });
+    return { ok: true as const };
+  }
+
+  /**
+   * Quem abriu um documento, entre os pais e os atletas com conta na app.
+   *
+   * "Pais" é quem tem pelo menos um educando ligado (um treinador que também é
+   * pai conta), "atletas" é quem tem a conta de um atleta. Cada pessoa vem com
+   * os atletas dela e os escalões atuais, para a consola filtrar por nome e por
+   * escalão sem mais pedidos. A mesma permissão de quem muda os documentos.
+   */
+  async documentoLeituras(ctx: RequestContext, id: string) {
+    this.assertEscreveDocumentos(ctx);
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const doc = await db.conductDocument.findFirst({ where: { id }, select: { id: true, title: true, updatedAt: true } });
+      if (!doc) throw new NotFoundException("Documento não encontrado");
+
+      const SELECT_ATLETA = {
+        id: true,
+        name: true,
+        teams: { where: { leftAt: null }, select: { team: { select: { id: true, name: true } } } },
+      } as const;
+      const [membros, vistas] = await Promise.all([
+        db.membership.findMany({
+          where: { isActive: true, OR: [{ guardianOf: { some: {} } }, { athleteAccount: { isNot: null } }] },
+          select: {
+            userId: true,
+            user: { select: { name: true, email: true } },
+            guardianOf: { select: { athlete: { select: SELECT_ATLETA } } },
+            athleteAccount: { select: SELECT_ATLETA },
+          },
+        }),
+        db.conductDocumentView.findMany({
+          where: { documentId: id },
+          select: { userId: true, firstViewedAt: true, lastViewedAt: true, count: true },
+        }),
+      ]);
+
+      const vistaDe = new Map(vistas.map((v) => [v.userId, v]));
+      const equipas = new Map<string, string>();
+      type Atleta = { id: string; name: string; teams: { team: { id: string; name: string } }[] };
+      const resumo = (a: Atleta) => {
+        for (const t of a.teams) equipas.set(t.team.id, t.team.name);
+        return { id: a.id, name: a.name, teams: a.teams.map((t) => t.team) };
+      };
+
+      // Uma pessoa pode ser encarregado e atleta (ou ter duas ligações): uma linha por papel, juntando as ligações.
+      const linhas = new Map<string, { userId: string; kind: "GUARDIAN" | "ATHLETE"; name: string; email: string | null; athletes: ReturnType<typeof resumo>[] }>();
+      for (const m of membros) {
+        const nome = m.user.name?.trim() || m.user.email || "Sem nome";
+        if (m.guardianOf.length > 0) {
+          const k = `G:${m.userId}`;
+          const l = linhas.get(k) ?? { userId: m.userId, kind: "GUARDIAN" as const, name: nome, email: m.user.email, athletes: [] };
+          for (const g of m.guardianOf) if (!l.athletes.some((a) => a.id === g.athlete.id)) l.athletes.push(resumo(g.athlete));
+          linhas.set(k, l);
+        }
+        if (m.athleteAccount) {
+          const k = `A:${m.userId}`;
+          if (!linhas.has(k)) linhas.set(k, { userId: m.userId, kind: "ATHLETE", name: nome, email: m.user.email, athletes: [resumo(m.athleteAccount)] });
+        }
+      }
+
+      const people = [...linhas.values()]
+        .map((l) => {
+          const v = vistaDe.get(l.userId);
+          return { ...l, firstViewedAt: v?.firstViewedAt ?? null, lastViewedAt: v?.lastViewedAt ?? null, count: v?.count ?? 0 };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, "pt"));
+
+      return {
+        document: doc,
+        teams: [...equipas].map(([tid, name]) => ({ id: tid, name })).sort((a, b) => a.name.localeCompare(b.name, "pt", { numeric: true })),
+        people,
+      };
+    });
+  }
+
+  /**
+   * Quantos pais abriram cada documento, para a lista das Definições: "38 de 120".
+   * Só para quem gere os documentos; a família não recebe isto.
+   */
+  private async leiturasDosPais(db: ScopedClient, ids: string[]): Promise<Map<string, { opened: number; total: number }>> {
+    const pais = await db.membership.findMany({ where: { isActive: true, guardianOf: { some: {} } }, select: { userId: true } });
+    const userIds = [...new Set(pais.map((p) => p.userId))];
+    const contas = ids.length === 0 || userIds.length === 0
+      ? []
+      : await db.conductDocumentView.groupBy({ by: ["documentId"], where: { documentId: { in: ids }, userId: { in: userIds } }, _count: { _all: true } });
+    const out = new Map(ids.map((id) => [id, { opened: 0, total: userIds.length }]));
+    for (const c of contas) out.set(c.documentId, { opened: c._count._all, total: userIds.length });
+    return out;
   }
 
   async documentoApagar(ctx: RequestContext, id: string) {

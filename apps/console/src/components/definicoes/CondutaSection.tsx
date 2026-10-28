@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Link } from "react-router-dom";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog, dialogInputClass } from "@/components/Dialog";
-import { Pill, cx } from "@/components/primitives";
+import { Bar, Pill, cx } from "@/components/primitives";
 import { Spinner } from "@/components/Busy";
 import { Bloco, Erro, Lista } from "@/components/definicoes/ui";
-import { BookOpen, Download, Pencil, Plus, ShieldAlert, Trash2, Upload, X } from "@/lib/icons";
+import { LeiturasDaConduta } from "@/components/definicoes/LeiturasDaConduta";
+import { BookOpen, Download, Eye, Pencil, Plus, ShieldAlert, Trash2, Upload, X } from "@/lib/icons";
 import { longDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -45,6 +46,8 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
   const [novo, setNovo] = useState(false);
   const [aEditar, setAEditar] = useState<DocumentoDeConduta | null>(null);
   const [aApagar, setAApagar] = useState<DocumentoDeConduta | null>(null);
+  /** O documento de que se está a ver "Quem abriu". */
+  const [aVer, setAVer] = useState<DocumentoDeConduta | null>(null);
 
   const carregar = useCallback(() => {
     setErro(null);
@@ -87,6 +90,7 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
           <>
             <p>O código de ética, o manual de conduta e o que mais o clube quiser que as famílias e os atletas leiam. Aparecem na app, no perfil, em «Documentos do clube».</p>
             <p>Imagens, PDF ou Word, até 20 MB por ficheiro.</p>
+            <p>Em cada documento vês quantos pais o abriram na app e, em «Quem abriu», quem foi e quem falta, por nome ou por escalão.</p>
           </>
         }
       >
@@ -136,6 +140,7 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
                           </li>
                         ))}
                       </ul>
+                      {d.reads && <LeiturasResumo reads={d.reads} onAbrir={() => setAVer(d)} />}
                     </div>
                     {mayWrite && (
                       <span className="flex shrink-0 items-center gap-0.5">
@@ -207,6 +212,8 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
         />
       )}
 
+      {aVer && <LeiturasDaConduta documentId={aVer.id} title={aVer.title} onClose={() => setAVer(null)} />}
+
       {aApagar && (
         <ConfirmDialog
           title={`Apagar «${aApagar.title}»?`}
@@ -220,6 +227,25 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
           Deixa de aparecer na app das famílias, e {aApagar.files.length === 1 ? "o ficheiro dele é apagado" : `os ${aApagar.files.length} ficheiros dele são apagados`} de vez.
         </ConfirmDialog>
       )}
+    </div>
+  );
+}
+
+/** "38 de 120 pais abriram", com a barra, e a porta para a lista de quem abriu. */
+function LeiturasResumo({ reads, onAbrir }: { reads: { opened: number; total: number }; onAbrir: () => void }) {
+  const fracao = reads.total > 0 ? reads.opened / reads.total : 0;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line pt-3">
+      <span className="w-24 shrink-0">
+        <Bar value={fracao} tone={reads.total > 0 && reads.opened === reads.total ? "ok" : "signal"} />
+      </span>
+      <span className="text-meta text-ink-2 tabular">
+        {reads.total === 0 ? "Ainda sem pais com conta na app" : `${reads.opened} de ${reads.total} pais abriram`}
+      </span>
+      <button type="button" onClick={onAbrir} className="ctl-ghost ml-auto h-8 text-meta text-signal-ink">
+        <Eye className="size-3.5" strokeWidth={1.75} />
+        Quem abriu
+      </button>
     </div>
   );
 }
