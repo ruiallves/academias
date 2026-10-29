@@ -87,7 +87,8 @@ export type SportProfile = {
    * O futebol joga duas partes e o árbitro compensa o tempo perdido no fim de
    * cada uma. O futsal (2 × 20) e o basquetebol (4 × 10) jogam-se com o
    * cronómetro parado: não há compensação, e a ficha não a pergunta. O servidor
-   * tem a mesma regra em `PARTES_COM_TEMPO_ADICIONAL`.
+   * tem a mesma regra em `COM_TEMPO_ADICIONAL` (`minutos-do-jogo.ts`). As partes são da
+   * equipa quando ela as diz (`Team.matchParts`); `periods` é o ponto de partida.
    */
   match: {
     periods: number;
@@ -680,6 +681,25 @@ export function profileOf(sport: Sport | null | undefined): SportProfile | null 
   if (!sport) return null;
   const code = isSportCode(sport.code) ? sport.code : inferSportCode(sport.name);
   return code ? SPORT_PROFILES[code] : null;
+}
+
+/**
+ * Em quantas partes joga uma equipa: as dela (`Team.matchParts`), ou as da
+ * modalidade (2 no futebol e no futsal, 4 no basquetebol). Gémea de
+ * `partesDoJogo` em `minutos-do-jogo.ts` no servidor.
+ */
+export function partesDoJogo(profile: SportProfile | null | undefined, partesDaEquipa: number | null | undefined): number {
+  if (partesDaEquipa != null && partesDaEquipa >= 1) return partesDaEquipa;
+  return profile?.match.periods ?? 2;
+}
+
+/**
+ * Porque é que a duração não se divide nestas partes, ou `null` se divide.
+ * Gémea de `problemaNasPartes` no servidor: cada parte tem de ter minutos certos.
+ */
+export function problemaNasPartes(duracao: number | null | undefined, partes: number): string | null {
+  if (!duracao || duracao <= 0 || duracao % partes === 0) return null;
+  return `${duracao} minutos não se dividem em ${partes} partes iguais.`;
 }
 
 /** As modalidades do clube que têm Área técnica, pela ordem do arranque. */

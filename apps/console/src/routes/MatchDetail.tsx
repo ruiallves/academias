@@ -17,7 +17,7 @@ import { ApagarEventoDialog, descreverEvento } from "@/components/ApagarEventoDi
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
 import { athleteById, numeroNaEquipa, sportById } from "@/lib/api";
-import { profileOf } from "@/lib/sports";
+import { partesDoJogo, profileOf } from "@/lib/sports";
 import { fromApiMatch, tallyNoun, type CalendarEvent } from "@/lib/calendar";
 import { EditEventDialog } from "@/components/EditEventDialog";
 import { matches as storeMatches, reloadAcademy, useStore } from "@/lib/store";
@@ -1428,7 +1428,13 @@ function minutosDerivados(l: Linha, duracao: number, tempo: TempoDoJogo = SEM_AD
    * fica gravado.
    */
   if (tempo.partes > 0 && duracao > 0) {
-    const fins = Array.from({ length: tempo.partes }, (_, i) => (duracao * (i + 1)) / tempo.partes);
+    // Iguais, ou as da equipa (15 + 15 + 40 acaba aos 15, 30 e 70). Como `fimDasPartes` no servidor.
+    const desiguais = tempo.desiguais ?? [];
+    let soma = 0;
+    const fins =
+      desiguais.length === tempo.partes
+        ? desiguais.map((m) => (soma += m))
+        : Array.from({ length: tempo.partes }, (_, i) => (duracao * (i + 1)) / tempo.partes);
     let ate = duracao;
     for (const m of prolongamento) fins.push((ate += m));
     fins.forEach((fim, i) => {
@@ -1444,7 +1450,7 @@ function minutosDerivados(l: Linha, duracao: number, tempo: TempoDoJogo = SEM_AD
  * As partes de um jogo, o tempo adicional de cada uma e o prolongamento. Sem
  * partes, não há tempo adicional.
  */
-type TempoDoJogo = { partes: number; adicional: number[]; prolongamento?: number[] };
+type TempoDoJogo = { partes: number; adicional: number[]; prolongamento?: number[]; desiguais?: number[] };
 const SEM_ADICIONAL: TempoDoJogo = { partes: 0, adicional: [] };
 
 /**
@@ -1473,8 +1479,10 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
   const prolongamento = nProl > 0 ? Array.from({ length: nProl }, () => Number(minProl) || 0) : [];
 
   /* As partes com tempo adicional: as do jogo e as do prolongamento que se está a escrever. */
-  const regras = regrasDoJogo(profile, match.matchMinutes, prolongamento);
-  const partes = jogo?.addedTime ? jogo.periods + prolongamento.length : 0;
+  const regras = regrasDoJogo(profile, match.matchMinutes, prolongamento, match.matchParts, match.matchPartMinutes);
+  // As partes da equipa (`Team.matchParts`): os infantis de futebol jogam 3.
+  const partesDoTempo = jogo?.addedTime ? regras.partes : 0;
+  const partes = jogo?.addedTime ? partesDoTempo + prolongamento.length : 0;
   const gravado = Array.from({ length: partes }, (_, i) => (match.addedMinutes ?? [])[i] ?? 0);
   const chave = `${prolGravado.join(",")}|${(match.addedMinutes ?? []).join(",")}`;
 
@@ -1485,7 +1493,7 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
   useEffect(() => {
     setNProl(prolGravado.length);
     setMinProl(String(prolGravado[0] ?? ot?.minutes ?? 15));
-    setValores(Array.from({ length: (jogo?.addedTime ? jogo.periods : 0) + prolGravado.length }, (_, i) => {
+    setValores(Array.from({ length: partesDoTempo + prolGravado.length }, (_, i) => {
       const m = (match.addedMinutes ?? [])[i] ?? 0;
       return m ? String(m) : "";
     }));
@@ -1696,14 +1704,18 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    */
   const duracao = match.matchMinutes ?? 90;
   /* O tempo adicional e o prolongamento gravados: contam nos minutos de quem estava em campo. Ver `minutosDerivados`. */
-  const regras = profileOf(sportById(match.sportId))?.match;
+  const perfil = profileOf(sportById(match.sportId));
+  const regras = perfil?.match;
   const tempo = useMemo<TempoDoJogo>(
     () => ({
-      partes: regras?.addedTime ? regras.periods : 0,
+      // As partes da equipa (`Team.matchParts`), não as da modalidade.
+      partes: regras?.addedTime ? partesDoJogo(perfil, match.matchParts) : 0,
       adicional: match.addedMinutes ?? [],
       prolongamento: match.overtimeMinutes ?? [],
+      // 15 + 15 + 40: a compensação de cada parte soma a quem lá estava quando ela acabou.
+      desiguais: match.matchPartMinutes ?? [],
     }),
-    [regras, match.addedMinutes, match.overtimeMinutes],
+    [perfil, regras, match.matchParts, match.matchPartMinutes, match.addedMinutes, match.overtimeMinutes],
   );
   const [linhas, setLinhas] = useState<Record<string, Linha>>(() => daFicha(match));
   const [erro, setErro] = useState<string | null>(null);

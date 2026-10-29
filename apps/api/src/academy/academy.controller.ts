@@ -498,6 +498,10 @@ class UpdateTeamDto {
   @IsOptional() @IsInt() @Min(1) @Max(60) maxCallUps?: number;
   /** Substituições ilimitadas: quem sai pode voltar a entrar. Ver `Team.unlimitedSubs`. */
   @IsOptional() @IsBoolean() unlimitedSubs?: boolean;
+  /** Em quantas partes se joga. `null` volta às da modalidade. Ver `Team.matchParts`. */
+  @IsOptional() @IsInt() @Min(1) @Max(8) matchParts?: number | null;
+  /** Os minutos de cada parte (15 + 15 + 40). Vazio volta às partes iguais. Ver `Team.matchPartMinutes`. */
+  @IsOptional() @IsArray() @ArrayMaxSize(8) @IsInt({ each: true }) @Min(1, { each: true }) @Max(120, { each: true }) matchPartMinutes?: number[];
   @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) competitionIds?: string[];
 }
 

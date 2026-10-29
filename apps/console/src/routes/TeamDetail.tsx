@@ -63,7 +63,7 @@ import {
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
-import { profileOf } from "@/lib/sports";
+import { partesDoJogo, profileOf } from "@/lib/sports";
 import { TEAM_GENDER_LABEL } from "@/lib/genero";
 import { substituicoesVolantes } from "@/components/match/substituicoes";
 import { medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
@@ -510,9 +510,15 @@ function OverviewTab({
  * fechar sem gravar. O botão abre o mesmo popup.
  */
 function FichaDaEquipa({ team, onEditar }: { team: NonNullable<ReturnType<typeof teamById>>; onEditar: (() => void) | null }) {
-  const jogo = profileOf(sportById(team.sportId))?.match;
-  // "40 min · 4 × 10": a duração dita como a modalidade a joga.
-  const partes = jogo && team.matchMinutes ? ` · ${jogo.periods} × ${team.matchMinutes / jogo.periods}` : "";
+  const perfil = profileOf(sportById(team.sportId));
+  // "60 min · 3 × 20", ou "70 min · 15 + 15 + 40": a duração dita como a equipa a joga.
+  const n = partesDoJogo(perfil, team.matchParts);
+  const desiguais = team.matchPartMinutes?.length === n ? team.matchPartMinutes : null;
+  const partes = !perfil || !team.matchMinutes
+    ? ""
+    : desiguais
+      ? ` · ${desiguais.join(" + ")}`
+      : ` · ${n} × ${Math.round((team.matchMinutes / n) * 10) / 10}`;
 
   const linhas: [string, React.ReactNode][] = [
     ["Escalão", team.maxAge >= SEM_LIMITE ? "Seniores, sem idade máxima" : `${teamAgeLabel(team.maxAge)} · até aos ${team.maxAge} anos`],

@@ -171,6 +171,13 @@ export type MatchDetail = {
    * num servidor antigo; ver `substituicoesVolantes` em `components/match/substituicoes.ts`.
    */
   unlimitedSubs?: boolean;
+  /**
+   * Em quantas partes se joga: as da equipa (`Team.matchParts`), ou as da
+   * modalidade. Ausente num servidor antigo: aí valem as da modalidade.
+   */
+  matchParts?: number;
+  /** Os minutos de cada parte, quando não são iguais (15 + 15 + 40). Vazio ou ausente: iguais. */
+  matchPartMinutes?: number[];
   /** O tempo adicional por parte, em minutos. Vazio se ninguém o registou. */
   addedMinutes: number[];
   /** Os minutos de cada parte do prolongamento. Vazio se não houve. */
@@ -375,6 +382,10 @@ export const updateTeam = (
     maxCallUps?: number;
     /** Substituições ilimitadas: quem sai pode voltar a entrar. */
     unlimitedSubs?: boolean;
+    /** Em quantas partes se joga. `null` volta às da modalidade. */
+    matchParts?: number | null;
+    /** Os minutos de cada parte. Vazio volta às partes iguais. */
+    matchPartMinutes?: number[];
     competitionIds?: string[];
   },
 ) => apiPatch<{ ok: true }>(`/api/teams/${teamId}`, patch);

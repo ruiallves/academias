@@ -1294,6 +1294,21 @@ model Team {
   /// cada). Ver `components/match/substituicoes.ts` na consola.
   unlimitedSubs Boolean @default(false)
 
+  /// Em quantas partes se joga um jogo desta equipa (1–8).
+  ///
+  /// Por equipa e não por modalidade, como a duração: desde 2026/27 os
+  /// infantis, benjamins e traquinas de futebol jogam três partes, e os
+  /// outros escalões duas. Nulo = as da modalidade (2 no futebol e no futsal,
+  /// 4 no basquetebol; `partesDoJogo` em `minutos-do-jogo.ts`). Sem
+  /// `matchPartMinutes`, cada parte dura `matchMinutes / partes`, e tem de dar
+  /// certo.
+  matchParts Int?
+
+  /// Os minutos de cada parte, quando não são iguais (15 + 15 + 40 nos
+  /// infantis de futebol em 2026/27). Vazio = partes iguais. Com valores, tem
+  /// uma entrada por parte e soma `matchMinutes`. Ver `problemaNoTempoDoJogo`.
+  matchPartMinutes Int[] @default([])
+
   /// Os meses em que este escalão paga mensalidade (1–12), quando o clube cobra
   /// por escalão (`Academy.billingByTeam`). Vazio = segue os meses do clube
   /// (`Academy.billingMonths`): é como nasce uma equipa nova. Fora do modo por
@@ -2800,7 +2815,8 @@ model Match {
   /// O tempo adicional, em minutos, por parte: `[2, 5]` é +2 na primeira e +5 na
   /// segunda. Vazio quando não foi registado. Só nas modalidades que o têm (o
   /// futebol); no futsal e no basquetebol o cronómetro pára e não há
-  /// compensação. Ver `PARTES_COM_TEMPO_ADICIONAL` em `matches.service.ts`.
+  /// compensação. Uma entrada por parte da equipa (`Team.matchParts`); ver
+  /// `partesComTempoAdicional` em `minutos-do-jogo.ts`.
   addedMinutes Int[] @default([])
 
   /// O prolongamento, em minutos, por parte: `[15, 15]` no futebol, `[5]` ou

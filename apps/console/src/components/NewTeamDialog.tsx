@@ -9,12 +9,13 @@ import { defaultSeason, seasonOptions } from "@/lib/seasons";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
 import { TEAM_GENDERS, TEAM_GENDER_LABEL } from "@/lib/genero";
 import type { TeamGender } from "@/data/types";
-import { profileOf } from "@/lib/sports";
+import { partesDoJogo, profileOf } from "@/lib/sports";
 import { Plus, Trash2 } from "@/lib/icons";
 import { CompetitionPicker } from "@/components/CompetitionPicker";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { PersonPicker } from "./PersonPicker";
 import { CampoSubstituicoes } from "./CampoSubstituicoes";
+import { lerMinutosDasPartes, lerPartes, MinutosPorParte, notaDasPartes, repartir } from "./CampoPartes";
 import { cx, SelectField } from "./primitives";
 
 const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -77,6 +78,15 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
    * modalidade antes de mexer muda a sugestão com ela.
    */
   const [volantesEscolhidas, setVolantes] = useState<boolean | null>(null);
+  /*
+   * As partes do jogo, em texto e vazias por omissão, como a duração: vazio
+   * são as da modalidade (2 no futebol e no futsal, 4 no basquetebol). Os
+   * infantis, benjamins e traquinas de futebol jogam 3 desde 2026/27.
+   */
+  const [partesTexto, setPartesTexto] = useState("");
+  /* Partes com minutos diferentes (15 + 15 + 40): desligado, são iguais. Ver `MinutosPorParte`. */
+  const [porParte, setPorParte] = useState(false);
+  const [valoresPartes, setValoresPartes] = useState<string[]>([]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +96,25 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
   const codigo = profileOf(sport)?.code;
   const volantes = volantesEscolhidas ?? (codigo === "futsal" || codigo === "basketball");
   const minutosOk = minutos === "" || (/^\d{1,3}$/.test(minutos) && Number(minutos) >= 1 && Number(minutos) <= 300);
+  const perfil = profileOf(sport);
+  const partesDaModalidade = partesDoJogo(perfil, null);
+  const partes = lerPartes(partesTexto, partesDaModalidade);
+  /* Os minutos de cada parte só contam com a caixa ligada e mais de uma parte. */
+  const comPorParte = porParte && partes !== null && partes >= 2;
+  const minutosDasPartes = comPorParte ? lerMinutosDasPartes(valoresPartes.slice(0, partes)) : null;
+  const somaDasPartes = minutosDasPartes?.reduce((n, m) => n + m, 0) ?? null;
+  /* A duração que vai ficar: a soma das partes, a escrita, ou a sugerida. Com partes iguais tem de se dividir nelas. */
+  const duracaoFinal = comPorParte ? somaDasPartes : minutos && minutosOk ? Number(minutos) : minutosSugeridos;
+  /* "3 partes de 20 minutos", "15 + 15 + 40 = 70 minutos", ou porque é que não dá. Ver `notaDasPartes`. */
+  const nota = perfil
+    ? notaDasPartes(partes, duracaoFinal, perfil.match.periodName, { ligado: comPorParte, minutos: minutosDasPartes })
+    : null;
+  const partesOk = !nota?.erro;
+  const ligarPorParte = (ligado: boolean) => {
+    // Começa pela duração repartida (70 em 3 dá 23 + 23 + 24), para só mexer no que muda.
+    if (ligado && partes) setValoresPartes(repartir(minutos && minutosOk ? Number(minutos) : minutosSugeridos, partes));
+    setPorParte(ligado);
+  };
   const [gender, setGender] = useState<"" | TeamGender>("");
   const maxAge = Number(age);
   const ageOk = /^\d{1,2}$/.test(age) && maxAge >= 4 && maxAge <= SEM_LIMITE;
@@ -109,8 +138,11 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
         season: season.trim(),
         ...(coachId ? { coachId } : {}),
         ...(competitionIds.length ? { competitionIds } : {}),
-        ...(minutos ? { matchMinutes: Number(minutos) } : {}),
+        // Com os minutos de cada parte, a duração é a soma deles.
+        ...(minutosDasPartes ? { matchMinutes: somaDasPartes, matchPartMinutes: minutosDasPartes } : minutos ? { matchMinutes: Number(minutos) } : {}),
         unlimitedSubs: volantes,
+        // Só quando difere das da modalidade: sem escolha, a equipa segue a modalidade.
+        ...(perfil && partes !== null && partes !== partesDaModalidade ? { matchParts: partes } : {}),
         schedule: slots.filter((s) => s.venue),
       });
       await reloadAcademy();
@@ -133,7 +165,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageOk || !minutosOk || busy}>
+          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageOk || (!minutosOk && !comPorParte) || !partesOk || busy}>
             {busy ? "A criar…" : "Criar equipa"}
           </button>
         </>
@@ -204,11 +236,11 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
           </select>
         </DialogField>
 
-        <div className="grid grid-cols-2 gap-3">
-          <DialogField label="Nome" hint="opcional">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Nome da equipa"} className={dialogInputClass} />
-          </DialogField>
+        <DialogField label="Nome" hint="opcional">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Nome da equipa"} className={dialogInputClass} />
+        </DialogField>
 
+        <div className="grid grid-cols-2 gap-3">
           {/*
             Quanto dura um jogo deste escalão.
 
@@ -216,17 +248,47 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
             jogam o mesmo tempo, e é deste número que saem os minutos de quem
             jogou até ao fim. O sugerido é o da modalidade; escreve-se por cima.
           */}
-          <DialogField label="Duração do jogo" hint="minutos">
+          <DialogField label="Duração do jogo" hint={comPorParte ? "soma" : "minutos"}>
+            {/* Com os minutos de cada parte, a duração é a soma deles e não se escreve. */}
             <input
-              value={minutos}
+              value={comPorParte ? (somaDasPartes ? String(somaDasPartes) : "") : minutos}
               onChange={(e) => setMinutos(e.target.value.replace(/\D/g, "").slice(0, 3))}
+              readOnly={comPorParte}
               inputMode="numeric"
-              placeholder={minutosSugeridos ? String(minutosSugeridos) : "90"}
+              placeholder={comPorParte ? "" : minutosSugeridos ? String(minutosSugeridos) : "90"}
               aria-label="Duração do jogo em minutos"
-              className={cx(dialogInputClass, !minutosOk && "border-risk")}
+              className={cx(dialogInputClass, !minutosOk && !comPorParte && "border-risk", comPorParte && "bg-sunken text-ink-3")}
             />
           </DialogField>
+
+          {/*
+            Em quantas partes se joga. Vazio são as da modalidade (a sugestão);
+            os infantis, benjamins e traquinas de futebol jogam 3 desde 2026/27.
+          */}
+          {perfil && (
+            <DialogField label="Partes do jogo">
+              <input
+                value={partesTexto}
+                onChange={(e) => setPartesTexto(e.target.value.replace(/\D/g, "").slice(0, 1))}
+                inputMode="numeric"
+                placeholder={String(partesDaModalidade)}
+                aria-label="Partes do jogo"
+                className={cx(dialogInputClass, nota?.erro && "border-risk")}
+              />
+            </DialogField>
+          )}
         </div>
+        {perfil && partes !== null && partes >= 2 && (
+          <MinutosPorParte
+            partes={partes}
+            nomeDaParte={perfil.match.periodName}
+            ligado={porParte}
+            onLigar={ligarPorParte}
+            valores={valoresPartes}
+            onValores={setValoresPartes}
+          />
+        )}
+        {nota && <p className={cx("-mt-2 text-[11px] leading-relaxed", nota.erro ? "text-risk" : "text-ink-4")}>{nota.texto}</p>}
 
         <CampoSubstituicoes ligado={volantes} onChange={setVolantes} />
 

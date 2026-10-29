@@ -150,6 +150,10 @@ type ApiTeam = {
   maxCallUps?: number;
   /** Substituições ilimitadas. Ausente num servidor antigo. Ver `Team.unlimitedSubs`. */
   unlimitedSubs?: boolean;
+  /** Em quantas partes se joga. Nulo = as da modalidade. Ausente num servidor antigo. */
+  matchParts?: number | null;
+  /** Os minutos de cada parte, quando não são iguais. Vazio = iguais. Ausente num servidor antigo. */
+  matchPartMinutes?: number[];
 };
 
 type ApiAthlete = {
@@ -930,6 +934,8 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     matchMinutes: t.matchMinutes ?? null,
     ...(t.maxCallUps !== undefined ? { maxCallUps: t.maxCallUps } : {}),
     ...(t.unlimitedSubs !== undefined ? { unlimitedSubs: t.unlimitedSubs } : {}),
+    matchParts: t.matchParts ?? null,
+    matchPartMinutes: t.matchPartMinutes ?? [],
   }));
 
   const athletes: Athlete[] = apiAthletes.map((a) => ({

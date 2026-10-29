@@ -173,8 +173,8 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
       },
   );
   const regras = useMemo(
-    () => regrasDoJogo(profile, match.matchMinutes, estado.prolongamento),
-    [profile, match.matchMinutes, estado.prolongamento],
+    () => regrasDoJogo(profile, match.matchMinutes, estado.prolongamento, match.matchParts, match.matchPartMinutes),
+    [profile, match.matchMinutes, estado.prolongamento, match.matchParts, match.matchPartMinutes],
   );
   const regraProl = regras.regraDoProlongamento;
   /** Os minutos de cada parte do prolongamento, escolhidos antes de ele começar. */

@@ -28,6 +28,7 @@ import { equipasDaEpocaAtual } from "../common/seasons";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
+import { minutosDasPartesParaGravar, partesDoJogo, problemaNoTempoDoJogo } from "./minutos-do-jogo";
 import { siteIncluido, siteSoNaExperiencia } from "../site/plano";
 
 /**
@@ -1331,7 +1332,7 @@ export class AcademyService {
         where: scope ? { id: scope } : {},
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true, unlimitedSubs: true,
+          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true, unlimitedSubs: true, matchParts: true, matchPartMinutes: true,
           sport: { select: { matchMinutes: true } },
           season: { select: { id: true, label: true } },
           staff: {
@@ -1382,6 +1383,10 @@ export class AcademyService {
         maxCallUps: t.maxCallUps,
         /* Substituições ilimitadas: quem sai pode voltar a entrar. Ver `Team.unlimitedSubs`. */
         unlimitedSubs: t.unlimitedSubs,
+        /* Em quantas partes se joga. Nulo = as da modalidade. Ver `Team.matchParts`. */
+        matchParts: t.matchParts,
+        /* Os minutos de cada parte, quando não são iguais. Vazio = iguais. Ver `Team.matchPartMinutes`. */
+        matchPartMinutes: t.matchPartMinutes,
         season: t.season.label,
         schedule: t.schedule,
         athleteCount: t._count.athletes,
@@ -1568,6 +1573,10 @@ export class AcademyService {
       matchMinutes?: number;
       /** Substituições ilimitadas. Sem ela, as da modalidade. Ver `Team.unlimitedSubs`. */
       unlimitedSubs?: boolean;
+      /** Em quantas partes se joga. Sem ela, as da modalidade. Ver `Team.matchParts`. */
+      matchParts?: number;
+      /** Os minutos de cada parte, quando não são iguais. Ver `Team.matchPartMinutes`. */
+      matchPartMinutes?: number[];
     },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
@@ -1577,6 +1586,17 @@ export class AcademyService {
       // por tenant pela extensão — um `sportId` de outra academia dá "não encontrado".
       const sport = await db.sport.findFirst({ where: { id: dto.sportId }, select: { id: true, matchMinutes: true, code: true } });
       if (!sport) throw new BadRequestException("Modalidade desconhecida");
+
+      /*
+       * A duração e as partes têm de dar partes com minutos certos: iguais, ou
+       * as escritas uma a uma (que somam a duração). Sem duração escrita, a
+       * soma das partes é a duração.
+       */
+      const minutosDasPartes = dto.matchPartMinutes ?? [];
+      const somaDasPartes = minutosDasPartes.reduce((n, m) => n + m, 0);
+      const duracaoNova = dto.matchMinutes ?? (somaDasPartes || sport.matchMinutes);
+      const problemaDasPartes = problemaNoTempoDoJogo(duracaoNova, partesDoJogo(sport.code, dto.matchParts), minutosDasPartes);
+      if (problemaDasPartes) throw new BadRequestException(problemaDasPartes);
 
       // O treinador principal, quando indicado, tem de ser desta academia. Sem esta
       // verificação o FK rebentava com um 500 em vez de um 400 explicável.
@@ -1641,9 +1661,13 @@ export class AcademyService {
           schedule: dto.schedule,
           // A duração fica gravada na equipa desde o primeiro dia, mesmo quando
           // veio da modalidade: é a equipa que a vai editar daqui em diante.
-          matchMinutes: dto.matchMinutes ?? sport.matchMinutes ?? null,
+          matchMinutes: duracaoNova ?? null,
           // O que se escolheu ao criar; sem escolha, o que a modalidade costuma ter.
           unlimitedSubs: dto.unlimitedSubs ?? volantesPorOmissao(sport.code),
+          // Sem escolha fica nulo: valem as da modalidade.
+          matchParts: dto.matchParts ?? null,
+          // Vazio = partes iguais.
+          matchPartMinutes: minutosDasPartesParaGravar(minutosDasPartes),
           ...(dto.coachId
             ? { staff: { create: { membershipId: dto.coachId, title: "Treinador principal" } } }
             : {}),
@@ -1652,7 +1676,7 @@ export class AcademyService {
             : {}),
         },
         select: {
-          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, unlimitedSubs: true,
+          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, unlimitedSubs: true, matchParts: true, matchPartMinutes: true,
           season: { select: { label: true } },
           staff: {
             where: { leftAt: null },
@@ -1671,6 +1695,8 @@ export class AcademyService {
         sportId: team.sportId,
         matchMinutes: team.matchMinutes,
         unlimitedSubs: team.unlimitedSubs,
+        matchParts: team.matchParts,
+        matchPartMinutes: team.matchPartMinutes,
         season: team.season.label,
         schedule: team.schedule,
         athleteCount: team._count.athletes,
@@ -1707,7 +1733,10 @@ export class AcademyService {
   async updateTeam(
     ctx: RequestContext,
     teamId: string,
-    dto: { name?: string; maxAge?: number; gender?: TeamGenderValue | null; matchMinutes?: number; maxCallUps?: number; unlimitedSubs?: boolean; competitionIds?: string[] },
+    dto: {
+      name?: string; maxAge?: number; gender?: TeamGenderValue | null; matchMinutes?: number; maxCallUps?: number;
+      unlimitedSubs?: boolean; matchParts?: number | null; matchPartMinutes?: number[]; competitionIds?: string[];
+    },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
     const scope = teamScopeFilter(ctx);
@@ -1716,9 +1745,31 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const team = await db.team.findFirst({
         where: { id: teamId },
-        select: { id: true, name: true, seasonId: true, sportId: true },
+        select: {
+          id: true, name: true, seasonId: true, sportId: true, matchMinutes: true, matchParts: true, matchPartMinutes: true,
+          sport: { select: { code: true, matchMinutes: true } },
+        },
       });
       if (!team) throw new NotFoundException("Equipa não encontrada");
+
+      /*
+       * O tempo do jogo, como fica depois de gravar, tem de dar partes com
+       * minutos certos (`problemaNoTempoDoJogo`). Mudar a duração ou as partes
+       * sem mandar os minutos de cada parte volta às partes iguais: uma lista
+       * de 15 + 15 + 40 não serve a um jogo de 60 nem a 2 partes.
+       */
+      let minutosDasPartes: number[] | undefined;
+      if (dto.matchMinutes !== undefined || dto.matchParts !== undefined || dto.matchPartMinutes !== undefined) {
+        const lista = dto.matchPartMinutes ?? (dto.matchMinutes !== undefined || dto.matchParts !== undefined ? [] : team.matchPartMinutes);
+        const soma = lista.reduce((n, m) => n + m, 0);
+        const duracao = dto.matchMinutes ?? (dto.matchPartMinutes?.length ? soma : (team.matchMinutes ?? team.sport.matchMinutes));
+        const partes = partesDoJogo(team.sport.code, dto.matchParts === undefined ? team.matchParts : dto.matchParts);
+        const problema = problemaNoTempoDoJogo(duracao, partes, lista);
+        if (problema) throw new BadRequestException(problema);
+        minutosDasPartes = minutosDasPartesParaGravar(lista);
+        // Os minutos de cada parte trazem a duração com eles: é a soma.
+        if (dto.matchMinutes === undefined && dto.matchPartMinutes?.length) dto.matchMinutes = soma;
+      }
 
       const data: Prisma.TeamUpdateInput = {};
       if (dto.name !== undefined) {
@@ -1743,6 +1794,8 @@ export class AcademyService {
       if (dto.matchMinutes !== undefined) data.matchMinutes = dto.matchMinutes;
       if (dto.maxCallUps !== undefined) data.maxCallUps = dto.maxCallUps;
       if (dto.unlimitedSubs !== undefined) data.unlimitedSubs = dto.unlimitedSubs;
+      if (dto.matchParts !== undefined) data.matchParts = dto.matchParts;
+      if (minutosDasPartes !== undefined) data.matchPartMinutes = minutosDasPartes;
       if (Object.keys(data).length) await db.team.update({ where: { id: teamId }, data });
 
       if (dto.competitionIds !== undefined) {
@@ -1772,9 +1825,12 @@ export class AcademyService {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true } });
+      const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true, matchParts: true, sport: { select: { code: true } } } });
       if (!team) throw new NotFoundException("Equipa não encontrada");
-      await db.team.update({ where: { id: teamId }, data: { matchMinutes: minutes } });
+      // Outra duração volta às partes iguais (ver `updateTeam`), e tem de se dividir nelas.
+      const problema = problemaNoTempoDoJogo(minutes, partesDoJogo(team.sport.code, team.matchParts));
+      if (problema) throw new BadRequestException(problema);
+      await db.team.update({ where: { id: teamId }, data: { matchMinutes: minutes, matchPartMinutes: [] } });
       return { teamId, matchMinutes: minutes };
     });
   }

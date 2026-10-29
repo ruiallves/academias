@@ -198,6 +198,17 @@ export type Team = {
    * resposta antiga: vale a da modalidade (ver `substituicoesVolantes`).
    */
   unlimitedSubs?: boolean;
+  /**
+   * Em quantas partes se joga. Nulo ou ausente: as da modalidade (ver
+   * `partesDoJogo` em `lib/sports.ts`). Desde 2026/27 os infantis, benjamins
+   * e traquinas de futebol jogam três.
+   */
+  matchParts?: number | null;
+  /**
+   * Os minutos de cada parte, quando não são iguais (15 + 15 + 40). Vazio ou
+   * ausente: partes iguais. Ver `Team.matchPartMinutes` no servidor.
+   */
+  matchPartMinutes?: number[];
 };
 
 /**

@@ -7,7 +7,10 @@
  *
  * Uso: npm run test:minutos-do-jogo --workspace @academia/api
  */
-import { fimDasPartes, intervalosEmCampo, minutoDaExpulsao, minutosEmCampo, problemaNosIntervalos } from "../src/academy/minutos-do-jogo";
+import {
+  fimDasPartes, intervalosEmCampo, minutoDaExpulsao, minutosDasPartesParaGravar, minutosEmCampo, partesComTempoAdicional,
+  partesDesiguais, partesDoJogo, problemaNasPartes, problemaNoTempoDoJogo, problemaNosIntervalos,
+} from "../src/academy/minutos-do-jogo";
 
 let ok = 0;
 let bad = 0;
@@ -77,5 +80,38 @@ igual("intervalos lidos", intervalosEmCampo({ stints: [0, 8, 15] }), [{ de: 0, a
 igual("titular tem de começar aos 0", problemaNosIntervalos([3, 8], true), "Um titular entra ao minuto 0.");
 igual("fora de ordem", problemaNosIntervalos([0, 8, 5], true), "As entradas e saídas não estão por ordem.");
 igual("por ordem, com o mesmo minuto repetido", problemaNosIntervalos([0, 10, 10, 20], true), null);
+
+console.log("\n=== Partes da equipa (infantis em 3 partes) ===");
+igual("sem escolha: as da modalidade (futebol)", partesDoJogo("football", null), 2);
+igual("sem escolha: as da modalidade (basquetebol)", partesDoJogo("basketball", null), 4);
+igual("modalidade sem perfil: duas", partesDoJogo("natacao", null), 2);
+igual("a da equipa ganha", partesDoJogo("football", 3), 3);
+igual("tempo adicional nas 3 partes do futebol", partesComTempoAdicional("football", 3), 3);
+igual("futsal em 3 partes não tem tempo adicional", partesComTempoAdicional("futsal", 3), 0);
+igual("60 em 3 partes dá", problemaNasPartes(60, 3), null);
+igual("50 em 3 partes não dá", problemaNasPartes(50, 3) !== null, true);
+igual("sem duração não há problema", problemaNasPartes(null, 3), null);
+igual("fins de 3 × 20", fimDasPartes(60, 3), [20, 40, 60]);
+igual("3 × 20 com +1 +2 +3, jogou tudo", minutosEmCampo({ started: true }, 60, [1, 2, 3], 3), 66);
+igual("saiu no fim da 1.ª (aos 20): 20 + 1", minutosEmCampo({ started: true, offMinute: 20 }, 60, [1, 2, 3], 3), 21);
+igual("entrou na 2.ª (aos 20) e saiu aos 40: 20 + 2", minutosEmCampo({ onMinute: 20, offMinute: 40 }, 60, [1, 2, 3], 3), 22);
+igual("entrou na 3.ª (aos 40) até ao fim: 20 + 3", minutosEmCampo({ onMinute: 40 }, 60, [1, 2, 3], 3), 23);
+
+console.log("\n=== Partes com minutos diferentes (15 + 15 + 40) ===");
+igual("fins de 15 + 15 + 40", fimDasPartes(70, 3, [], [15, 15, 40]), [15, 30, 70]);
+igual("com prolongamento a seguir", fimDasPartes(70, 3, [10], [15, 15, 40]), [15, 30, 70, 80]);
+igual("lista que não bate com as partes: iguais", fimDasPartes(60, 3, [], [30, 30]), [20, 40, 60]);
+igual("as partes da equipa", partesDesiguais(3, [15, 15, 40]), [15, 15, 40]);
+igual("lista de outro número de partes não conta", partesDesiguais(2, [15, 15, 40]), []);
+igual("saiu no fim da 2.ª (aos 30): 30 + 1 + 2", minutosEmCampo({ started: true, offMinute: 30 }, 70, [1, 2, 3], 3, [], [15, 15, 40]), 33);
+igual("entrou aos 30 até ao fim: 40 + 3", minutosEmCampo({ onMinute: 30 }, 70, [1, 2, 3], 3, [], [15, 15, 40]), 43);
+igual("saiu aos 20, na 2.ª: só leva o +1", minutosEmCampo({ started: true, offMinute: 20 }, 70, [1, 2, 3], 3, [], [15, 15, 40]), 21);
+igual("15 + 15 + 40 num jogo de 70 dá", problemaNoTempoDoJogo(70, 3, [15, 15, 40]), null);
+igual("somam 70 e o jogo dura 60", problemaNoTempoDoJogo(60, 3, [15, 15, 40]), "As partes somam 70 minutos e o jogo dura 60.");
+igual("falta uma parte", problemaNoTempoDoJogo(30, 3, [15, 15]), "Escreve os minutos de cada uma das 3 partes.");
+igual("parte de zero minutos", problemaNoTempoDoJogo(30, 2, [30, 0]) !== null, true);
+igual("sem lista: a regra das partes iguais", problemaNoTempoDoJogo(50, 3), problemaNasPartes(50, 3));
+igual("iguais gravam-se vazias", minutosDasPartesParaGravar([20, 20, 20]), []);
+igual("diferentes gravam-se", minutosDasPartesParaGravar([15, 15, 40]), [15, 15, 40]);
 console.log(`\n${ok} passaram, ${bad} falharam`);
 process.exit(bad ? 1 : 0);

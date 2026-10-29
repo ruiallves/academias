@@ -7,13 +7,80 @@
  */
 
 /**
- * As modalidades com tempo adicional, e em quantas partes.
- *
- * Só o futebol, com duas. O futsal (2 × 20) e o basquetebol (4 × 10) jogam-se
- * com o cronómetro parado e não entram aqui. É o mesmo que `match.addedTime` e
- * `match.periods` de `SPORT_PROFILES` na consola.
+ * As partes de um jogo em cada modalidade, quando a equipa não diz outra coisa
+ * (`Team.matchParts`). É o mesmo que `match.periods` de `SPORT_PROFILES` na
+ * consola.
  */
-export const PARTES_COM_TEMPO_ADICIONAL: Record<string, number> = { football: 2 };
+export const PARTES_POR_OMISSAO: Record<string, number> = { football: 2, futsal: 2, basketball: 4 };
+
+/**
+ * As modalidades com tempo adicional (compensação no fim de cada parte).
+ *
+ * Só o futebol. O futsal e o basquetebol jogam-se com o cronómetro parado e não
+ * entram aqui. É o mesmo que `match.addedTime` na consola.
+ */
+export const COM_TEMPO_ADICIONAL = new Set(["football"]);
+
+/** Em quantas partes joga esta equipa: as dela, ou as da modalidade. */
+export function partesDoJogo(codigo: string | null | undefined, partesDaEquipa: number | null | undefined): number {
+  if (partesDaEquipa != null && partesDaEquipa >= 1) return partesDaEquipa;
+  return PARTES_POR_OMISSAO[codigo ?? ""] ?? 2;
+}
+
+/** As partes que têm tempo adicional neste jogo: as do jogo no futebol, nenhuma nas outras. */
+export function partesComTempoAdicional(codigo: string | null | undefined, partesDaEquipa: number | null | undefined): number {
+  return COM_TEMPO_ADICIONAL.has(codigo ?? "") ? partesDoJogo(codigo, partesDaEquipa) : 0;
+}
+
+/**
+ * Porque é que a duração não se divide nestas partes, ou `null` se divide.
+ *
+ * Cada parte tem de ter minutos certos: o relógio do "Ao vivo" e as contas de
+ * minutos partem o jogo em partes iguais. 60 em 3 dá 20; 50 em 3 não dá.
+ */
+export function problemaNasPartes(duracao: number | null | undefined, partes: number): string | null {
+  if (!duracao || duracao <= 0) return null;
+  if (duracao % partes === 0) return null;
+  return `${duracao} minutos não se dividem em ${partes} partes iguais. Escolhe uma duração que dê minutos certos em cada parte.`;
+}
+
+/** O máximo de minutos de uma parte (o mesmo CHECK da base em `Team.matchPartMinutes`). */
+export const MAXIMO_DA_PARTE = 120;
+
+/**
+ * Os minutos de cada parte, quando a equipa os diz (`Team.matchPartMinutes`),
+ * ou vazio para partes iguais. Uma lista que não bate com as partes não conta.
+ */
+export function partesDesiguais(partes: number, minutosDasPartes: number[] | null | undefined): number[] {
+  const lista = minutosDasPartes ?? [];
+  return lista.length === partes ? lista : [];
+}
+
+/**
+ * Porque é que este tempo de jogo não dá, ou `null` se dá.
+ *
+ * Sem minutos por parte, a duração tem de se dividir nas partes
+ * (`problemaNasPartes`). Com eles, uma entrada por parte, cada uma de 1 a 120, e
+ * a soma é a duração: 15 + 15 + 40 dá um jogo de 70.
+ */
+export function problemaNoTempoDoJogo(duracao: number | null | undefined, partes: number, minutosDasPartes: number[] = []): string | null {
+  if (minutosDasPartes.length === 0) return problemaNasPartes(duracao, partes);
+  if (minutosDasPartes.length !== partes) return `Escreve os minutos de cada uma das ${partes} partes.`;
+  if (minutosDasPartes.some((m) => !Number.isInteger(m) || m < 1 || m > MAXIMO_DA_PARTE)) {
+    return `Cada parte tem de ter entre 1 e ${MAXIMO_DA_PARTE} minutos.`;
+  }
+  const soma = minutosDasPartes.reduce((n, m) => n + m, 0);
+  if (duracao && soma !== duracao) return `As partes somam ${soma} minutos e o jogo dura ${duracao}.`;
+  return null;
+}
+
+/**
+ * A lista que se grava: vazia quando as partes são todas iguais (20 + 20 + 20
+ * é o mesmo que 3 partes de um jogo de 60), para haver uma maneira só de o dizer.
+ */
+export function minutosDasPartesParaGravar(minutosDasPartes: number[]): number[] {
+  return minutosDasPartes.every((m) => m === minutosDasPartes[0]) ? [] : minutosDasPartes;
+}
 
 /**
  * O prolongamento de cada modalidade: quantas partes pode ter, e o máximo de
@@ -36,10 +103,14 @@ export function clamp(n: number, min: number, max: number): number {
 
 /**
  * Onde acaba cada parte, em minutos do jogo: as do tempo regulamentar (iguais
- * entre si) e, a seguir, as do prolongamento.
+ * entre si, ou as de `desiguais`) e, a seguir, as do prolongamento.
  */
-export function fimDasPartes(duracao: number, partes: number, prolongamento: number[] = []): number[] {
-  const fins = Array.from({ length: partes }, (_, i) => (duracao * (i + 1)) / partes);
+export function fimDasPartes(duracao: number, partes: number, prolongamento: number[] = [], desiguais: number[] = []): number[] {
+  let soma = 0;
+  const fins =
+    desiguais.length === partes
+      ? desiguais.map((m) => (soma += m))
+      : Array.from({ length: partes }, (_, i) => (duracao * (i + 1)) / partes);
   let ate = duracao;
   for (const m of prolongamento) {
     ate += m;
@@ -89,17 +160,18 @@ export function minutosEmCampo(
   adicional: number[] = [],
   partes = 0,
   prolongamento: number[] = [],
+  desiguais: number[] = [],
 ): number {
   // Com substituições ilimitadas, a soma de cada vez que esteve em campo.
   const intervalos = intervalosEmCampo(r);
   if (intervalos) {
-    const soma = intervalos.reduce((n, i) => n + minutosDoIntervalo(i.de, i.ate, duracao, adicional, partes, prolongamento), 0);
+    const soma = intervalos.reduce((n, i) => n + minutosDoIntervalo(i.de, i.ate, duracao, adicional, partes, prolongamento, desiguais), 0);
     return clamp(soma, 0, 300);
   }
   const entrada = r.started ? 0 : r.onMinute;
   if (entrada == null) return 0;
   const sai = r.offMinute ?? minutoDaExpulsao(r);
-  return clamp(minutosDoIntervalo(entrada, sai, duracao, adicional, partes, prolongamento), 0, 300);
+  return clamp(minutosDoIntervalo(entrada, sai, duracao, adicional, partes, prolongamento, desiguais), 0, 300);
 }
 
 type ComExpulsao = { redAt?: number | null; yellowCards?: number | null; yellowAt?: number[] | null };
@@ -127,11 +199,12 @@ function minutosDoIntervalo(
   adicional: number[],
   partes: number,
   prolongamento: number[],
+  desiguais: number[],
 ): number {
   const total = duracao + prolongamento.reduce((n, m) => n + m, 0);
   let minutos = (sai ?? total) - entrada;
   if (partes > 0 && duracao > 0) {
-    const fins = fimDasPartes(duracao, partes, prolongamento);
+    const fins = fimDasPartes(duracao, partes, prolongamento, desiguais);
     fins.forEach((fim, i) => {
       const ultima = i === fins.length - 1;
       const estavaLa = entrada < fim && (ultima ? sai == null : sai == null || sai >= fim);

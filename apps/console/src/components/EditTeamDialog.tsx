@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx } from "./primitives";
 import { CampoSubstituicoes } from "./CampoSubstituicoes";
+import { lerMinutosDasPartes, lerPartes, minutosGravados, MinutosPorParte, notaDasPartes, repartir } from "./CampoPartes";
 import { sportById } from "@/lib/api";
+import { partesDoJogo, profileOf } from "@/lib/sports";
 import { substituicoesVolantes } from "@/components/match/substituicoes";
 import { Settings } from "@/lib/icons";
 import { updateTeam } from "@/lib/matches";
@@ -46,6 +48,17 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
   /* A da equipa; num servidor antigo, a da modalidade. */
   const volantesAntes = substituicoesVolantes(team.unlimitedSubs, sportById(team.sportId)?.code);
   const [volantes, setVolantes] = useState(volantesAntes);
+  /* As partes do jogo: as da equipa, ou as da modalidade. Ver `Team.matchParts`. */
+  const perfil = profileOf(sportById(team.sportId));
+  const partesDaModalidade = partesDoJogo(perfil, null);
+  const partesAntes = partesDoJogo(perfil, team.matchParts);
+  /* Vazio são as da modalidade; uma equipa com as suas mostra o número. */
+  const [partesTexto, setPartesTexto] = useState(team.matchParts == null ? "" : String(team.matchParts));
+  const partes = lerPartes(partesTexto, partesDaModalidade);
+  /* Partes com minutos diferentes (15 + 15 + 40), como estão gravadas. Ver `MinutosPorParte`. */
+  const gravadas = minutosGravados(team.matchPartMinutes, partesAntes);
+  const [porParte, setPorParte] = useState(gravadas.length > 0);
+  const [valoresPartes, setValoresPartes] = useState<string[]>(gravadas);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -56,7 +69,27 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
   const idadeOk = /^\d{1,2}$/.test(idade) && idadeN >= 4 && idadeN <= SEM_LIMITE;
   const minutosOk = minutos === "" || (Number.isInteger(minutosN) && minutosN >= 1 && minutosN <= 300);
   const convocadosOk = convocados === "" || (Number.isInteger(convocadosN) && convocadosN >= 1 && convocadosN <= 60);
-  const valido = nomeOk && idadeOk && minutosOk && convocadosOk;
+  /* Os minutos de cada parte só contam com a caixa ligada e mais de uma parte. */
+  const comPorParte = porParte && partes !== null && partes >= 2;
+  const minutosDasPartes = comPorParte ? lerMinutosDasPartes(valoresPartes.slice(0, partes)) : null;
+  const somaDasPartes = minutosDasPartes?.reduce((n, m) => n + m, 0) ?? null;
+  /* A duração que vai ficar: a soma das partes, ou a escrita. Com partes iguais tem de se dividir nelas (60 em 3 dá 20). */
+  const duracaoFinal = comPorParte ? somaDasPartes : minutos !== "" && minutosOk ? minutosN : team.matchMinutes;
+  /* "3 partes de 20 minutos", "15 + 15 + 40 = 70 minutos", ou porque é que não dá. Ver `notaDasPartes`. */
+  const nota = perfil
+    ? notaDasPartes(partes, duracaoFinal, perfil.match.periodName, { ligado: comPorParte, minutos: minutosDasPartes })
+    : null;
+  const partesOk = !nota?.erro;
+  const valido = nomeOk && idadeOk && (minutosOk || comPorParte) && convocadosOk && partesOk;
+  const ligarPorParte = (ligado: boolean) => {
+    // Começa pela duração repartida (70 em 3 dá 23 + 23 + 24), para só mexer no que muda.
+    if (ligado && partes) setValoresPartes(repartir(minutos !== "" && minutosOk ? minutosN : team.matchMinutes, partes));
+    setPorParte(ligado);
+  };
+  /* O que mudou nos minutos de cada parte: a lista nova, vazia para voltar às iguais, ou nada. */
+  const listaMudou = minutosDasPartes
+    ? minutosDasPartes.join(",") !== gravadas.join(",")
+    : !comPorParte && gravadas.length > 0;
 
   /* "Amigável" está sempre: é o que torna a competição obrigatória num jogo possível. */
   const amigavel = provas.find((p) => p.label === AMIGAVEL);
@@ -78,9 +111,15 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
       ...(nome.trim() !== team.name ? { name: nome.trim() } : {}),
       ...(idadeN !== team.maxAge ? { maxAge: idadeN } : {}),
       ...(genero !== (team.gender ?? "") ? { gender: genero || null } : {}),
-      ...(minutos !== "" && minutosN !== team.matchMinutes ? { matchMinutes: minutosN } : {}),
+      // Com os minutos de cada parte, a duração é a soma deles.
+      ...(comPorParte
+        ? somaDasPartes !== null && somaDasPartes !== team.matchMinutes ? { matchMinutes: somaDasPartes } : {}
+        : minutos !== "" && minutosN !== team.matchMinutes ? { matchMinutes: minutosN } : {}),
+      ...(listaMudou ? { matchPartMinutes: minutosDasPartes ?? [] } : {}),
       ...(convocados !== "" && convocadosN !== team.maxCallUps ? { maxCallUps: convocadosN } : {}),
       ...(volantes !== volantesAntes ? { unlimitedSubs: volantes } : {}),
+      // As da modalidade gravam-se como nulo: a equipa volta a segui-la.
+      ...(partes !== null && partes !== partesAntes ? { matchParts: partes === partesDaModalidade ? null : partes } : {}),
       ...(provasMudaram ? { competitionIds: [...escolhidas] } : {}),
     };
     if (Object.keys(patch).length === 0) {
@@ -166,16 +205,31 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
           </select>
         </DialogField>
 
-        <div className="grid grid-cols-2 gap-3">
-          <DialogField label="Duração do jogo" hint="minutos">
+        <div className={cx("grid gap-3", perfil ? "grid-cols-3" : "grid-cols-2")}>
+          <DialogField label="Duração do jogo" hint={comPorParte ? "soma" : "minutos"}>
+            {/* Com os minutos de cada parte, a duração é a soma deles e não se escreve. */}
             <input
-              value={minutos}
+              value={comPorParte ? (somaDasPartes ? String(somaDasPartes) : "") : minutos}
               onChange={(e) => setMinutos(e.target.value.replace(/\D/g, "").slice(0, 3))}
+              readOnly={comPorParte}
               inputMode="numeric"
-              placeholder="60"
-              className={cx(dialogInputClass, !minutosOk && "border-risk")}
+              placeholder={comPorParte ? "" : "60"}
+              className={cx(dialogInputClass, !minutosOk && !comPorParte && "border-risk", comPorParte && "bg-sunken text-ink-3")}
             />
           </DialogField>
+          {/* Em quantas partes se joga. Vazio são as da modalidade (a sugestão). Ver `Team.matchParts`. */}
+          {perfil && (
+            <DialogField label="Partes do jogo">
+              <input
+                value={partesTexto}
+                onChange={(e) => setPartesTexto(e.target.value.replace(/\D/g, "").slice(0, 1))}
+                inputMode="numeric"
+                placeholder={String(partesDaModalidade)}
+                aria-label="Partes do jogo"
+                className={cx(dialogInputClass, nota?.erro && "border-risk")}
+              />
+            </DialogField>
+          )}
           <DialogField label="Máximo de convocados">
             <input
               value={convocados}
@@ -186,9 +240,20 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
             />
           </DialogField>
         </div>
-        <p className="-mt-2 text-[11px] leading-relaxed text-ink-4">
-          A duração decide os minutos de quem jogou até ao fim; muda as fichas daqui para a frente, não as já
-          gravadas.
+        {perfil && partes !== null && partes >= 2 && (
+          <MinutosPorParte
+            partes={partes}
+            nomeDaParte={perfil.match.periodName}
+            ligado={porParte}
+            onLigar={ligarPorParte}
+            valores={valoresPartes}
+            onValores={setValoresPartes}
+          />
+        )}
+        {nota && <p className={cx("-mt-2 text-[11px] leading-relaxed", nota.erro ? "text-risk" : "text-ink-3")}>{nota.texto}</p>}
+        <p className={cx("text-[11px] leading-relaxed text-ink-4", !nota && "-mt-2")}>
+          A duração e as partes decidem os minutos de quem jogou até ao fim; mudam as fichas daqui para a frente, não
+          as já gravadas.
         </p>
 
         <CampoSubstituicoes ligado={volantes} onChange={setVolantes} mudouComJogos={volantes !== volantesAntes} />

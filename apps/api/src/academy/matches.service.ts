@@ -12,7 +12,7 @@ import {
   type RequestContext,
 } from "../common/permissions";
 import { headCoaches, pesoDoTitulo } from "./head-coaches";
-import { intervalosEmCampo, minutoDaExpulsao, minutosEmCampo, PARTES_COM_TEMPO_ADICIONAL, problemaNosIntervalos, PROLONGAMENTO } from "./minutos-do-jogo";
+import { intervalosEmCampo, minutoDaExpulsao, minutosEmCampo, partesComTempoAdicional, partesDesiguais, partesDoJogo, problemaNosIntervalos, PROLONGAMENTO } from "./minutos-do-jogo";
 import { AMIGAVEL } from "./catalogs.service";
 import { formatarNoFuso, horaNoFuso, instanteNoFuso, lerHora, partesNoFuso, somarDias } from "../common/fuso";
 
@@ -293,7 +293,10 @@ export class MatchesService {
               matchMinutes: true,
               // Se quem sai pode voltar a entrar. Ver `Team.unlimitedSubs`.
               unlimitedSubs: true,
-              sport: { select: { matchMinutes: true } },
+              // Em quantas partes se joga, e os minutos de cada uma se não são iguais.
+              matchParts: true,
+              matchPartMinutes: true,
+              sport: { select: { matchMinutes: true, code: true } },
               // A equipa técnica da ficha da equipa — o que a folha usa quando
               // ninguém escalou uma equipa de trabalho para este jogo.
               staff: {
@@ -388,6 +391,10 @@ export class MatchesService {
         matchMinutes: duracaoDoJogo(m.team),
         /** Substituições ilimitadas: quem sai pode voltar a entrar, e os minutos somam cada vez em campo. */
         unlimitedSubs: m.team.unlimitedSubs,
+        /** Em quantas partes se joga: as da equipa, ou as da modalidade. */
+        matchParts: partesDoJogo(m.team.sport.code, m.team.matchParts),
+        /** Os minutos de cada parte, quando não são iguais (15 + 15 + 40). Vazio = iguais. */
+        matchPartMinutes: minutosDasPartesDa(m.team),
         /** O tempo adicional por parte. Vazio se ninguém o registou. */
         addedMinutes: m.addedMinutes,
         /** Os minutos de cada parte do prolongamento. Vazio se não houve. */
@@ -767,7 +774,7 @@ export class MatchesService {
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const alvo = await this.mustReach(db, ctx, matchId);
-      const partes = PARTES_COM_TEMPO_ADICIONAL[alvo.team.sport.code ?? ""] ?? 0;
+      const partes = partesComTempoAdicional(alvo.team.sport.code, alvo.team.matchParts);
       if (partes === 0) throw new BadRequestException("Nesta modalidade não há tempo adicional");
       // As partes do prolongamento também têm compensação.
       const todas = partes + alvo.overtimeMinutes.length;
@@ -785,7 +792,7 @@ export class MatchesService {
       while (limpos.length > 0 && limpos[limpos.length - 1] === 0) limpos.pop();
 
       await db.match.update({ where: { id: matchId }, data: { addedMinutes: limpos } });
-      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), limpos, partes, alvo.overtimeMinutes, alvo.team.unlimitedSubs);
+      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), limpos, partes, alvo.overtimeMinutes, alvo.team.unlimitedSubs, minutosDasPartesDa(alvo.team));
 
       return { ok: true as const, addedMinutes: limpos };
     });
@@ -819,12 +826,12 @@ export class MatchesService {
         throw new BadRequestException("O jogo ainda não começou");
       }
 
-      const partes = PARTES_COM_TEMPO_ADICIONAL[alvo.team.sport.code ?? ""] ?? 0;
+      const partes = partesComTempoAdicional(alvo.team.sport.code, alvo.team.matchParts);
       const adicional = alvo.addedMinutes.slice(0, partes + minutes.length);
       while (adicional.length > 0 && adicional[adicional.length - 1] === 0) adicional.pop();
 
       await db.match.update({ where: { id: matchId }, data: { overtimeMinutes: minutes, addedMinutes: adicional } });
-      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), adicional, partes, minutes, alvo.team.unlimitedSubs);
+      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), adicional, partes, minutes, alvo.team.unlimitedSubs, minutosDasPartesDa(alvo.team));
 
       return { ok: true as const, overtimeMinutes: minutes, addedMinutes: adicional };
     });
@@ -966,7 +973,7 @@ export class MatchesService {
       );
 
       const duracao = duracaoDoJogo(match.team);
-      const partes = PARTES_COM_TEMPO_ADICIONAL[match.team.sport.code ?? ""] ?? 0;
+      const partes = partesComTempoAdicional(match.team.sport.code, match.team.matchParts);
       const volantes = match.team.unlimitedSubs;
       /* O jogo inteiro, para travar minutos escritos à mão: duração, prolongamento e descontos. */
       const somar = (xs: number[]) => xs.reduce((n, m) => n + m, 0);
@@ -989,7 +996,7 @@ export class MatchesService {
         if (volantes && !r.stints?.length && r.minutes != null) return clamp(r.minutes, 0, tecto);
         return minutosEmCampo(
           { ...r, stints: volantes ? r.stints : undefined },
-          duracao, match.addedMinutes, partes, match.overtimeMinutes,
+          duracao, match.addedMinutes, partes, match.overtimeMinutes, minutosDasPartesDa(match.team),
         );
       };
 
@@ -1432,7 +1439,7 @@ export class MatchesService {
         // A duração de jogo do escalão: é o que fecha a conta dos minutos de
         // quem jogou até ao fim. Ver `minutosEmCampo` e `duracaoDoJogo`.
         // Substituições ilimitadas: os minutos contam-se por intervalos, ou à mão.
-        team: { select: { matchMinutes: true, unlimitedSubs: true, sport: { select: { matchMinutes: true, code: true } } } },
+        team: { select: { matchMinutes: true, matchParts: true, matchPartMinutes: true, unlimitedSubs: true, sport: { select: { matchMinutes: true, code: true } } } },
       },
     });
     if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
@@ -2242,6 +2249,7 @@ async function refazerMinutosDaFicha(
   partes: number,
   prolongamento: number[],
   volantes: boolean,
+  desiguais: number[],
 ): Promise<void> {
   const ficha = await db.matchAppearance.findMany({
     where: { matchId },
@@ -2250,9 +2258,17 @@ async function refazerMinutosDaFicha(
   for (const a of ficha) {
     // Com substituições ilimitadas e sem intervalos, os minutos foram escritos à mão: ficam.
     if (volantes && a.stints.length === 0) continue;
-    const minutos = minutosEmCampo(a, duracao, adicional, partes, prolongamento);
+    const minutos = minutosEmCampo(a, duracao, adicional, partes, prolongamento, desiguais);
     if (minutos !== a.minutes) await db.matchAppearance.update({ where: { id: a.id }, data: { minutes: minutos } });
   }
+}
+
+/**
+ * Os minutos de cada parte, quando a equipa os tem diferentes (15 + 15 + 40),
+ * ou vazio para partes iguais. Ver `Team.matchPartMinutes`.
+ */
+function minutosDasPartesDa(team: { matchParts: number | null; matchPartMinutes: number[]; sport: { code: string | null } }): number[] {
+  return partesDesiguais(partesDoJogo(team.sport.code, team.matchParts), team.matchPartMinutes);
 }
 
 function duracaoDoJogo(team: { matchMinutes: number | null; sport: { matchMinutes: number | null } }): number {

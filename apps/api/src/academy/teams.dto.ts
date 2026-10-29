@@ -142,6 +142,28 @@ export class CreateTeamDto {
   @IsOptional()
   @IsBoolean()
   unlimitedSubs?: boolean;
+
+  /**
+   * Em quantas partes se joga (1–8). Ver `Team.matchParts`. Sem ela, as da
+   * modalidade (2 no futebol e no futsal, 4 no basquetebol).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  matchParts?: number;
+
+  /**
+   * Os minutos de cada parte, quando não são iguais (15 + 15 + 40). Uma
+   * entrada por parte, e a soma é a duração. Ver `Team.matchPartMinutes`.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(120, { each: true })
+  matchPartMinutes?: number[];
 }
 
 

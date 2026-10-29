@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min } from "class-validator";
+import { Type } from "class-transformer";
 import { InvoicingProvider } from "@prisma/client";
 import { Public, type AuthedRequest } from "../auth/auth.guard";
 import { FaturacaoService } from "./faturacao.service";
@@ -52,7 +53,8 @@ class MeusDadosDto {
 class FaturasQuery {
   /** Um ou mais estados, separados por vírgula: "PENDING,ISSUED". */
   @IsOptional() @IsString() @MaxLength(60) estado?: string;
-  @IsOptional() @IsInt() @Min(1) @Max(500) take?: number;
+  // Na query string chega como texto: converter antes de validar.
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) take?: number;
 }
 
 const PROVIDERS = Object.values(InvoicingProvider) as string[];

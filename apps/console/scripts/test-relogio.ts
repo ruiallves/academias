@@ -84,6 +84,24 @@ igual("e vai para a ficha como 24", cesto.minuto, 24);
 igual("dois descontos de tempo na 1.ª metade", descontosDeTempo(bb, 2, [{ parte: 1 }]), { usados: 1, max: 2 });
 igual("três na 2.ª metade", descontosDeTempo(bb, 4, [{ parte: 1 }, { parte: 3 }]), { usados: 1, max: 3 });
 
+console.log("\n=== Infantis de futebol (3 × 20, partes da equipa) ===");
+const inf = regrasDoJogo(SPORT_PROFILES.football, 60, [], 3);
+igual("três partes", inf.partes, 3);
+igual("a 3.ª parte chama-se assim", nomeDaParte(inf, 3), "3.ª parte");
+igual("a 2.ª parte começa nos 20:00", mostrador(inf, 2, 0).principal, "20:00");
+igual("a 3.ª parte começa nos 40:00", mostrador(inf, 3, 0).principal, "40:00");
+igual("um golo aos 5:00 da 3.ª é ao minuto 46", carimbo(inf, 3, min(5)), { parte: 3, minuto: 46 });
+igual("compensação nas três partes", tempoAdicional(inf, [min(21), min(20), min(22, 40)], []), [1, 0, 3]);
+igual("sem escolha da equipa: duas partes", regrasDoJogo(SPORT_PROFILES.football, 60, [], null).partes, 2);
+const fut3P = regrasDoJogo(SPORT_PROFILES.football, 60, [10, 10], 3);
+igual("prolongamento depois da 3.ª: a 4.ª é a 1.ª do prolongamento", nomeDaParte(fut3P, 4), "1.ª parte do prolongamento");
+igual("e começa nos 60:00", mostrador(fut3P, 4, 0).principal, "60:00");
+
+console.log("\n=== Futsal em 3 partes (3 × 15) ===");
+const fs3 = regrasDoJogo(SPORT_PROFILES.futsal, 45, [], 3);
+igual("partes de 15", mostrador(fs3, 3, min(16)).principal, "15:00");
+igual("um desconto de tempo em cada parte", descontosDeTempo(fs3, 3, [{ parte: 1 }, { parte: 2 }]), { usados: 0, max: 1 });
+
 console.log("\n=== Minibasquete (4 × 8) ===");
 const mini = regrasDoJogo(SPORT_PROFILES.basketball, 32);
 igual("períodos de 8", mostrador(mini, 1, min(9)).principal, "08:00");
@@ -116,7 +134,21 @@ igual("um desconto de tempo por prolongamento", descontosDeTempo(bbP, 6, [{ part
 
 console.log("\n=== Sem modalidade ===");
 const sem = regrasDoJogo(null, null);
-igual("duas partes de 45, relógio do jogo", [sem.partes, sem.duracaoParte, sem.reinicia], [2, 45, false]);
+igual("duas partes de 45, relógio do jogo", [sem.partes, sem.minutosDasPartes, sem.reinicia], [2, [45, 45], false]);
+
+console.log("\n=== Partes com minutos diferentes (infantis, 15 + 15 + 40) ===");
+const des = regrasDoJogo(SPORT_PROFILES.football, 70, [], 3, [15, 15, 40]);
+igual("a 2.ª começa nos 15:00", mostrador(des, 2, 0).principal, "15:00");
+igual("a 3.ª começa nos 30:00", mostrador(des, 3, 0).principal, "30:00");
+igual("a 1.ª acaba aos 15: compensação a seguir", mostrador(des, 1, min(16)), { principal: "15:00", extra: "+01:00", esgotado: true });
+igual("a 3.ª não acaba aos 20", mostrador(des, 3, min(20)).esgotado, false);
+igual("um golo aos 25:00 da 3.ª é ao minuto 55", carimbo(des, 3, min(24, 30)), { parte: 3, minuto: 55 });
+igual("compensação da 3.ª conta a partir dos 40", tempoAdicional(des, [min(15), min(15), min(42)], []), [0, 0, 2]);
+const desP = regrasDoJogo(SPORT_PROFILES.football, 70, [10, 10], 3, [15, 15, 40]);
+igual("prolongamento começa nos 70:00", mostrador(desP, 4, 0).principal, "70:00");
+igual("lista de outro número de partes: iguais", regrasDoJogo(SPORT_PROFILES.football, 60, [], 3, [30, 30]).minutosDasPartes, [20, 20, 20]);
+const fsDes = regrasDoJogo(SPORT_PROFILES.futsal, 50, [], 3, [10, 10, 30]);
+igual("futsal: a 3.ª conta do zero até aos 30", mostrador(fsDes, 3, min(31)).principal, "30:00");
 
 console.log(`\n${ok} passaram, ${bad} falharam`);
 process.exit(bad ? 1 : 0);

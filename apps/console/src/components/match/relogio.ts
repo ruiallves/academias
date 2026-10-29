@@ -1,4 +1,4 @@
-import type { SportProfile } from "@/lib/sports";
+import { partesDoJogo, type SportProfile } from "@/lib/sports";
 
 /**
  * O relógio do jogo ao vivo, por modalidade.
@@ -15,14 +15,16 @@ import type { SportProfile } from "@/lib/sports";
  *   cronómetro. Descontos de tempo: dois na primeira metade e três na segunda.
  *   Não há compensação.
  *
- * Na formação a duração muda por escalão e por associação (2 × 25, 2 × 30,
- * 4 × 8…). Por isso a duração de cada parte é a do jogo da equipa
- * (`Team.matchMinutes`) dividida pelas partes, e não um número fixo.
+ * Na formação a duração e as partes mudam por escalão e por associação
+ * (2 × 25, 3 × 20, 4 × 8, 15 + 15 + 40…). Por isso as partes são as da equipa
+ * (`Team.matchParts`, ou as da modalidade) e cada uma dura o jogo da equipa
+ * (`Team.matchMinutes`) dividido por elas, ou os minutos que a equipa der a
+ * cada uma (`Team.matchPartMinutes`).
  *
  * ## O minuto que vai para o servidor
  *
  * A ficha guarda minutos **do jogo** (`onMinute`, `tallyAt`…), e o servidor
- * divide o jogo em partes iguais para saber a quem dá o tempo adicional (ver
+ * parte o jogo da mesma maneira para saber a quem dá o tempo adicional (ver
  * `minutosEmCampo`). Um cesto aos 4 minutos do 3.º período de 10 vai como 24.
  * A compensação do futebol não entra no número: 45+2 vai como 45, e o tempo a
  * mais é dado pelo `addedMinutes` do jogo. O "+2" fica em `extra`, para o ecrã.
@@ -31,8 +33,8 @@ import type { SportProfile } from "@/lib/sports";
 export type Regras = {
   /** As partes do tempo regulamentar. */
   partes: number;
-  /** Minutos de cada parte do tempo regulamentar. */
-  duracaoParte: number;
+  /** Os minutos de cada parte do tempo regulamentar, uma entrada por parte. */
+  minutosDasPartes: number[];
   /** Cada parte conta do zero (futsal, basquetebol). */
   reinicia: boolean;
   /** Há compensação no fim de cada parte (futebol). */
@@ -47,16 +49,31 @@ export type Regras = {
 
 const PROLONGAMENTO_DE_OMISSAO: SportProfile["match"]["overtime"] = { parts: 2, minutes: 15, maxMinutes: 15, repeat: false, timeouts: 0 };
 
-export function regrasDoJogo(profile: SportProfile | null, matchMinutes: number | null | undefined, prolongamento: number[] = []): Regras {
+export function regrasDoJogo(
+  profile: SportProfile | null,
+  matchMinutes: number | null | undefined,
+  prolongamento: number[] = [],
+  partesDaEquipa?: number | null,
+  minutosDaEquipa: number[] = [],
+): Regras {
   const m = profile?.match;
-  const partes = m?.periods ?? 2;
+  // As da equipa (`Team.matchParts`): os infantis de futebol jogam 3 desde 2026/27.
+  const partes = partesDoJogo(profile, partesDaEquipa);
   const total = matchMinutes && matchMinutes > 0 ? matchMinutes : (profile?.defaults.matchMinutes ?? 90);
+  // Iguais, ou as da equipa quando as tem diferentes (15 + 15 + 40). Ver `Team.matchPartMinutes`.
+  const minutosDasPartes = minutosDaEquipa.length === partes ? minutosDaEquipa : Array.from({ length: partes }, () => total / partes);
+  /*
+   * Os descontos de tempo vêm pensados para as partes da modalidade (no
+   * basquetebol, dois na 1.ª metade e três na 2.ª). Com outras partes, um por
+   * equipa em cada parte.
+   */
+  const timeouts = m?.timeouts && partes !== m.periods ? Array.from({ length: partes }, (_, i) => ({ parts: [i + 1], max: 1 })) : (m?.timeouts ?? null);
   return {
     partes,
-    duracaoParte: total / partes,
+    minutosDasPartes,
     reinicia: m?.clockResets ?? false,
     compensacao: m?.addedTime ?? false,
-    timeouts: m?.timeouts ?? null,
+    timeouts,
     nomeDaParte: m?.periodName ?? "parte",
     regraDoProlongamento: m?.overtime ?? PROLONGAMENTO_DE_OMISSAO,
     prolongamento,
@@ -71,13 +88,14 @@ export const noProlongamento = (r: Regras, parte: number) => parte > r.partes;
 
 /** Minutos que a parte dura. */
 export function duracaoDa(r: Regras, parte: number): number {
-  return parte <= r.partes ? r.duracaoParte : (r.prolongamento[parte - r.partes - 1] ?? 0);
+  return parte <= r.partes ? (r.minutosDasPartes[parte - 1] ?? 0) : (r.prolongamento[parte - r.partes - 1] ?? 0);
 }
 
-/** O minuto do jogo em que a parte começa: 0, 45, 90, 105… */
+/** O minuto do jogo em que a parte começa: 0, 45, 90, 105… (0, 15, 30 num 15 + 15 + 40). */
 export function inicioDa(r: Regras, parte: number): number {
-  if (parte <= r.partes) return (parte - 1) * r.duracaoParte;
-  return r.partes * r.duracaoParte + r.prolongamento.slice(0, parte - r.partes - 1).reduce((n, m) => n + m, 0);
+  const somar = (xs: number[]) => xs.reduce((n, m) => n + m, 0);
+  if (parte <= r.partes) return somar(r.minutosDasPartes.slice(0, parte - 1));
+  return somar(r.minutosDasPartes) + somar(r.prolongamento.slice(0, parte - r.partes - 1));
 }
 
 /**
