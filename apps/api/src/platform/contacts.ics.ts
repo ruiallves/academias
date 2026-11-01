@@ -47,10 +47,33 @@ const ESTADO: Record<string, string> = {
   PERDIDO: "Não interessados",
 };
 
+/** Uma reunião marcada pelo comercial, com a ficha que se lê antes de entrar. */
+type MeetingFeed = {
+  id: string;
+  scheduledAt: Date;
+  durationMin: number;
+  mode: string;
+  location: string | null;
+  personName: string;
+  personRole: string | null;
+  personPhone: string | null;
+  decides: boolean | null;
+  athletes: number | null;
+  teams: string | null;
+  currentTool: string | null;
+  pain: string | null;
+  suggestedPlan: string | null;
+  notes: string | null;
+  bookedByName: string | null;
+  contact: { name: string; association: string | null; locality: string | null };
+};
+
+const MODO: Record<string, string> = { PRESENCIAL: "Presencial", VIDEOCHAMADA: "Videochamada", TELEFONE: "Telefone" };
+
 /** Meia hora. Um seguimento é um telefonema, não uma tarde. */
 const DURATION_MIN = 30;
 
-export function renderIcs(contacts: Feed[], calendarName: string): string {
+export function renderIcs(contacts: Feed[], calendarName: string, meetings: MeetingFeed[] = []): string {
   // `string | null`: as linhas opcionais (DESCRIPTION, LOCATION) entram como
   // `null` quando não há o quê escrever, e são filtradas no fim. Sem esta
   // anotação o TypeScript inferia `string[]` do primeiro elemento e recusava-as.
@@ -99,6 +122,40 @@ export function renderIcs(contacts: Feed[], calendarName: string): string {
       "TRIGGER:-PT30M",
       "ACTION:DISPLAY",
       `DESCRIPTION:${escape(`Ligar a ${c.personName ?? c.name}`)}`,
+      "END:VALARM",
+      "END:VEVENT",
+    );
+  }
+
+  for (const m of meetings) {
+    const end = new Date(m.scheduledAt.getTime() + m.durationMin * 60_000);
+    const onde = [m.contact.locality, m.contact.association].filter(Boolean).join(" · ");
+    const detalhe = [
+      `${MODO[m.mode] ?? m.mode}${m.location ? `: ${m.location}` : ""}`,
+      `Com: ${m.personName}${m.personRole ? ` (${m.personRole})` : ""}${m.decides === true ? ", decide" : m.decides === false ? ", não decide sozinho" : ""}`,
+      m.personPhone ? `Telefone: ${m.personPhone}` : null,
+      m.athletes ? `Atletas: ${m.athletes}` : null,
+      m.teams ? `Modalidades e escalões: ${m.teams}` : null,
+      m.currentTool ? `Usam hoje: ${m.currentTool}` : null,
+      m.pain ? `O que os incomoda: ${m.pain}` : null,
+      m.suggestedPlan ? `Plano indicado: ${m.suggestedPlan}` : null,
+      m.notes ? `Notas: ${m.notes}` : null,
+      m.bookedByName ? `Marcada por ${m.bookedByName}` : null,
+    ].filter(Boolean).join("\n");
+
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:reuniao-${m.id}@academias.pt`,
+      `DTSTAMP:${stamp(new Date())}`,
+      `DTSTART:${stamp(m.scheduledAt)}`,
+      `DTEND:${stamp(end)}`,
+      `SUMMARY:${escape(`Reunião: ${m.contact.name}${onde ? ` · ${onde}` : ""}`)}`,
+      `DESCRIPTION:${escape(detalhe)}`,
+      m.location ? `LOCATION:${escape(m.location)}` : m.personPhone ? `LOCATION:${escape(m.personPhone)}` : null,
+      "BEGIN:VALARM",
+      "TRIGGER:-PT1H",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:${escape(`Reunião com ${m.contact.name}`)}`,
       "END:VALARM",
       "END:VEVENT",
     );

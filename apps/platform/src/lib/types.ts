@@ -1,6 +1,6 @@
 /** O que a API do painel devolve. Espelha `apps/api/src/platform`. */
 
-export type PlatformRole = "OWNER" | "ADMIN" | "SUPPORT";
+export type PlatformRole = "OWNER" | "ADMIN" | "SUPPORT" | "COMERCIAL";
 
 export type Me = { id: string; name: string; email: string; role: PlatformRole; mfaEnabled: boolean };
 
@@ -22,6 +22,7 @@ export const ADMIN_ROLE_LABEL: Record<PlatformRole, string> = {
   OWNER: "Dono",
   ADMIN: "Administrador",
   SUPPORT: "Apoio",
+  COMERCIAL: "Comercial",
 };
 
 export type Alert = {
@@ -310,6 +311,8 @@ export type ContactTouch = {
   status: ContactStatus | null;
   byName: string | null;
   happenedAt: string;
+  /** O resultado, quando veio do painel comercial. */
+  outcome?: CallOutcome | null;
 };
 
 export type Contact = {
@@ -337,8 +340,143 @@ export type Contact = {
   lastTouch: { channel: ContactChannel; note: string | null; happenedAt: string } | null;
   createdAt: string;
   updatedAt: string;
+  locality: string | null;
+  /** Chamadas seguidas sem atender. */
+  noAnswerCount: number;
+  lostReason: LostReason | null;
+  nextMeeting: { id: string; scheduledAt: string } | null;
   /** Só no detalhe — a lista traz apenas `lastTouch`. */
   touches?: ContactTouch[];
+  meetings?: SalesMeeting[];
+};
+
+/* -------------------------------------------------------------------------- */
+/* Comercial                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type CallOutcome = "NAO_ATENDEU" | "LIGAR_MAIS_TARDE" | "PEDIU_INFO" | "SEM_INTERESSE" | "REUNIAO" | "NUMERO_ERRADO";
+
+export type LostReason = "PRECO" | "JA_USA_OUTRO" | "NAO_E_ALTURA" | "SEM_DECISAO" | "CLUBE_PEQUENO" | "SEM_INTERESSE" | "OUTRO";
+
+export const LOST_REASONS: LostReason[] = ["PRECO", "JA_USA_OUTRO", "NAO_E_ALTURA", "SEM_DECISAO", "CLUBE_PEQUENO", "SEM_INTERESSE", "OUTRO"];
+
+export const LOST_REASON_LABEL: Record<LostReason, string> = {
+  PRECO: "Preço",
+  JA_USA_OUTRO: "Já usa outro programa",
+  NAO_E_ALTURA: "Não é altura",
+  SEM_DECISAO: "Não decide / direção nova",
+  CLUBE_PEQUENO: "Clube pequeno",
+  SEM_INTERESSE: "Não vê necessidade",
+  OUTRO: "Outro motivo",
+};
+
+export type MeetingMode = "PRESENCIAL" | "VIDEOCHAMADA" | "TELEFONE";
+export type MeetingStatus = "MARCADA" | "REALIZADA" | "FALTARAM" | "CANCELADA";
+
+export const MEETING_MODE_LABEL: Record<MeetingMode, string> = {
+  PRESENCIAL: "Presencial",
+  VIDEOCHAMADA: "Videochamada",
+  TELEFONE: "Telefone",
+};
+
+export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
+  MARCADA: "Marcada",
+  REALIZADA: "Feita",
+  FALTARAM: "Faltaram",
+  CANCELADA: "Cancelada",
+};
+
+export const PLANOS = ["Consola", "Connect", "Connect Pro"];
+
+export type SalesMeeting = {
+  id: string;
+  contactId?: string;
+  contact?: { id: string; name: string; locality: string | null; association: string | null; sport?: string; status?: ContactStatus };
+  scheduledAt: string;
+  durationMin: number;
+  mode: MeetingMode;
+  location: string | null;
+  personName: string;
+  personRole: string | null;
+  personPhone: string | null;
+  personEmail: string | null;
+  decides: boolean | null;
+  athletes: number | null;
+  teams: string | null;
+  currentTool: string | null;
+  pain: string | null;
+  suggestedPlan: string | null;
+  notes: string | null;
+  status: MeetingStatus;
+  outcomeNote: string | null;
+  outcomeAt: string | null;
+  countsForCommission: boolean;
+  bookedById: string | null;
+  bookedByName: string | null;
+  createdAt: string;
+};
+
+export type CommissionProgress = { novas: number; progresso: number; faltam: number; porComissao: number; total: number };
+
+export type ComercialHoje = {
+  turno: { id: string; startedAt: string } | null;
+  hoje: { chamadas: number; atendidas: number; reunioes: number; minutos: number };
+  semana: { chamadas: number; atendidas: number; reunioes: number };
+  proximas: {
+    id: string;
+    scheduledAt: string;
+    mode: MeetingMode;
+    personName: string;
+    bookedByName: string | null;
+    contact: { id: string; name: string; locality: string | null; association: string | null };
+  }[];
+  mes: { month: string; minutos: number; reunioes: number; comissao: CommissionProgress; totalCents: number; configured: boolean };
+};
+
+export type Compensation = { hourlyCents: number; meetingsPerCommission: number; commissionCents: number };
+
+export type SalesShift = {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  note: string | null;
+  minutes: number;
+  tooLong: boolean;
+};
+
+export type ComercialMes = {
+  admin: { id: string; name: string; role: PlatformRole };
+  month: string;
+  monthLabel: string;
+  configured: boolean;
+  compensation: Compensation;
+  shifts: SalesShift[];
+  openShift: boolean;
+  minutes: number;
+  calls: number;
+  answered: number;
+  meetings: SalesMeeting[];
+  meetingsCounted: number;
+  commission: CommissionProgress;
+  hoursCents: number;
+  commissionCents: number;
+  totalCents: number;
+  payout: { approvedAt: string; approvedBy: string | null; transactionId: string | null } | null;
+};
+
+export type ComercialPessoa = {
+  id: string;
+  name: string;
+  email: string;
+  role: PlatformRole;
+  isActive: boolean;
+  configured: boolean;
+  compensation: Compensation;
+  minutes: number;
+  calls: number;
+  meetingsCounted: number;
+  totalCents: number;
+  shiftStartedAt: string | null;
 };
 
 /**
@@ -436,6 +574,8 @@ export type Transacao = {
   noticeId: string | null;
   recurringId: string | null;
   recurring: { id: string; description: string } | null;
+  notice?: { periodStart: string; periodEnd: string; billingPeriod: "MONTHLY" | "ANNUAL" } | null;
+  salesPayout?: { month: string } | null;
 };
 
 export type GastoFixo = {
@@ -468,6 +608,8 @@ export type MensalidadeDoClube = {
   sentAt: string | null;
   paidAt: string | null;
   paidNote: string | null;
+  paidMethod?: "MBWAY" | "MULTIBANCO" | "MANUAL" | null;
+  remindersSent?: number;
 };
 
 export type ContasResumo = {

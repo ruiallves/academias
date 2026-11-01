@@ -376,7 +376,7 @@ function TicketBody({ id, me, onChanged }: { id: string; me: Me; onChanged: () =
             chega era o que fazia a lista de vendas encher-se de curiosos.
           */}
           {t.contact ? (
-            <Link to="/contactos" className="ctl-outline w-full justify-center">
+            <Link to="/comercial/clubes" className="ctl-outline w-full justify-center">
               <ArrowRightLeft className="size-3.5" strokeWidth={2} />
               Ver em Contactos
             </Link>

@@ -4,6 +4,7 @@ import {
   Banknote,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Copy,
   Landmark,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/http";
 import { PAGAMENTOS_DESATIVADOS, doMetodo, useAceitaPagamentos, useCotacao } from "@/lib/cotacao";
-import { reload, useStore, type Payment } from "@/lib/store";
+import { quandoSePaga, reload, useStore, type Payment } from "@/lib/store";
 import { Avatar, Money, cx, dateShort, money } from "@/ui";
 
 /**
@@ -46,6 +47,19 @@ export default function Payments() {
     .filter((p) => p.status === "overdue" || p.status === "pending")
     .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
   const history = store.payments.filter((p) => p.status === "paid").sort((a, b) => b.dueDate.getTime() - a.dueDate.getTime());
+
+  /*
+   * Três tempos, não um. O clube lança a época toda de uma vez, e somar junho no
+   * "em dívida" de outubro era dizer ao pai que devia o ano inteiro. Dívida é só
+   * o que passou do prazo; o mês corrente e as cobranças avulsas são "por
+   * pagar"; os meses que ainda não chegaram ficam numa lista à parte, fora de
+   * qualquer total, para quem quiser pagar adiantado.
+   */
+  const paraJa = outstanding.filter((p) => quandoSePaga(p) !== "proxima");
+  const proximas = outstanding.filter((p) => quandoSePaga(p) === "proxima");
+  const vencidas = paraJa.filter((p) => p.status === "overdue" && !p.confirming);
+  const dentroDoPrazo = paraJa.filter((p) => p.status === "pending" && !p.confirming);
+  const [verProximas, setVerProximas] = useState(false);
 
   const overdueIds = outstanding.filter((p) => p.status === "overdue").map((p) => p.id);
 
@@ -90,8 +104,13 @@ export default function Payments() {
   const total = useMemo(() => chosen.reduce((n, p) => n + p.amountCents, 0), [chosen]);
   // O que já foi pago e espera confirmação não é dívida — é espera. Contá-lo
   // no total era dizer ao pai que devia o que acabou de pagar.
-  const owedTotal = outstanding.filter((p) => !p.confirming).reduce((n, p) => n + p.amountCents, 0);
-  const confirmingCount = outstanding.filter((p) => p.confirming).length;
+  const soma = (l: Payment[]) => l.reduce((n, p) => n + p.amountCents, 0);
+  const paraJaTotal = soma(paraJa.filter((p) => !p.confirming));
+  // O número grande: a dívida, quando há; senão o que é para pagar agora.
+  const base = vencidas.length > 0 ? vencidas : paraJa;
+  const baseTotal = soma(base.filter((p) => !p.confirming));
+  const confirmingCount = base.filter((p) => p.confirming).length;
+  const proximasAbertas = verProximas || proximas.some((p) => selected.has(p.id));
 
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -101,12 +120,41 @@ export default function Payments() {
       return next;
     });
 
-  const allChosen = chosen.length === outstanding.length && outstanding.length > 0;
+  const allChosen = paraJa.length > 0 && chosen.length === paraJa.length && paraJa.every((p) => selected.has(p.id));
   const onlyOverdueChosen =
     overdueIds.length > 0 && chosen.length === overdueIds.length && overdueIds.every((id) => selected.has(id));
 
   // Um pai com meses seguidos por pagar quer saber que os está a pagar seguidos.
   const span = monthSpan(chosen);
+
+  /*
+   * Agrupado por educando: com dois filhos, "Agosto" aparecia duas vezes na
+   * mesma lista e a única diferença estava no meio da linha.
+   */
+  const lista = (items: Payment[]) => (
+    <div className="space-y-5">
+      {groupByChild(items).map(([childId, doFilho]) => (
+        <section key={childId}>
+          {store.children.length > 1 && (
+            <header className="mb-2 flex items-center gap-2 px-1">
+              <Avatar name={childOf(childId)?.name ?? ""} photoUrl={childOf(childId)?.photoUrl} size={22} />
+              <h2 className="text-[12px] font-semibold tracking-[0.06em] text-ink-3 uppercase">{nameOf(childId)}</h2>
+            </header>
+          )}
+          <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
+            {doFilho.map((p) => (
+              <MonthRow
+                key={p.id}
+                payment={p}
+                selected={!semPagar && selected.has(p.id)}
+                onToggle={semPagar ? undefined : () => toggle(p.id)}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
 
   return (
     <div className="pt-3">
@@ -133,8 +181,8 @@ export default function Payments() {
         </div>
       )}
 
-      {outstanding.length === 0 ? (
-        <AllSettled />
+      {paraJa.length === 0 && chosen.length === 0 ? (
+        <AllSettled emDia={proximas.length > 0} />
       ) : (
         <>
           {/*
@@ -144,7 +192,7 @@ export default function Payments() {
           <div className="mt-4 rounded-[var(--radius-xl)] bg-ink p-4 text-white" style={{ boxShadow: "var(--shadow-float)" }}>
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-semibold tracking-[0.06em] text-white/55 uppercase">
-                {chosen.length > 0 ? "A pagar" : "Em dívida"}
+                {chosen.length > 0 ? "A pagar" : vencidas.length > 0 ? "Em dívida" : "Por pagar"}
               </span>
               <span className="text-[12px] font-medium text-white/55">
                 {/*
@@ -153,17 +201,15 @@ export default function Payments() {
                   palavra passa a "pagamentos", que é o que elas têm em comum.
                 */}
                 {chosen.length > 0
-                  ? `${chosen.length} de ${outstanding.length}`
-                  : confirmingCount === outstanding.length
+                  ? `${chosen.length} de ${paraJa.length + proximas.filter((p) => selected.has(p.id)).length}`
+                  : confirmingCount === base.length
                     ? `${confirmingCount} a confirmar`
-                    : outstanding.every((p) => !p.extra && !p.quota)
-                      ? `${outstanding.length} ${outstanding.length === 1 ? "mensalidade" : "mensalidades"}`
-                      : `${outstanding.length} ${outstanding.length === 1 ? "pagamento" : "pagamentos"}`}
+                    : quantas(base.filter((p) => !p.confirming))}
               </span>
             </div>
 
             <div className="mt-1.5">
-              <Money cents={chosen.length > 0 ? total : owedTotal} size="xl" on />
+              <Money cents={chosen.length > 0 ? total : baseTotal} size="xl" on />
             </div>
 
             <p className="mt-1.5 text-[13px] text-white/55">
@@ -175,7 +221,11 @@ export default function Payments() {
                     : span
                   : semPagar
                     ? " "
-                    : "Escolhe os meses que queres pagar."}
+                    : vencidas.length > 0 && dentroDoPrazo.length > 0
+                      ? `Mais ${money(soma(dentroDoPrazo))} ainda dentro do prazo.`
+                      : vencidas.length === 0 && dentroDoPrazo.length > 0
+                        ? `Dentro do prazo. Vence a ${dateShort(dentroDoPrazo[0].dueDate)}.`
+                        : "Escolhe o que queres pagar."}
             </p>
           </div>
 
@@ -184,10 +234,13 @@ export default function Payments() {
             seis linhas — e a app parece um formulário em vez de uma carteira.
           */}
           <div className={cx("mt-3 flex flex-wrap gap-2", semPagar && "hidden")}>
-            <Quick active={allChosen} onClick={() => setSelected(new Set(outstanding.map((p) => p.id)))}>
-              Todas · {money(owedTotal)}
-            </Quick>
-            {overdueIds.length > 0 && overdueIds.length < outstanding.length && (
+            {/* "Todas" é a lista de cima: os meses que ainda não chegaram ficam de fora. */}
+            {paraJa.length > 0 && (
+              <Quick active={allChosen} onClick={() => setSelected(new Set(paraJa.map((p) => p.id)))}>
+                Todas · {money(paraJaTotal)}
+              </Quick>
+            )}
+            {overdueIds.length > 0 && overdueIds.length < paraJa.length && (
               <Quick active={onlyOverdueChosen} onClick={() => setSelected(new Set(overdueIds))}>
                 Só vencidas · {overdueIds.length}
               </Quick>
@@ -199,33 +252,33 @@ export default function Payments() {
             )}
           </div>
 
-          {/*
-            Agrupado por educando: com dois filhos, "Agosto" aparecia duas vezes na
-            mesma lista e a única diferença estava no meio da linha.
-          */}
-          <div className="mt-5 space-y-5">
-            {groupByChild(outstanding).map(([childId, items]) => (
-              <section key={childId}>
-                {store.children.length > 1 && (
-                  <header className="mb-2 flex items-center gap-2 px-1">
-                    <Avatar name={childOf(childId)?.name ?? ""} photoUrl={childOf(childId)?.photoUrl} size={22} />
-                    <h2 className="text-[12px] font-semibold tracking-[0.06em] text-ink-3 uppercase">{nameOf(childId)}</h2>
-                  </header>
-                )}
-                <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
-                  {items.map((p) => (
-                    <MonthRow
-                      key={p.id}
-                      payment={p}
-                      selected={!semPagar && selected.has(p.id)}
-                      onToggle={semPagar ? undefined : () => toggle(p.id)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
+          {paraJa.length > 0 && <div className="mt-5">{lista(paraJa)}</div>}
         </>
+      )}
+
+      {/*
+        Os meses que ainda não chegaram. Fechados por omissão e fora de qualquer
+        total: estão cá para quem quer pagar adiantado.
+      */}
+      {proximas.length > 0 && (
+        <section className="mt-7">
+          <button
+            type="button"
+            onClick={() => setVerProximas((v) => !v)}
+            aria-expanded={proximasAbertas}
+            className="flex w-full items-center gap-2 px-1 text-left"
+          >
+            <h2 className="flex-1 text-[12px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+              {proximas.every((p) => !p.quota) ? "Próximas mensalidades" : "Próximos pagamentos"} · {proximas.length}
+            </h2>
+            <span className="text-[13px] font-semibold text-ink-2">{proximasAbertas ? "Esconder" : "Ver"}</span>
+            <ChevronDown
+              className={cx("size-4 shrink-0 text-ink-3 transition-transform duration-200", proximasAbertas && "rotate-180")}
+              strokeWidth={2.25}
+            />
+          </button>
+          {proximasAbertas && <div className="mt-3">{lista(proximas)}</div>}
+        </section>
       )}
 
       {history.length > 0 && (
@@ -290,6 +343,17 @@ export default function Payments() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * "3 mensalidades" só quando são todas mensalidades. Com uma cobrança avulsa à
+ * mistura (o equipamento, o torneio) passam a "pagamentos", que é o que têm em comum.
+ */
+function quantas(items: Payment[]): string {
+  const n = items.length;
+  return items.every((p) => !p.extra && !p.quota)
+    ? `${n} ${n === 1 ? "mensalidade" : "mensalidades"}`
+    : `${n} ${n === 1 ? "pagamento" : "pagamentos"}`;
+}
 
 /** Mantém a ordem por data de vencimento dentro de cada educando. */
 function groupByChild(items: Payment[]): [string, Payment[]][] {
@@ -960,13 +1024,14 @@ function MbRef({
 
 /* -------------------------------------------------------------------------- */
 
-function AllSettled() {
+/** `emDia`: nada por pagar agora, mas há meses lançados que ainda não chegaram. */
+function AllSettled({ emDia = false }: { emDia?: boolean }) {
   return (
     <div className="mt-5 rounded-[var(--radius-xl)] bg-surface p-8 text-center" style={{ boxShadow: "var(--shadow-soft)" }}>
       <span className="pop mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-ok-soft text-ok">
         <Check className="size-7" strokeWidth={2.5} />
       </span>
-      <p className="text-[19px] font-semibold text-ink">Está tudo pago</p>
+      <p className="text-[19px] font-semibold text-ink">{emDia ? "Está tudo em dia" : "Está tudo pago"}</p>
       <p className="mx-auto mt-1.5 max-w-[30ch] text-meta text-ink-3">Sem valores em dívida.</p>
     </div>
   );

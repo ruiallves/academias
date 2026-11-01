@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Stethoscope, Trophy, UserRound, Wallet } from "lucide-react";
 import { useChild } from "@/App";
-import { consultaPorResponder, useStore, type Match, type Training } from "@/lib/store";
+import { consultaPorResponder, quandoSePaga, useStore, type Match, type Training } from "@/lib/store";
 import { cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
 
 /**
@@ -43,7 +43,11 @@ export default function Today() {
    * confirmado), mas a faixa dizia a coisa certa da forma errada.
    */
   const mine = store.payments.filter((p) => p.childId === child.id && (p.status === "overdue" || p.status === "pending"));
-  const outstanding = mine.filter((p) => !p.confirming).sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+  // Os meses que ainda não chegaram não entram na faixa: o clube lança a época
+  // toda de uma vez, e a faixa dizia ao pai que devia até junho.
+  const outstanding = mine
+    .filter((p) => !p.confirming && quandoSePaga(p) !== "proxima")
+    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
   const confirming = mine.filter((p) => p.confirming);
 
   const notices = store.notices.slice(0, 3);
@@ -230,14 +234,22 @@ const byStart = (a: { start: Date }, b: { start: Date }) => a.start.getTime() - 
  * três meses por pagar quer saber quanto deve, não qual é o mês mais antigo.
  */
 function PaymentDue({
-  items,
+  items: todas,
   childName,
 }: {
   items: { amountCents: number; label: string; status: string; extra: boolean; quota: boolean }[];
   childName: string;
 }) {
+  /*
+   * Com alguma coisa vencida, a faixa fala só da dívida: "vencida" ao lado de um
+   * total que também tem o que está no prazo dizia ao pai que devia tudo. O que
+   * ainda está no prazo vai numa linha por baixo.
+   */
+  const vencidas = todas.filter((p) => p.status === "overdue");
+  const overdue = vencidas.length > 0;
+  const noPrazo = overdue ? todas.filter((p) => p.status !== "overdue").reduce((n, p) => n + p.amountCents, 0) : 0;
+  const items = overdue ? vencidas : todas;
   const total = items.reduce((n, p) => n + p.amountCents, 0);
-  const overdue = items.some((p) => p.status === "overdue");
   const many = items.length > 1;
 
   /*
@@ -272,9 +284,12 @@ function PaymentDue({
 
       <span className="min-w-0 flex-1">
         <span className="block text-[11px] font-semibold tracking-[0.06em] text-white/55 uppercase">
-          {overdue ? "Por pagar · vencida" : "Por pagar"} · {childName}
+          {overdue ? "Em dívida" : "Por pagar"} · {childName}
         </span>
         <span className="block truncate text-[15px] font-semibold">{titulo}</span>
+        {noPrazo > 0 && (
+          <span className="block truncate text-[12px] font-medium text-white/55">Mais {money(noPrazo)} dentro do prazo</span>
+        )}
       </span>
 
       <span className="num shrink-0 text-[19px] font-semibold">{money(total)}</span>

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Header, Ip, Param, Patch, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { IsBoolean, IsEmail, IsIn, IsISO8601, IsOptional, IsString, Length, ValidateIf } from "class-validator";
 import type { Response } from "express";
-import { ContactChannel, ContactStatus } from "@prisma/client";
+import { ContactChannel, ContactLostReason, ContactStatus } from "@prisma/client";
 import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { ContactsService } from "./contacts.service";
@@ -9,6 +9,7 @@ import { renderIcs } from "./contacts.ics";
 
 const ESTADOS = Object.values(ContactStatus);
 const CANAIS = Object.values(ContactChannel);
+const MOTIVOS = Object.values(ContactLostReason);
 
 /**
  * Os campos de um contacto.
@@ -72,6 +73,16 @@ class ContactDto {
 
   @IsOptional() @IsString() @Length(0, 200)
   nextActionNote?: string;
+
+  @IsOptional() @IsString() @Length(0, 80)
+  locality?: string;
+
+  @IsOptional() @ValidateIf((_, v) => v !== null && v !== "") @IsIn(MOTIVOS)
+  lostReason?: ContactLostReason | null;
+
+  /** Quem acompanha. Vazio = ninguém. Só o dono e os administradores o mudam. */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString()
+  ownerId?: string | null;
 }
 
 class TouchDto {
@@ -114,6 +125,9 @@ class CalendarDto {
  */
 @Public()
 @UseGuards(PlatformGuard)
+// O comercial entra aqui: a lista de clubes é o trabalho dele. Os limites (não
+// mexer em clubes de outros, não dar clientes) estão no serviço.
+@PlatformRoles("OWNER", "ADMIN", "SUPPORT", "COMERCIAL")
 @Controller("api/platform/contactos")
 export class ContactsController {
   constructor(private readonly contacts: ContactsService) {}
@@ -209,6 +223,6 @@ export class ContactsCalendarController {
     }
 
     res.setHeader("Content-Disposition", 'inline; filename="seguimentos.ics"');
-    return renderIcs(feed.contacts, `Seguimentos · ${feed.admin.name}`);
+    return renderIcs(feed.contacts, `Comercial · ${feed.admin.name}`, feed.meetings);
   }
 }

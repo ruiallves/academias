@@ -1,5 +1,5 @@
 import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useState } from "react";
-import { CalendarPlus, Check, Mail, MessageCircle, Phone, Trash2, X } from "lucide-react";
+import { CalendarPlus, Check, Mail, MessageCircle, Phone, PhoneCall, Trash2, X } from "lucide-react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 import { googleEventUrl, telHref, whatsappHref } from "@/lib/google";
 import { shortDate } from "@/lib/format";
@@ -8,6 +8,8 @@ import {
   CHANNEL_LABEL,
   CONTACT_STATUS,
   CONTACT_STATUS_LABEL,
+  LOST_REASON_LABEL,
+  MEETING_STATUS_LABEL,
   MODALIDADES,
   MODALIDADES_COM_AF,
   type Contact,
@@ -15,6 +17,8 @@ import {
   type Me,
 } from "@/lib/types";
 import { cx } from "./primitives";
+import { RegistarChamada } from "./comercial/RegistarChamada";
+import { diaLegivel, hhmm, livreParaMim } from "@/lib/comercial";
 
 /**
  * A ficha de um clube contactado.
@@ -40,6 +44,7 @@ type Props = {
 
 export function ContactDialog({ contact, todos, grupo, me, onClose, onSaved }: Props) {
   const [full, setFull] = useState<Contact | null>(contact);
+  const [ligar, setLigar] = useState(false);
 
   // A lista traz o essencial; o histórico só vem quando se abre a ficha.
   useEffect(() => {
@@ -77,9 +82,23 @@ export function ContactDialog({ contact, todos, grupo, me, onClose, onSaved }: P
           </button>
         </header>
 
-        {full && <QuickActions contact={full} />}
+        {full && <QuickActions contact={full} podeRegistar={livreParaMim(full, me)} onLigar={() => setLigar((v) => !v)} />}
 
         <div className="max-h-[72vh] overflow-y-auto">
+          {full && ligar && (
+            <section className="com-open border-b border-line px-5 py-4">
+              <div className="mb-3 text-meta font-medium text-ink">Registar chamada</div>
+              <RegistarChamada
+                contact={full}
+                onDone={(c) => {
+                  setLigar(false);
+                  setFull(c);
+                  onSaved();
+                  apiGet<Contact>(`/contactos/${c.id}`).then(setFull).catch(() => {});
+                }}
+              />
+            </section>
+          )}
           <Ficha
             key={full?.updatedAt ?? "novo"}
             contact={full}
@@ -93,6 +112,7 @@ export function ContactDialog({ contact, todos, grupo, me, onClose, onSaved }: P
             onDeleted={onSaved}
             onClose={onClose}
           />
+          {full?.meetings && full.meetings.length > 0 && <Meetings meetings={full.meetings} />}
           {full?.touches && full.touches.length > 0 && <History touches={full.touches} />}
         </div>
       </div>
@@ -103,11 +123,17 @@ export function ContactDialog({ contact, todos, grupo, me, onClose, onSaved }: P
 /* -------------------------------------------------------------------------- */
 
 /** Ligar, WhatsApp, agendar. Só aparecem os que fazem sentido com o que se sabe. */
-function QuickActions({ contact }: { contact: Contact }) {
+function QuickActions({ contact, podeRegistar, onLigar }: { contact: Contact; podeRegistar: boolean; onLigar: () => void }) {
   const when = contact.nextActionAt ? new Date(contact.nextActionAt) : defaultFollowUp();
 
   return (
     <div className="flex flex-wrap gap-1.5 border-b border-line bg-sunken/40 px-5 py-2.5">
+      {podeRegistar && (
+        <button type="button" onClick={onLigar} className="ctl-primary cursor-pointer">
+          <PhoneCall className="size-3.5" strokeWidth={1.75} />
+          Registar chamada
+        </button>
+      )}
       {contact.phone && (
         <>
           <a href={telHref(contact.phone)} className="ctl-outline">
@@ -181,12 +207,28 @@ function Ficha({
   const [personName, setPersonName] = useState(contact?.personName ?? "");
   const [role, setRole] = useState(contact?.role ?? "");
   const [notes, setNotes] = useState(contact?.notes ?? "");
+  const [locality, setLocality] = useState(contact?.locality ?? "");
+  const [ownerId, setOwnerId] = useState(contact?.owner?.id ?? me.id);
+  const [pessoas, setPessoas] = useState<{ id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const valid = name.trim().length >= 2 && sport.trim().length > 0;
   const mayDelete = me.role === "OWNER" || me.role === "ADMIN";
+  const gere = mayDelete;
+  const comercial = me.role === "COMERCIAL";
+  /** O comercial não mexe em clubes que outra pessoa acompanha. */
+  const soLeitura = comercial && Boolean(contact?.owner) && contact?.owner?.id !== me.id;
+  const estados = comercial ? CONTACT_STATUS.filter((s) => (s !== "PROPOSTA" && s !== "CLIENTE") || s === status) : CONTACT_STATUS;
+
+  // Quem pode acompanhar: eu e a equipa comercial. Só para quem atribui.
+  useEffect(() => {
+    if (!gere) return;
+    apiGet<{ id: string; name: string }[]>("/comercial/equipa")
+      .then((l) => setPessoas(l.filter((p) => p.id !== me.id)))
+      .catch(() => {});
+  }, [gere, me.id]);
   const comAF = MODALIDADES_COM_AF.includes(sport);
 
   /** O mesmo clube já na lista, pelo nome sem acentos nem maiúsculas. */
@@ -215,6 +257,8 @@ function Ficha({
       personName: personName.trim(),
       role: role.trim(),
       notes: notes.trim(),
+      locality: locality.trim(),
+      ...(gere ? { ownerId: ownerId || null } : {}),
     };
 
     try {
@@ -267,13 +311,16 @@ function Ficha({
 
         <Field label="Resposta">
           <select className={INPUT} value={status} onChange={(e) => setStatus(e.target.value as ContactStatus)}>
-            {CONTACT_STATUS.map((s) => (
+            {estados.map((s) => (
               <option key={s} value={s}>
                 {CONTACT_STATUS_LABEL[s]}
               </option>
             ))}
           </select>
         </Field>
+        {contact?.status === "PERDIDO" && contact.lostReason && (
+          <p className="text-meta text-ink-3">Motivo: {LOST_REASON_LABEL[contact.lostReason]}</p>
+        )}
         <Field label="O que responderam" hint="opcional">
           <textarea
             value={replyNote}
@@ -359,6 +406,29 @@ function Ficha({
               />
             )}
           </Field>
+          <Field label="Localidade" hint="opcional">
+            <input className={INPUT} value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Fafe" />
+          </Field>
+          {gere ? (
+            <Field label="Quem acompanha">
+              <select className={INPUT} value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+                <option value={me.id}>Eu ({me.name.split(" ")[0]})</option>
+                {pessoas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+                {contact?.owner && contact.owner.id !== me.id && !pessoas.some((p) => p.id === contact.owner!.id) && (
+                  <option value={contact.owner.id}>{contact.owner.name}</option>
+                )}
+                <option value="">Ninguém (livre)</option>
+              </select>
+            </Field>
+          ) : (
+            <Field label="Quem acompanha">
+              <input className={INPUT} value={contact?.owner ? contact.owner.name : "Ninguém (livre)"} disabled />
+            </Field>
+          )}
           <Field label="Email do clube" hint="opcional">
             <input type="email" className={INPUT} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="geral@clube.pt" />
           </Field>
@@ -397,6 +467,11 @@ function Ficha({
           </p>
         )}
 
+        {soLeitura && (
+          <p className="rounded-[var(--radius-control)] bg-[#fdf3e1] px-3 py-2 text-meta text-[#8a5a12]">
+            Este clube está com {contact?.owner?.name}. Só pode ser mudado por quem o acompanha.
+          </p>
+        )}
         {error && <p className="rounded-[var(--radius-control)] bg-[#fae9e7] px-3 py-2 text-meta text-[#a82a20]">{error}</p>}
 
         <div className="flex items-center justify-between gap-2 pt-0.5">
@@ -416,7 +491,7 @@ function Ficha({
                 {contact.owner ? `${contact.owner.name} · ` : ""}desde {shortDate(contact.createdAt)}
               </span>
             )}
-            <button type="submit" className="ctl-primary" disabled={!valid || busy}>
+            <button type="submit" className="ctl-primary" disabled={!valid || busy || soLeitura}>
               {busy ? "A guardar…" : contact ? "Guardar" : "Criar"}
             </button>
           </div>
@@ -457,6 +532,26 @@ function Toggle({
       </span>
       <span className="text-[11px] opacity-75">{data}</span>
     </button>
+  );
+}
+
+/** As reuniões do clube, da mais recente para a mais antiga. */
+function Meetings({ meetings }: { meetings: NonNullable<Contact["meetings"]> }) {
+  return (
+    <section className="border-t border-line px-5 py-4">
+      <h3 className="mb-2.5 text-meta font-medium text-ink">Reuniões</h3>
+      <ul className="space-y-1.5">
+        {meetings.map((m) => (
+          <li key={m.id} className="flex items-baseline justify-between gap-3 text-meta">
+            <span className="text-ink">
+              {diaLegivel(m.scheduledAt)}, {hhmm(m.scheduledAt)}
+              <span className="text-ink-3"> · {m.personName}{m.bookedByName ? ` · marcada por ${m.bookedByName}` : ""}</span>
+            </span>
+            <span className="shrink-0 text-ink-3">{MEETING_STATUS_LABEL[m.status]}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

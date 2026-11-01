@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, Check, Mail, Phone, Plus, Search } from "lucide-react";
+import { CalendarPlus, Check, Mail, Phone, PhoneCall, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Panel, Pill, cx } from "@/components/primitives";
 import { ContactDialog } from "@/components/ContactDialog";
 import { CalendarDialog } from "@/components/CalendarDialog";
-import { Failed, Skeleton } from "./Overview";
+import { RegistarChamada } from "@/components/comercial/RegistarChamada";
+import { Dialog } from "@/components/comercial/ui";
+import { Failed, Skeleton } from "../Overview";
 import { googleEventUrl } from "@/lib/google";
 import { apiPatch } from "@/lib/http";
 import { useApi } from "@/lib/query";
+import { livreParaMim } from "@/lib/comercial";
 import {
   ASSOCIACOES_FUTEBOL,
   CONTACT_STATUS,
@@ -29,9 +32,11 @@ const TONE: Record<ContactStatus, "neutral" | "ok" | "warn" | "risk" | "signal">
 };
 
 type Filter = "todos" | "seguimento" | ContactStatus;
+type Dono = "todos" | "meus" | "livres";
 
 /**
- * Contactos: que clubes já contactámos, e o que responderam.
+ * Clubes: que clubes já contactámos, quem os acompanha, e o que responderam.
+ * (Era a página "Contactos"; passou para dentro da área comercial.)
  *
  * Cada linha é um **clube**. Não se assume que se sabe o nome de alguém: o que
  * interessa ver de relance é se já se mandou email, se já se ligou, e a resposta.
@@ -42,13 +47,15 @@ type Filter = "todos" | "seguimento" | ContactStatus;
  * por omissão), e a associação que se escrever nas outras modalidades. O filtro
  * de associação junta as duas coisas numa lista só, agrupada por modalidade.
  */
-export default function Contacts({ me }: { me: Me }) {
+export default function Clubes({ me }: { me: Me }) {
   const { data, loading, error, reload } = useApi<Contact[]>("/contactos");
   const [lista, setLista] = useState<Contact[] | null>(null);
   const [filter, setFilter] = useState<Filter>("todos");
   const [grupo, setGrupo] = useState("");
   const [query, setQuery] = useState("");
+  const [dono, setDono] = useState<Dono>(me.role === "COMERCIAL" ? "meus" : "todos");
   const [open, setOpen] = useState<Contact | "novo" | null>(null);
+  const [chamada, setChamada] = useState<Contact | null>(null);
   const [calendar, setCalendar] = useState(false);
 
   useEffect(() => {
@@ -61,6 +68,7 @@ export default function Contacts({ me }: { me: Me }) {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all
+      .filter((c) => (dono === "meus" ? c.owner?.id === me.id : dono === "livres" ? !c.owner : true))
       .filter((c) => (grupo ? noGrupo(c, grupo) : true))
       .filter((c) => {
         if (filter === "todos") return true;
@@ -69,12 +77,12 @@ export default function Contacts({ me }: { me: Me }) {
       })
       .filter((c) =>
         q
-          ? [c.name, c.association, c.sport, c.personName, c.phone, c.email, c.replyNote].some((v) =>
+          ? [c.name, c.association, c.sport, c.locality, c.personName, c.phone, c.email, c.replyNote].some((v) =>
               v?.toLowerCase().includes(q),
             )
           : true,
       );
-  }, [all, filter, grupo, query]);
+  }, [all, filter, grupo, query, dono, me.id]);
 
   if (loading && !lista) return <Skeleton />;
   if (error && !lista) return <Failed message={error} onRetry={reload} />;
@@ -99,7 +107,7 @@ export default function Contacts({ me }: { me: Me }) {
   return (
     <>
       <PageHeader
-        title="Contactos"
+        title="Clubes"
         subtitle={[
           `${doGrupo.length} ${doGrupo.length === 1 ? "clube" : "clubes"}`,
           porContactar > 0 ? `${porContactar} por contactar` : null,
@@ -119,6 +127,20 @@ export default function Contacts({ me }: { me: Me }) {
       </PageHeader>
 
       {calendar && <CalendarDialog onClose={() => setCalendar(false)} />}
+
+      {chamada && (
+        <Dialog title={chamada.name} subtitle="Registar chamada" onClose={() => setChamada(null)} width={640}>
+          <div className="px-5 py-5">
+            <RegistarChamada
+              contact={chamada}
+              onDone={(c) => {
+                trocar(c);
+                setChamada(null);
+              }}
+            />
+          </div>
+        </Dialog>
+      )}
 
       {open && (
         <ContactDialog
@@ -152,6 +174,17 @@ export default function Contacts({ me }: { me: Me }) {
                 ))}
               </optgroup>
             ))}
+          </select>
+
+          <select
+            value={dono}
+            onChange={(e) => setDono(e.target.value as Dono)}
+            aria-label="Responsável"
+            className="h-8 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink focus:border-line-strong focus:outline-none"
+          >
+            <option value="todos">Todos os responsáveis</option>
+            <option value="meus">Os meus</option>
+            <option value="livres">Sem responsável</option>
           </select>
 
           <div className="relative ml-auto">
@@ -194,6 +227,7 @@ export default function Contacts({ me }: { me: Me }) {
               <thead>
                 <tr className="border-b border-line bg-sunken/60 text-meta font-medium text-ink-3">
                   <th className="px-5 py-2 text-left">Clube</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Responsável</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Associação</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Email</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Chamada</th>
@@ -210,10 +244,18 @@ export default function Contacts({ me }: { me: Me }) {
                   >
                     <td className="px-5 py-2.5">
                       <div className="font-medium text-ink">{c.name}</div>
-                      {(c.personName || c.academy) && (
+                      {(c.personName || c.academy || c.locality) && (
                         <div className="truncate text-[11px] text-ink-4">
-                          {c.academy ? `cliente · ${c.academy.slug}` : [c.personName, c.role].filter(Boolean).join(" · ")}
+                          {c.academy ? `cliente · ${c.academy.slug}` : [c.locality, c.personName, c.role].filter(Boolean).join(" · ")}
                         </div>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-2.5 whitespace-nowrap text-meta">
+                      {c.owner ? (
+                        <span className={c.owner.id === me.id ? "font-medium text-ink" : "text-ink-2"}>{c.owner.id === me.id ? "Eu" : c.owner.name.split(" ")[0]}</span>
+                      ) : (
+                        <span className="text-ink-4">livre</span>
                       )}
                     </td>
 
@@ -226,7 +268,28 @@ export default function Contacts({ me }: { me: Me }) {
                       <Marca quando={c.emailedAt} icon="mail" onClick={() => void marcar(c, "emailed")} />
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
-                      <Marca quando={c.calledAt} icon="phone" onClick={() => void marcar(c, "called")} />
+                      {livreParaMim(c, me) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChamada(c);
+                          }}
+                          title="Registar chamada"
+                          className={cx(
+                            "inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-control)] border px-2 py-0.5 text-[11px] font-medium transition-colors duration-[120ms]",
+                            c.calledAt
+                              ? "border-transparent bg-[#e6f2ea] text-[#1f6b3a] hover:bg-[#d8ebdf]"
+                              : "border-dashed border-line text-ink-4 hover:border-line-strong hover:text-ink-2",
+                          )}
+                        >
+                          {c.calledAt ? <Check className="size-3" strokeWidth={2.25} /> : <PhoneCall className="size-3" strokeWidth={1.75} />}
+                          {c.calledAt ? new Date(c.calledAt).toLocaleDateString("pt-PT", { day: "numeric", month: "short" }) : "registar"}
+                        </button>
+                      ) : (
+                        <Marca quando={c.calledAt} icon="phone" onClick={() => undefined} />
+                      )}
+                      {c.noAnswerCount > 0 && <div className="mt-0.5 text-[11px] text-ink-4">{c.noAnswerCount} sem atender</div>}
                     </td>
 
                     <td className="max-w-[280px] px-3 py-2.5">

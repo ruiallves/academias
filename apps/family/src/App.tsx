@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
-import { load, reload, resetAndLoad, useStore, type Child } from "@/lib/store";
+import { load, quandoSePaga, reload, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, signOut, useSession } from "@/lib/session";
 import { usePresence } from "@/lib/presence";
@@ -781,8 +781,9 @@ function ChildSwitcher() {
       >
         {store.children.map((c) => {
           const active = c.id === child.id;
+          // Só o que é para pagar agora. Um mês que ainda não chegou não acende a bolinha.
           const owing = store.payments.some(
-            (p) => p.childId === c.id && (p.status === "overdue" || p.status === "pending"),
+            (p) => p.childId === c.id && (p.status === "overdue" || p.status === "pending") && quandoSePaga(p) !== "proxima",
           );
           return (
             <button
@@ -843,7 +844,9 @@ const TABS = [
  */
 function TabBar() {
   const store = useStore();
-  const owing = store.payments.some((p) => p.status === "overdue" || p.status === "pending");
+  const owing = store.payments.some(
+    (p) => (p.status === "overdue" || p.status === "pending") && quandoSePaga(p) !== "proxima",
+  );
   /*
    * O atleta não paga: sem o separador "Pagar", e o do percurso deixa de se
    * chamar "Atleta" — para o próprio, é o seu percurso, não "o atleta".

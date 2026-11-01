@@ -9,7 +9,7 @@ import { apiDelete, apiPatch, ApiError } from "@/lib/http";
 import { useApi } from "@/lib/query";
 import { ADMIN_ROLE_LABEL, type Admin, type Me, type PlatformRole } from "@/lib/types";
 
-const ROLES: PlatformRole[] = ["OWNER", "ADMIN", "SUPPORT"];
+const ROLES: PlatformRole[] = ["OWNER", "ADMIN", "SUPPORT", "COMERCIAL"];
 
 /**
  * Quem gere a plataforma.

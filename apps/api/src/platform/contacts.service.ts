@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { ContactChannel, ContactStatus } from "@prisma/client";
+import type { ContactChannel, ContactLostReason, ContactStatus } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
 import type { PlatformAdminContext } from "./platform.guard";
@@ -56,6 +56,10 @@ export type ContactInput = {
   academyId?: string | null;
   nextActionAt?: string | null;
   nextActionNote?: string | null;
+  locality?: string | null;
+  lostReason?: ContactLostReason | null;
+  /** Quem acompanha. Só o dono e os administradores mudam. */
+  ownerId?: string | null;
 };
 
 /** O que o formulário público do site entrega. Ver `site-contact.controller.ts`. */
@@ -99,6 +103,7 @@ export class ContactsService {
         academy: { select: { id: true, name: true, slug: true } },
         _count: { select: { touches: true } },
         touches: { orderBy: { happenedAt: "desc" }, take: 1 },
+        meetings: { where: { status: "MARCADA" }, orderBy: { scheduledAt: "asc" }, take: 1, select: { id: true, scheduledAt: true } },
       },
     });
 
@@ -113,20 +118,27 @@ export class ContactsService {
         academy: { select: { id: true, name: true, slug: true } },
         _count: { select: { touches: true } },
         touches: { orderBy: { happenedAt: "desc" } },
+        meetings: { orderBy: { scheduledAt: "desc" } },
       },
     });
     if (!row) throw new NotFoundException("Contacto não encontrado");
 
+    const proxima = row.meetings
+      .filter((m) => m.status === "MARCADA")
+      .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())[0];
+
     return {
-      ...shape({ ...row, touches: row.touches.slice(0, 1) }),
+      ...shape({ ...row, touches: row.touches.slice(0, 1), meetings: proxima ? [proxima] : [] }),
       touches: row.touches.map((t) => ({
         id: t.id,
         channel: t.channel,
         note: t.note,
         status: t.status,
+        outcome: t.outcome,
         byName: t.byName,
         happenedAt: t.happenedAt,
       })),
+      meetings: row.meetings,
     };
   }
 
@@ -137,6 +149,7 @@ export class ContactsService {
   async create(admin: PlatformAdminContext, dto: ContactInput, ip?: string) {
     const name = (dto.name ?? "").trim();
     if (name.length < 2) throw new BadRequestException("O nome do clube é preciso");
+    this.limitesDoPapel(admin, dto);
 
     const contact = await this.prisma.contact.create({
       data: {
@@ -145,7 +158,7 @@ export class ContactsService {
         status: dto.status ?? "NOVO",
         // Quem cria acompanha, até alguém dizer o contrário. Uma lista de
         // contactos sem dono é uma lista onde ninguém liga a ninguém.
-        ownerId: admin.id,
+        ownerId: podeAtribuir(admin) && dto.ownerId !== undefined ? dto.ownerId || null : admin.id,
       },
       select: { id: true, name: true, status: true },
     });
@@ -185,16 +198,27 @@ export class ContactsService {
   async update(admin: PlatformAdminContext, id: string, dto: ContactInput) {
     const antes = await this.prisma.contact.findUnique({
       where: { id },
-      select: { emailedAt: true, calledAt: true, status: true },
+      select: { emailedAt: true, calledAt: true, status: true, ownerId: true, owner: { select: { name: true } } },
     });
     if (!antes) throw new NotFoundException("Contacto não encontrado");
+    this.limitesDoPapel(admin, dto, antes);
 
     const name = dto.name?.trim();
     if (name !== undefined && name.length < 2) throw new BadRequestException("O nome do clube é preciso");
 
+    // Sair de "não interessados" apaga o motivo: ficava a contar numa recusa que já não é.
+    const limparMotivo = dto.status !== undefined && dto.status !== "PERDIDO" && dto.lostReason === undefined;
+
     await this.prisma.contact.update({
       where: { id },
-      data: { ...(name ? { name } : {}), ...clean(dto) },
+      data: {
+        ...(name ? { name } : {}),
+        ...clean(dto),
+        ...(limparMotivo ? { lostReason: null } : {}),
+        ...(podeAtribuir(admin) && dto.ownerId !== undefined ? { ownerId: dto.ownerId || null } : {}),
+        // O comercial que mexe num clube sem responsável fica com ele.
+        ...(admin.role === "COMERCIAL" && !antes.ownerId ? { ownerId: admin.id } : {}),
+      },
     });
     await this.marcas(admin, id, antes, dto);
 
@@ -256,7 +280,7 @@ export class ContactsService {
     await this.prisma.$transaction([
       ...historico.map((h) =>
         this.prisma.contactTouch.create({
-          data: { contactId: id, channel: h.channel, status: h.status, note: h.note, byName: admin.name, happenedAt: agora },
+          data: { contactId: id, channel: h.channel, status: h.status, note: h.note, byName: admin.name, byId: admin.id, happenedAt: agora },
         }),
       ),
       this.prisma.contact.update({ where: { id }, data }),
@@ -272,7 +296,12 @@ export class ContactsService {
    * terceiro é o único que faz aparecer trabalho amanhã.
    */
   async addTouch(admin: PlatformAdminContext, id: string, dto: TouchInput) {
-    await this.exists(id);
+    const contacto = await this.prisma.contact.findUnique({
+      where: { id },
+      select: { ownerId: true, owner: { select: { name: true } } },
+    });
+    if (!contacto) throw new NotFoundException("Contacto não encontrado");
+    this.limitesDoPapel(admin, { status: dto.status ?? undefined }, contacto);
 
     const happenedAt = parseDate(dto.happenedAt) ?? new Date();
 
@@ -284,6 +313,7 @@ export class ContactsService {
           note: dto.note?.trim() || null,
           status: dto.status ?? null,
           byName: admin.name,
+          byId: admin.id,
           happenedAt,
         },
       }),
@@ -375,19 +405,24 @@ export class ContactsService {
 
     const admin = await this.prisma.platformAdmin.findFirst({
       where: { calendarToken: token, isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, role: true },
     });
     if (!admin) return null;
 
+    // O comercial só recebe os seus: os clubes que acompanha e as reuniões que marcou.
+    const soOsMeus = admin.role === "COMERCIAL";
+    const janela = {
+      gte: new Date(Date.now() - FEED_BEHIND_DAYS * DAY),
+      lte: new Date(Date.now() + FEED_AHEAD_DAYS * DAY),
+    };
+
     const contacts = await this.prisma.contact.findMany({
       where: {
-        nextActionAt: {
-          gte: new Date(Date.now() - FEED_BEHIND_DAYS * DAY),
-          lte: new Date(Date.now() + FEED_AHEAD_DAYS * DAY),
-        },
+        nextActionAt: janela,
         // Fechados não geram trabalho. Um contacto perdido com data por apagar
         // ficaria a tocar no telemóvel de alguém para nada.
         status: { notIn: ["CLIENTE", "PERDIDO"] },
+        ...(soOsMeus ? { ownerId: admin.id } : {}),
       },
       select: {
         id: true, name: true, personName: true, association: true, phone: true, email: true,
@@ -396,10 +431,43 @@ export class ContactsService {
       orderBy: { nextActionAt: "asc" },
     });
 
+    const meetings = await this.prisma.salesMeeting.findMany({
+      where: {
+        scheduledAt: janela,
+        status: "MARCADA",
+        ...(soOsMeus ? { bookedById: admin.id } : {}),
+      },
+      include: { contact: { select: { name: true, association: true, locality: true } } },
+      orderBy: { scheduledAt: "asc" },
+    });
+
     return {
       admin,
       contacts: contacts.filter((c): c is typeof c & { nextActionAt: Date } => c.nextActionAt !== null),
+      meetings,
     };
+  }
+
+  /**
+   * O que o comercial não pode fazer na lista de clubes.
+   *
+   * Não mexe num clube que outra pessoa acompanha (evita dois a ligar ao mesmo
+   * presidente), não dá um clube por cliente nem o liga a uma academia: isso é de
+   * quem fecha. O dono e os administradores não têm limites aqui.
+   */
+  private limitesDoPapel(
+    admin: PlatformAdminContext,
+    dto: { status?: ContactStatus; academyId?: string | null; ownerId?: string | null },
+    contacto?: { ownerId: string | null; owner: { name: string } | null },
+  ) {
+    if (admin.role !== "COMERCIAL") return;
+    if (contacto?.ownerId && contacto.ownerId !== admin.id) {
+      throw new ForbiddenException(`Este clube está a ser acompanhado por ${contacto.owner?.name ?? "outra pessoa"}.`);
+    }
+    if (dto.status === "CLIENTE" || dto.status === "PROPOSTA") {
+      throw new ForbiddenException("Proposta e cliente marcam-se por quem faz a reunião.");
+    }
+    if (dto.academyId !== undefined) throw new ForbiddenException("O teu papel não permite ligar o clube a uma academia.");
   }
 
   /* ------------------------------------------------------------------------ */
@@ -419,11 +487,13 @@ type Row = {
   emailedAt: Date | null; calledAt: Date | null; replyNote: string | null;
   role: string | null; status: ContactStatus; notes: string | null;
   lastContactAt: Date | null; nextActionAt: Date | null; nextActionNote: string | null;
+  locality: string | null; noAnswerCount: number; lostReason: ContactLostReason | null;
   createdAt: Date; updatedAt: Date;
   owner: { id: string; name: string } | null;
   academy: { id: string; name: string; slug: string } | null;
   _count: { touches: number };
   touches: { channel: ContactChannel; note: string | null; happenedAt: Date }[];
+  meetings: { id: string; scheduledAt: Date }[];
 };
 
 function shape(r: Row) {
@@ -446,6 +516,10 @@ function shape(r: Row) {
     lastContactAt: r.lastContactAt,
     nextActionAt: r.nextActionAt,
     nextActionNote: r.nextActionNote,
+    locality: r.locality,
+    noAnswerCount: r.noAnswerCount,
+    lostReason: r.lostReason,
+    nextMeeting: r.meetings[0] ? { id: r.meetings[0].id, scheduledAt: r.meetings[0].scheduledAt } : null,
     touchCount: r._count.touches,
     lastTouch: r.touches[0] ? { channel: r.touches[0].channel, note: r.touches[0].note, happenedAt: r.touches[0].happenedAt } : null,
     createdAt: r.createdAt,
@@ -488,10 +562,17 @@ function clean(dto: ContactInput) {
     replyNote: text(dto.replyNote),
     role: text(dto.role),
     notes: text(dto.notes),
+    locality: text(dto.locality),
+    ...(dto.lostReason !== undefined ? { lostReason: dto.lostReason || null } : {}),
     nextActionNote: text(dto.nextActionNote),
     ...(dto.nextActionAt !== undefined ? { nextActionAt: parseDate(dto.nextActionAt) } : {}),
     ...(dto.academyId !== undefined ? { academyId: dto.academyId || null } : {}),
   };
+}
+
+/** Mudar quem acompanha um clube é de quem gere a equipa. */
+function podeAtribuir(admin: PlatformAdminContext): boolean {
+  return admin.role === "OWNER" || admin.role === "ADMIN";
 }
 
 function parseDate(value: string | null | undefined): Date | null {

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Check, Minus, Plus, Settings2, Undo2 } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
-import { Empty, Metric, MetricRow, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { Empty, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { DefinicoesDialog, GastoFixoDialog, MovimentoDialog, emCentimos } from "@/components/ContasDialogs";
+import { Numeros, Segmented } from "@/components/comercial/ui";
 import { apiDelete, apiPost } from "@/lib/http";
 import { euros, eurosExact, shortDate } from "@/lib/format";
 import { useApi } from "@/lib/query";
@@ -15,34 +16,31 @@ import type { ContasResumo, GastoFixo, MensalidadeDoClube, Previsao, Transacao }
  * ## O que esta página responde, por ordem
  *
  * 1. **Este mês fechou a ganhar ou a perder?** É a linha de cima.
- * 2. **O que aí vem.** A previsão mês a mês, só com os clubes que já existem: a
- *    receita de cada contrato no dia em que cai, menos os gastos fixos. O mês em
- *    que o contratado passa a cobrir os custos aparece dito por palavras, porque
- *    é a única data que interessa mesmo.
- * 3. **O que está por receber.** As mensalidades emitidas que ninguém pagou.
- * 4. **O que se lança à mão**: gastos fixos e movimentos avulsos.
+ * 2. **O que aí vem.** A previsão mês a mês, só com os clubes que já existem.
+ * 3. **Quem nos deve.** As mensalidades dos clubes, com "Por pagar" aberto à
+ *    partida: é a lista que se trabalha. As pagas e todas estão a um clique.
+ * 4. **O que entrou e saiu**: os movimentos, com o valor pago e o valor sem IVA
+ *    lado a lado, e os gastos fixos.
  *
- * ## Contratado e simulado nunca se misturam
+ * ## Dois números, sempre ditos
  *
- * A simulação ("e se entrarem dois clubes por mês?") soma barras de outra cor e
- * vem sempre identificada. Um gráfico que junta o assinado com o desejado é um
- * gráfico que se acredita duas vezes: a primeira por engano, a segunda porque já
- * se tinha acreditado.
- *
- * ## Tudo a líquido
- *
- * Os totais desta página são sem IVA. É o que fica depois de o entregar, e é com
- * isso que se pagam os servidores. O valor com IVA está em cada movimento.
+ * Os totais (saldo, previsão, gastos por mês) são **sem IVA**: é o que fica
+ * depois de o entregar ao Estado, e é com isso que se pagam os custos. Cada
+ * mensalidade e cada movimento mostram o **valor pago**, com IVA, e por baixo o
+ * valor sem IVA. A página diz qual é qual em cada sítio, para não haver um
+ * número que se lê de duas maneiras.
  */
 export default function Contas() {
-  const [sim, setSim] = useState({ ligada: false, novos: "2", valor: "39,90" });
+  const [sim, setSim] = useState({ ligada: false, novos: "2", valor: "24,99" });
   const q = sim.ligada ? `&novosPorMes=${Number(sim.novos) || 0}&valorNovoCents=${emCentimos(sim.valor)}` : "";
+  const [estado, setEstado] = useState<"por-pagar" | "pagos" | "todos">("por-pagar");
+  const [tipo, setTipo] = useState<"todos" | "INCOME" | "EXPENSE">("todos");
 
   const resumo = useApi<ContasResumo>("/contas/resumo");
   const previsao = useApi<Previsao>(`/contas/previsao?meses=12${q}`);
-  const movimentos = useApi<Transacao[]>("/contas/movimentos?limite=40");
+  const movimentos = useApi<Transacao[]>(`/contas/movimentos?limite=60${tipo === "todos" ? "" : `&tipo=${tipo}`}`);
   const fixos = useApi<GastoFixo[]>("/contas/fixos");
-  const mensalidades = useApi<MensalidadeDoClube[]>("/contas/mensalidades?limite=40");
+  const mensalidades = useApi<MensalidadeDoClube[]>(`/contas/mensalidades?limite=100&estado=${estado}`);
 
   const [movimento, setMovimento] = useState<{ t: Transacao | null; tipo: "INCOME" | "EXPENSE" } | null>(null);
   const [fixo, setFixo] = useState<{ g: GastoFixo | null } | null>(null);
@@ -57,61 +55,107 @@ export default function Contas() {
   };
 
   const r = resumo.data;
+  const ivaMensalidades = r
+    ? r.settings.subscriptionVatIncluded
+      ? `Preços dos clubes com IVA incluído (${r.settings.subscriptionVatRate} %)`
+      : `Preços dos clubes sem IVA: soma-se ${r.settings.subscriptionVatRate} % ao receber`
+    : null;
 
   return (
     <>
-      <PageHeader title="Contas" subtitle="O que entra, o que sai, e o que aí vem.">
+      <PageHeader title="Contas" subtitle="O que entra, o que sai e o que aí vem. Os totais estão sem IVA; cada pagamento mostra o valor pago, com IVA.">
         <button type="button" className="ctl-ghost" onClick={() => setDefinicoes(true)}>
           <Settings2 className="size-3.5" strokeWidth={1.75} />
           Definições
         </button>
         <button type="button" className="ctl-ghost" onClick={() => setMovimento({ t: null, tipo: "EXPENSE" })}>
           <Minus className="size-3.5" strokeWidth={2} />
-          Gasto
+          Registar gasto
         </button>
         <button type="button" className="ctl-primary" onClick={() => setMovimento({ t: null, tipo: "INCOME" })}>
           <Plus className="size-3.5" strokeWidth={2} />
-          Ganho
+          Registar ganho
         </button>
       </PageHeader>
 
       <div className="space-y-3">
-        <MetricRow>
-          <Metric
-            label="Este mês"
-            value={r ? euros(r.mes.saldoLiquidoCents) : "—"}
-            note={r ? `${euros(r.mes.ganhosLiquidosCents)} a entrar · ${euros(r.mes.gastosLiquidosCents)} a sair` : undefined}
-          />
-          <Metric
-            label="Este ano"
-            value={r ? euros(r.ano.saldoLiquidoCents) : "—"}
-            note={r ? `${euros(r.ano.ganhosLiquidosCents)} de receita líquida` : undefined}
-          />
-          <Metric
-            label="Gastos fixos"
-            value={previsao.data ? euros(previsao.data.fixos.porMesCents) : "—"}
-            note="por mês, com os anuais diluídos"
-          />
-          <Metric
-            label="Por receber"
-            value={r ? euros(r.porReceber.cents) : "—"}
-            note={r ? `${r.porReceber.count} mensalidades · ${r.porReceber.vencidas} vencidas` : undefined}
-          />
-        </MetricRow>
+        <Numeros
+          items={[
+            {
+              label: "Saldo deste mês, sem IVA",
+              value: r ? euros(r.mes.saldoLiquidoCents) : "—",
+              note: r ? `Entrou ${euros(r.mes.ganhosLiquidosCents)}, saiu ${euros(r.mes.gastosLiquidosCents)}` : undefined,
+            },
+            {
+              label: "Saldo do ano, sem IVA",
+              value: r ? euros(r.ano.saldoLiquidoCents) : "—",
+              note: r ? `Entrou ${euros(r.ano.ganhosLiquidosCents)}, saiu ${euros(r.ano.gastosLiquidosCents)}` : undefined,
+            },
+            {
+              label: "Gastos fixos por mês, sem IVA",
+              value: previsao.data ? euros(previsao.data.fixos.porMesCents) : "—",
+              note: "Os anuais contam 1/12 em cada mês",
+            },
+            {
+              label: "Os clubes devem-nos",
+              value: r ? eurosExact(r.porReceber.cents) : "—",
+              note: r
+                ? r.porReceber.count === 0
+                  ? "Nada em aberto"
+                  : `${r.porReceber.count} ${r.porReceber.count === 1 ? "mensalidade" : "mensalidades"}, ${r.porReceber.vencidas} fora do prazo`
+                : undefined,
+            },
+          ]}
+        />
+
+        {/* -------------------------------------------- as mensalidades dos clubes */}
+        <Panel>
+          <PanelHead title="Mensalidades dos clubes" hint={ivaMensalidades ?? undefined} />
+          <div className="border-b border-line px-5">
+            <Segmented
+              value={estado}
+              onChange={setEstado}
+              options={[
+                { id: "por-pagar", label: "Por pagar", count: r?.porReceber.count },
+                { id: "pagos", label: "Pagas" },
+                { id: "todos", label: "Todas" },
+              ]}
+            />
+          </div>
+          {mensalidades.data && mensalidades.data.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {mensalidades.data.map((m) => (
+                <Mensalidade key={m.id} m={m} vatRate={r?.settings.subscriptionVatRate ?? 23} incluido={r?.settings.subscriptionVatIncluded ?? true} onChanged={recarregar} />
+              ))}
+            </ul>
+          ) : mensalidades.data ? (
+            <div className="px-5 py-8">
+              <Empty
+                title={estado === "por-pagar" ? "Nenhum clube nos deve nada" : estado === "pagos" ? "Ainda nenhuma mensalidade paga" : "Ainda não há mensalidades emitidas"}
+                detail={
+                  estado === "por-pagar"
+                    ? "As mensalidades saem sozinhas no dia do mês em que cada clube assinou, e aparecem aqui até serem pagas."
+                    : undefined
+                }
+              />
+            </div>
+          ) : (
+            <div className="px-5 py-8 text-center text-meta text-ink-3">{mensalidades.error ?? "A carregar…"}</div>
+          )}
+          <p className="border-t border-line px-5 py-2.5 text-[11px] text-ink-4">
+            Os pagamentos por MB WAY ou Multibanco marcam-se sozinhos. As transferências marcam-se aqui com "Marcar como paga", e o valor entra nos movimentos.
+          </p>
+        </Panel>
 
         {/* ------------------------------------------------------ a previsão */}
         <Panel>
           <PanelHead
-            title="Os próximos 12 meses"
-            hint={previsao.data ? `${previsao.data.clubes} ${previsao.data.clubes === 1 ? "clube contratado" : "clubes contratados"}` : undefined}
+            title="Os próximos 12 meses, sem IVA"
+            hint={previsao.data ? `com os ${previsao.data.clubes} ${previsao.data.clubes === 1 ? "clube que paga" : "clubes que pagam"} hoje` : undefined}
           >
-            <label className="flex items-center gap-2 text-meta text-ink-2">
-              <input
-                type="checkbox"
-                checked={sim.ligada}
-                onChange={(e) => setSim((s) => ({ ...s, ligada: e.target.checked }))}
-              />
-              Simular
+            <label className="flex cursor-pointer items-center gap-2 text-meta text-ink-2">
+              <input type="checkbox" checked={sim.ligada} onChange={(e) => setSim((s) => ({ ...s, ligada: e.target.checked }))} />
+              Simular clubes novos
             </label>
             {sim.ligada && (
               <span className="flex items-center gap-1.5 text-meta text-ink-3">
@@ -121,7 +165,7 @@ export default function Contas() {
                   onChange={(e) => setSim((s) => ({ ...s, novos: e.target.value }))}
                   inputMode="numeric"
                 />
-                clubes novos por mês a
+                por mês a
                 <input
                   className="h-7 w-20 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-center text-meta text-ink outline-none focus:border-signal"
                   value={sim.valor}
@@ -140,29 +184,37 @@ export default function Contas() {
           )}
         </Panel>
 
-        {/* -------------------------------------------- as mensalidades dos clubes */}
-        <Panel>
-          <PanelHead title="Mensalidades dos clubes" hint="o que já foi emitido" />
-          {mensalidades.data && mensalidades.data.length > 0 ? (
-            <ul className="divide-y divide-line">
-              {mensalidades.data.map((m) => (
-                <Mensalidade key={m.id} m={m} onChanged={recarregar} />
-              ))}
-            </ul>
-          ) : (
-            <div className="px-5 py-8">
-              <Empty
-                title="Ainda não há mensalidades emitidas"
-                detail="Saem sozinhas no dia do mês em que cada clube assinou as condições."
+        <div className="grid gap-3 lg:grid-cols-2">
+          {/* -------------------------------------------------- os movimentos */}
+          <Panel>
+            <PanelHead title="Movimentos" hint="valor pago, com IVA" />
+            <div className="border-b border-line px-5">
+              <Segmented
+                value={tipo}
+                onChange={setTipo}
+                options={[
+                  { id: "todos", label: "Todos" },
+                  { id: "INCOME", label: "Entradas" },
+                  { id: "EXPENSE", label: "Saídas" },
+                ]}
               />
             </div>
-          )}
-        </Panel>
+            {movimentos.data && movimentos.data.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {movimentos.data.map((t) => (
+                  <Movimento key={t.id} t={t} onOpen={() => !t.noticeId && !t.salesPayout && setMovimento({ t, tipo: t.kind })} />
+                ))}
+              </ul>
+            ) : (
+              <div className="px-5 py-8">
+                <Empty title="Sem movimentos" detail="Os pagamentos dos clubes entram sozinhos quando uma mensalidade fica paga." />
+              </div>
+            )}
+          </Panel>
 
-        <div className="grid gap-3 lg:grid-cols-2">
           {/* ------------------------------------------------- os gastos fixos */}
           <Panel>
-            <PanelHead title="Gastos fixos" hint={fixos.data ? `${fixos.data.length}` : undefined}>
+            <PanelHead title="Gastos fixos" hint="valor com IVA, a cada mês ou ano">
               <button type="button" className="ctl-ghost" onClick={() => setFixo({ g: null })}>
                 <Plus className="size-3.5" strokeWidth={2} />
                 Novo
@@ -172,25 +224,28 @@ export default function Contas() {
               <ul className="divide-y divide-line">
                 {fixos.data.map((g) => (
                   <li key={g.id} className="flex items-center gap-3 px-5 py-2.5">
-                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setFixo({ g })}>
+                    <button type="button" className="min-w-0 flex-1 cursor-pointer text-left" onClick={() => setFixo({ g })}>
                       <span className="block truncate text-body font-medium text-ink">{g.description}</span>
                       <span className="block text-meta text-ink-3">
-                        {g.recurrence === "MONTHLY" ? `todo o dia ${g.dayOfMonth}` : `uma vez por ano, em ${MES_CURTO[(g.month ?? 1) - 1]}`}
+                        {g.recurrence === "MONTHLY" ? `Todos os meses, ao dia ${g.dayOfMonth}` : `Uma vez por ano, em ${MES_LONGO[(g.month ?? 1) - 1]}`}
                         {g.category ? ` · ${g.category}` : ""}
                         {g.isActive ? "" : " · desligado"}
                       </span>
                     </button>
-                    <span className="shrink-0 text-body text-ink tabular">{eurosExact(g.amountCents)}</span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-body text-ink tabular">{eurosExact(g.amountCents)}</span>
+                      <span className="block text-[11px] text-ink-4 tabular">{semIva(g.amountCents, g.vatRate)}</span>
+                    </span>
                     <button
                       type="button"
                       className="ctl-ghost shrink-0"
-                      title="Lançar este mês"
+                      title="Passa o valor deste mês para os movimentos, como pago"
                       onClick={async () => {
                         await apiPost(`/contas/fixos/${g.id}/lancar`, {});
                         recarregar();
                       }}
                     >
-                      Lançar
+                      Já paguei
                     </button>
                   </li>
                 ))}
@@ -200,55 +255,15 @@ export default function Contas() {
                 <Empty title="Sem gastos fixos" detail="Servidores, contabilidade, domínios. É daqui que sai a previsão." />
               </div>
             )}
-          </Panel>
-
-          {/* -------------------------------------------------- os movimentos */}
-          <Panel>
-            <PanelHead title="Movimentos" hint="os mais recentes" />
-            {movimentos.data && movimentos.data.length > 0 ? (
-              <ul className="divide-y divide-line">
-                {movimentos.data.map((t) => (
-                  <li key={t.id} className="flex items-center gap-3 px-5 py-2.5">
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 text-left"
-                      onClick={() => !t.noticeId && setMovimento({ t, tipo: t.kind })}
-                    >
-                      <span className="block truncate text-body font-medium text-ink">{t.description}</span>
-                      <span className="block truncate text-meta text-ink-3">
-                        {shortDate(t.occurredAt)}
-                        {t.category ? ` · ${t.category}` : ""}
-                        {t.status === "PENDING" ? " · previsto" : ""}
-                      </span>
-                    </button>
-                    <span
-                      className={cx(
-                        "shrink-0 text-body tabular",
-                        t.kind === "INCOME" ? "text-ok" : "text-ink",
-                      )}
-                    >
-                      {t.kind === "INCOME" ? "+" : "−"}
-                      {eurosExact(t.amountCents)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="px-5 py-8">
-                <Empty title="Sem movimentos" detail="Os ganhos dos clubes entram sozinhos quando marcas uma mensalidade como paga." />
-              </div>
-            )}
+            <p className="border-t border-line px-5 py-2.5 text-[11px] text-ink-4">
+              A previsão já conta com estes gastos. "Já paguei" passa o deste mês para os movimentos, para o saldo do mês ficar certo.
+            </p>
           </Panel>
         </div>
       </div>
 
       {movimento && (
-        <MovimentoDialog
-          movimento={movimento.t}
-          tipoInicial={movimento.tipo}
-          onClose={() => setMovimento(null)}
-          onSaved={recarregar}
-        />
+        <MovimentoDialog movimento={movimento.t} tipoInicial={movimento.tipo} onClose={() => setMovimento(null)} onSaved={recarregar} />
       )}
       {fixo && <GastoFixoDialog gasto={fixo.g} onClose={() => setFixo(null)} onSaved={recarregar} />}
       {definicoes && r && (
@@ -265,24 +280,38 @@ export default function Contas() {
 }
 
 const MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const MES_LONGO = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const mesLabel = (chave: string) => {
   const [ano, mes] = chave.split("-").map(Number);
   return `${MES_CURTO[mes - 1]} ${String(ano).slice(2)}`;
 };
 
+/** "sem IVA 16,25 €" ou "sem IVA" quando a taxa é zero. */
+function semIva(cents: number, taxa: number): string {
+  if (!taxa) return "sem IVA";
+  return `${eurosExact(Math.round(cents / (1 + taxa / 100)))} sem IVA`;
+}
+
+/** "novembro" ou "1 nov 2026 a 31 out 2027" (anual). */
+function periodoDaMensalidade(inicio: string, fim: string, anual: boolean): string {
+  if (anual) return `ano de ${shortDate(inicio)} a ${shortDate(fim)}`;
+  const d = new Date(inicio);
+  return `${MES_LONGO[d.getMonth()]} ${d.getFullYear()} (${d.getDate()}/${d.getMonth() + 1} a ${new Date(fim).getDate()}/${new Date(fim).getMonth() + 1})`;
+}
+
+function diasAte(iso: string): number {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const d = new Date(iso);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - hoje.getTime()) / 86_400_000);
+}
+
 /**
  * A previsão, desenhada: para onde vai o dinheiro.
  *
- * ## Porque é uma linha e não barras
- *
- * A pergunta desta página não é "quanto entra em Março" — isso está na tabela.
- * É **quando é que isto passa a dar**. Uma linha do saldo acumulado responde de
- * uma vez: verde acima de zero, vermelho abaixo, e o mês em que atravessa vê-se
- * sem ler número nenhum. As barras de receita ao lado de uma linha de gastos
- * obrigavam a fazer a subtracção de cabeça, mês a mês.
- *
- * O acumulado é a soma dos saldos mensais desde hoje — o buraco que se abre até
- * a receita chegar, e quanto falta para o tapar.
+ * Uma linha do saldo acumulado: verde acima de zero, vermelho abaixo, e o mês em
+ * que atravessa vê-se sem ler número nenhum.
  */
 function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boolean }) {
   const meses = previsao.meses;
@@ -293,11 +322,9 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
     <>
       <ChartHero
         valor={euros(fim?.acumuladoCents ?? 0)}
-        unidade={`acumulado até ${mesLabel(fim?.mes ?? "")}`}
+        unidade={`somado até ${mesLabel(fim?.mes ?? "")}`}
         delta={{
-          texto: viraEm
-            ? `o acumulado passa a positivo em ${mesLabel(viraEm.mes)}`
-            : "o acumulado ainda é negativo no fim do período",
+          texto: viraEm ? `fica positivo em ${mesLabel(viraEm.mes)}` : "ainda negativo no fim dos 12 meses",
           bom: viraEm ? true : false,
         }}
       />
@@ -310,12 +337,12 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
           key: m.mes,
           label: mesLabel(m.mes),
           value: m.acumuladoCents,
-          detalhe: `${euros(m.acumuladoCents)} acumulado · ${m.saldoCents >= 0 ? "+" : ""}${euros(m.saldoCents)} no mês`,
+          detalhe: `${euros(m.acumuladoCents)} somado · ${m.saldoCents >= 0 ? "+" : ""}${euros(m.saldoCents)} no mês`,
         }))}
       />
 
       <p className="px-5 pt-3 pb-1 text-meta leading-relaxed text-ink-3">
-        A linha é o saldo somado desde hoje: o que entra dos contratos menos os gastos fixos.
+        A linha soma, mês a mês, o que os clubes vão pagar (pelos contratos de hoje) menos os gastos fixos. Tudo sem IVA.
         {previsao.cobreEm ? (
           <>
             {" "}
@@ -324,7 +351,7 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
         ) : (
           " Com os clubes de hoje, a receita ainda não cobre os gastos dentro de um ano."
         )}
-        {simulando && " A simulação já está somada à linha — são clubes sem contrato por trás."}
+        {simulando && " A simulação já está somada: são clubes que ainda não existem."}
       </p>
 
       <div className="overflow-x-auto px-5 pb-4">
@@ -332,11 +359,11 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
           <thead>
             <tr className="text-ink-3">
               <th className="py-2 text-left font-medium">Mês</th>
-              <th className="py-2 text-right font-medium">Receita</th>
-              {simulando && <th className="py-2 text-right font-medium">Simulada</th>}
-              <th className="py-2 text-right font-medium">Gastos</th>
-              <th className="py-2 text-right font-medium">Saldo</th>
-              <th className="py-2 text-right font-medium">Acumulado</th>
+              <th className="py-2 text-right font-medium">Entra dos clubes</th>
+              {simulando && <th className="py-2 text-right font-medium">Simulado</th>}
+              <th className="py-2 text-right font-medium">Gastos fixos</th>
+              <th className="py-2 text-right font-medium">Saldo do mês</th>
+              <th className="py-2 text-right font-medium">Somado</th>
             </tr>
           </thead>
           <tbody>
@@ -346,12 +373,8 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
                 <td className="py-1.5 text-right tabular">{euros(m.receitaCents)}</td>
                 {simulando && <td className="py-1.5 text-right tabular text-ink-3">{euros(m.receitaSimuladaCents)}</td>}
                 <td className="py-1.5 text-right tabular">{euros(m.gastosCents)}</td>
-                <td className={cx("py-1.5 text-right font-medium tabular", m.saldoCents < 0 ? "text-risk" : "text-ink")}>
-                  {euros(m.saldoCents)}
-                </td>
-                <td className={cx("py-1.5 text-right tabular", m.acumuladoCents < 0 ? "text-risk" : "text-ink-2")}>
-                  {euros(m.acumuladoCents)}
-                </td>
+                <td className={cx("py-1.5 text-right font-medium tabular", m.saldoCents < 0 ? "text-risk" : "text-ink")}>{euros(m.saldoCents)}</td>
+                <td className={cx("py-1.5 text-right tabular", m.acumuladoCents < 0 ? "text-risk" : "text-ink-2")}>{euros(m.acumuladoCents)}</td>
               </tr>
             ))}
           </tbody>
@@ -361,13 +384,18 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
   );
 }
 
-/** Uma mensalidade de um clube, com o botão de marcar o recebimento. */
-function Mensalidade({ m, onChanged }: { m: MensalidadeDoClube; onChanged: () => void }) {
+const METODO: Record<string, string> = { MBWAY: "MB WAY", MULTIBANCO: "Multibanco", MANUAL: "transferência, marcada à mão" };
+
+/** Uma mensalidade de um clube: de que mês é, o estado, o valor e o botão. */
+function Mensalidade({ m, vatRate, incluido, onChanged }: { m: MensalidadeDoClube; vatRate: number; incluido: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
-  const vencida = !m.paidAt && new Date(m.dueOn) < new Date();
+  const dias = diasAte(m.dueOn);
+  const vencida = !m.paidAt && dias < 0;
+  const pago = incluido ? m.amountCents : Math.round(m.amountCents * (1 + vatRate / 100));
 
   async function alternar() {
     if (busy) return;
+    if (m.paidAt && !confirm(`Desfazer o pagamento de ${m.academy.name}? Sai dos movimentos.`)) return;
     setBusy(true);
     try {
       if (m.paidAt) await apiDelete(`/contas/mensalidades/${m.id}/pago`);
@@ -378,30 +406,72 @@ function Mensalidade({ m, onChanged }: { m: MensalidadeDoClube; onChanged: () =>
     }
   }
 
+  const estado = m.paidAt
+    ? `Paga a ${shortDate(m.paidAt)}${m.paidMethod ? ` por ${METODO[m.paidMethod] ?? m.paidMethod}` : ""}`
+    : vencida
+      ? `Venceu a ${shortDate(m.dueOn)}, há ${-dias} ${dias === -1 ? "dia" : "dias"}${m.remindersSent ? ` · ${m.remindersSent} ${m.remindersSent === 1 ? "lembrete enviado" : "lembretes enviados"}` : ""}`
+      : dias === 0
+        ? "Vence hoje"
+        : `Vence a ${shortDate(m.dueOn)}, daqui a ${dias} ${dias === 1 ? "dia" : "dias"}`;
+
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3">
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body font-medium text-ink">{m.academy.name}</span>
         <span className="block text-meta text-ink-3">
-          {shortDate(m.periodStart)} a {shortDate(m.periodEnd)} · {m.planName}
-          {m.paidAt ? ` · pago a ${shortDate(m.paidAt)}` : ` · limite ${shortDate(m.dueOn)}`}
+          Mensalidade de {periodoDaMensalidade(m.periodStart, m.periodEnd, m.billingPeriod === "ANNUAL")} · {m.planName}
         </span>
+        <span className={cx("block text-meta", m.paidAt ? "text-ink-3" : vencida ? "text-risk" : "text-ink-2")}>{estado}</span>
       </span>
-      {m.paidAt ? <Pill tone="ok">Paga</Pill> : vencida ? <Pill tone="risk">Vencida</Pill> : <Pill tone="warn">Por pagar</Pill>}
-      <span className="shrink-0 text-body text-ink tabular">{eurosExact(m.amountCents)}</span>
-      <button type="button" className="ctl-ghost shrink-0" disabled={busy} onClick={() => void alternar()}>
+      {m.paidAt ? <Pill tone="ok">Paga</Pill> : vencida ? <Pill tone="risk">Fora do prazo</Pill> : <Pill tone="warn">Por pagar</Pill>}
+      <span className="w-[104px] shrink-0 text-right">
+        <span className="block text-body font-medium text-ink tabular">{eurosExact(pago)}</span>
+        <span className="block text-[11px] text-ink-4 tabular">{semIva(pago, vatRate)}</span>
+      </span>
+      <button type="button" className={cx("shrink-0 cursor-pointer", m.paidAt ? "ctl-ghost" : "ctl-outline")} disabled={busy} onClick={() => void alternar()}>
         {m.paidAt ? (
           <>
             <Undo2 className="size-3.5" strokeWidth={1.75} />
-            Desmarcar
+            Desfazer
           </>
         ) : (
           <>
             <Check className="size-3.5" strokeWidth={2} />
-            Recebida
+            Marcar como paga
           </>
         )}
       </button>
+    </li>
+  );
+}
+
+/** Um movimento: o que foi, de onde veio, e os dois valores. */
+function Movimento({ t, onOpen }: { t: Transacao; onOpen: () => void }) {
+  const origem = t.notice
+    ? `mensalidade de ${t.notice.billingPeriod === "ANNUAL" ? "um ano" : MES_LONGO[new Date(t.notice.periodStart).getMonth()]}, entra sozinha`
+    : t.salesPayout
+      ? "mês do comercial aprovado"
+      : t.recurring
+        ? "gasto fixo"
+        : "registado à mão";
+  const editavel = !t.noticeId && !t.salesPayout;
+  return (
+    <li className="flex items-center gap-3 px-5 py-2.5">
+      <button type="button" className={cx("min-w-0 flex-1 text-left", editavel && "cursor-pointer")} onClick={onOpen} title={editavel ? "Editar" : "Corrige-se na origem"}>
+        <span className="block truncate text-body font-medium text-ink">{t.description}</span>
+        <span className="block truncate text-meta text-ink-3">
+          {shortDate(t.occurredAt)} · {origem}
+          {t.category ? ` · ${t.category}` : ""}
+          {t.status === "PENDING" ? " · ainda não pago" : ""}
+        </span>
+      </button>
+      <span className="shrink-0 text-right">
+        <span className={cx("block text-body font-medium tabular", t.kind === "INCOME" ? "text-ok" : "text-ink")}>
+          {t.kind === "INCOME" ? "+" : "−"}
+          {eurosExact(t.amountCents)}
+        </span>
+        <span className="block text-[11px] text-ink-4 tabular">{semIva(t.amountCents, t.vatRate)}</span>
+      </span>
     </li>
   );
 }

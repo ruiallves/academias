@@ -1,6 +1,7 @@
 import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useId, useState } from "react";
 import { X } from "lucide-react";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
+import { eurosExact } from "@/lib/format";
 import { cx } from "./primitives";
 import type { GastoFixo, Recurrence, Transacao } from "@/lib/types";
 
@@ -176,7 +177,7 @@ export function MovimentoDialog({
   return (
     <Dialogo
       titulo={movimento ? "Editar movimento" : kind === "INCOME" ? "Novo ganho" : "Novo gasto"}
-      hint="O valor é com IVA. O líquido é o que conta na previsão."
+      hint="Escreve o valor que se pagou, com IVA. Nos totais e na previsão conta sem IVA."
       onClose={onClose}
     >
       <form onSubmit={submeter} className="space-y-3.5 px-5 py-4">
@@ -460,8 +461,16 @@ export function DefinicoesDialog({
         <Campo label="IVA das mensalidades dos clubes">
           <Taxas valor={taxa} onChange={setTaxa} />
         </Campo>
-        <label className="flex items-center gap-2.5 text-meta text-ink-2">
-          <input type="checkbox" checked={incluido} onChange={(e) => setIncluido(e.target.checked)} />O preço combinado com o clube já inclui IVA
+        <label className="flex cursor-pointer items-start gap-2.5 text-meta text-ink-2">
+          <input type="checkbox" className="mt-0.5" checked={incluido} onChange={(e) => setIncluido(e.target.checked)} />
+          <span>
+            Os preços dos clubes já incluem o IVA
+            <span className="mt-1 block text-ink-3">
+              {incluido
+                ? `Uma mensalidade de 19,99 € entra nas contas como 19,99 €, dos quais ${eurosExact(1999 - Math.round(1999 / (1 + taxa / 100)))} são IVA.`
+                : `Uma mensalidade de 19,99 € entra nas contas como ${eurosExact(Math.round(1999 * (1 + taxa / 100)))}: soma-se o IVA por cima.`}
+            </span>
+          </span>
         </label>
         <Campo label="Saldo de abertura" hint="o que havia em caixa quando isto começou">
           <input className={campoClass} value={abertura} onChange={(e) => setAbertura(e.target.value)} inputMode="decimal" />

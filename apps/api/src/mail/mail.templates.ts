@@ -1150,8 +1150,11 @@ export function adminInviteEmail(input: {
 }): { subject: string; html: string; text: string } {
   const brand: MailBrand = { shortName: "Academias", name: "Plataforma Academias", signalColor: FALLBACK };
   const heading = "Acesso à plataforma Academias";
+  // O papel por extenso, e o que se faz com ele. O comercial não acompanha academias.
+  const papel = ({ OWNER: "dono", ADMIN: "administrador", SUPPORT: "apoio", COMERCIAL: "comercial" } as Record<string, string>)[input.role] ?? input.role;
+  const onde = input.role === "COMERCIAL" ? "onde registas as chamadas aos clubes e as reuniões que marcas" : "de onde se criam e acompanham as academias";
   const paragraphs = [
-    "Foste convidado para <strong>" + esc(input.role) + "</strong> na plataforma, de onde se criam e acompanham as academias.",
+    "Foste convidado como <strong>" + esc(papel) + "</strong> na plataforma Academias, " + onde + ".",
     "Ao abrir o convite escolhes a tua palavra-passe.",
   ];
   const notes = [
@@ -1165,7 +1168,7 @@ export function adminInviteEmail(input: {
     text: plain(
       "Olá " + (input.name.trim().split(/\s+/)[0] || input.name) + ",",
       [
-        "Foste convidado para " + input.role + " na plataforma Academias, de onde se criam e acompanham as academias.",
+        "Foste convidado como " + papel + " na plataforma Academias, " + onde + ".",
         "Ao abrir o convite escolhes a tua palavra-passe.",
       ],
       { label: "Aceitar o convite", url: input.link },

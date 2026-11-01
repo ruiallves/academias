@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, TrendingUp, Users, Wallet } from "lucide-react";
+import { Building2, CalendarDays, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, Sun, TrendingUp, Users, Wallet } from "lucide-react";
+import { ADMIN_ROLE_LABEL } from "@/lib/types";
 import { TICKETS_MUDARAM } from "@/lib/tickets";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
@@ -33,7 +34,7 @@ const NAV: NavItem[] = [
   { to: "/", label: "Visão geral", icon: LayoutGrid, end: true },
   { to: "/academias", label: "Academias", icon: Building2 },
   { to: "/tickets", label: "Tickets", icon: Inbox },
-  { to: "/contactos", label: "Contactos", icon: Users },
+  { to: "/comercial", label: "Comercial", icon: Users },
   { to: "/contas", label: "Contas", icon: Wallet },
   { to: "/crescimento", label: "Crescimento", icon: TrendingUp },
   { to: "/registo", label: "Registo", icon: FileClock },
@@ -54,8 +55,17 @@ const NAV: NavItem[] = [
  */
 const OWNER_NAV: NavItem = { to: "/administradores", label: "Administradores", icon: ShieldCheck };
 
+/** O comercial só vê a área comercial, com as quatro secções no menu. */
+const COMERCIAL_NAV: NavItem[] = [
+  { to: "/comercial", label: "Hoje", icon: Sun, end: true },
+  { to: "/comercial/clubes", label: "Clubes", icon: Users },
+  { to: "/comercial/reunioes", label: "Reuniões", icon: CalendarDays },
+  { to: "/comercial/mes", label: "O meu mês", icon: Wallet },
+];
+
 export function Shell({ me }: { me: Me }) {
-  const nav = me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
+  const comercial = me.role === "COMERCIAL";
+  const nav = comercial ? COMERCIAL_NAV : me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
 
   /*
    * Os pedidos por tratar, ao lado de "Tickets".
@@ -74,7 +84,7 @@ export function Shell({ me }: { me: Me }) {
    * arranque é pior do que não estar lá. Uma leitura por minuto de um `count()`
    * não custa nada; o que custava era abrir a página para saber.
    */
-  const tickets = useApi<{ n: number }>("/tickets/por-tratar");
+  const tickets = useApi<{ n: number }>(comercial ? null : "/tickets/por-tratar");
   const { reload: relerTickets } = tickets;
   useEffect(() => {
     const t = setInterval(() => {
@@ -177,7 +187,7 @@ export function Shell({ me }: { me: Me }) {
             </span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-body font-medium text-ink">{me.name}</div>
-              <div className="truncate text-[11px] text-ink-3">{me.role}</div>
+              <div className="truncate text-[11px] text-ink-3">{ADMIN_ROLE_LABEL[me.role]}</div>
             </div>
             <button type="button" onClick={signOut} className="ctl-ghost size-7 justify-center px-0" aria-label="Sair">
               <LogOut className="size-3.5" strokeWidth={1.75} />
@@ -188,7 +198,7 @@ export function Shell({ me }: { me: Me }) {
             Sem MFA não há "ver como academia". Dito aqui e não escondido nas
             definições: é uma capacidade que falta, e quem entra deve sabê-lo.
           */}
-          {!me.mfaEnabled && (
+          {!me.mfaEnabled && !comercial && (
             <p className="mt-1.5 rounded-[var(--radius-control)] bg-[#fdf1dd] px-2.5 py-1.5 text-[11px] leading-relaxed text-[#8a5a12]">
               Sem autenticação de dois factores. O acesso de suporte a academias fica bloqueado.
             </p>

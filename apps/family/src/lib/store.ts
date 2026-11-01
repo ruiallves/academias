@@ -489,6 +489,27 @@ export type Payment = {
   openPayment: OpenPayment | null;
 };
 
+/**
+ * Onde uma cobrança por pagar entra na carteira da família.
+ *
+ * - `vencida`: o prazo já passou. É a única que se chama dívida.
+ * - `agora`: a mensalidade do mês (ou de um mês que já passou, ainda no prazo) e
+ *   as cobranças avulsas que o clube atribuiu, como o equipamento.
+ * - `proxima`: um mês que ainda não chegou.
+ *
+ * Os clubes lançam a época toda de uma vez, e a app somava junho no "em dívida"
+ * de outubro. Os pais liam que deviam a época inteira.
+ */
+export type QuandoSePaga = "vencida" | "agora" | "proxima";
+
+export function quandoSePaga(p: Payment, agora: Date = new Date()): QuandoSePaga {
+  if (p.status === "overdue") return "vencida";
+  if (p.extra) return "agora";
+  const mes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+  const fimDoMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 1);
+  return p.period <= mes || p.dueDate < fimDoMes ? "agora" : "proxima";
+}
+
 export type Notice = {
   id: string;
   title: string;

@@ -197,6 +197,7 @@ export class PlatformController {
 
   /** Quem sou eu, do lado da plataforma. A app usa-o para arrancar. */
   @Get("me")
+  @PlatformRoles("OWNER", "ADMIN", "SUPPORT", "COMERCIAL")
   me(@Req() req: PlatformRequest) {
     const { id, name, email, role, mfaEnrolledAt } = req.admin;
     return { id, name, email, role, mfaEnabled: mfaEnrolledAt !== null };

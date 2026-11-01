@@ -73,6 +73,8 @@ import { TicketsService } from "./platform/tickets.service";
 import { ReleasesService } from "./platform/releases.service";
 import { SiteContactController } from "./platform/site-contact.controller";
 import { ContactsService } from "./platform/contacts.service";
+import { ComercialController } from "./platform/comercial.controller";
+import { ComercialService } from "./platform/comercial.service";
 import { AdminsController, AdminInvitePageController } from "./platform/admin-invites.controller";
 import { AdminInvitesService } from "./platform/admin-invites.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
@@ -207,6 +209,7 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     PlatformController,
     PlatformFinanceController,
     ContactsController,
+    ComercialController,
     AdminsController,
     AdminInvitePageController,
     FamilyInviteController,
@@ -301,6 +304,7 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     TicketsService,
     ReleasesService,
     ContactsService,
+    ComercialService,
     AdminInvitesService,
     FamilyInvitesService,
     GuardianLinksService,

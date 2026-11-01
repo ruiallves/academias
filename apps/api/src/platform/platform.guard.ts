@@ -69,6 +69,19 @@ export class PlatformGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+
+    /*
+     * O comercial entra só onde é chamado pelo nome.
+     *
+     * Para os outros papéis, uma rota sem `@PlatformRoles` está aberta a qualquer
+     * administrador activo. Para o comercial é ao contrário: fechada, a não ser
+     * que a rota o nomeie. Assim, uma rota nova que alguém se esqueça de marcar
+     * (uma lista de academias, um relatório de contas) nunca lhe fica aberta.
+     */
+    if (admin.role === "COMERCIAL" && !required?.includes("COMERCIAL")) {
+      throw new ForbiddenException("O teu papel não permite esta operação");
+    }
+
     if (required?.length && !required.includes(admin.role)) {
       throw new ForbiddenException("O teu papel não permite esta operação");
     }

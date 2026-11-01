@@ -4742,6 +4742,14 @@ model PlatformAdmin {
 
   /// As versões que este administrador escreveu. Ver `Release`.
   releases Release[]
+
+  /// A área comercial: as reuniões que marcou, os turnos que fez, quanto se lhe
+  /// paga e os meses já aprovados. Ver `SalesMeeting`.
+  meetingsBooked  SalesMeeting[]     @relation("MeetingBookedBy")
+  salesShifts     SalesShift[]
+  compensation    SalesCompensation?
+  payouts         SalesPayout[]      @relation("PayoutAdmin")
+  payoutsApproved SalesPayout[]      @relation("PayoutApprovedBy")
 }
 
 /// Convite para entrar na plataforma como administrador.
@@ -4778,6 +4786,10 @@ enum PlatformRole {
   ADMIN
   /// Leitura e apoio ao cliente. Não mexe em faturação.
   SUPPORT
+  /// Só a área comercial: clubes por contactar, chamadas, reuniões e o seu mês.
+  /// Não vê academias, contas, tickets nem nada de clientes. O `PlatformGuard`
+  /// recusa-o em todas as rotas que não o nomeiem.
+  COMERCIAL
 }
 
 /// Um plano que **nós** vendemos às academias.
@@ -5235,6 +5247,9 @@ model PlatformTransaction {
   recurringId String?
   recurring   PlatformRecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
 
+  /// O mês de um comercial que, ao ser aprovado, entrou aqui como gasto.
+  salesPayout SalesPayout?
+
   createdById String?
   createdBy   PlatformAdmin? @relation("TransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -5624,6 +5639,18 @@ model Contact {
 
   tickets Ticket[]
 
+  /// A localidade ou o concelho. É por aqui que o comercial trabalha uma zona.
+  locality String?
+
+  /// Chamadas seguidas sem atender. Volta a zero quando alguém atende; à quarta
+  /// o clube passa a "Sem resposta". Ver `comercial.regras.ts`.
+  noAnswerCount Int @default(0)
+
+  /// Porque disseram que não. Só faz sentido com `status` PERDIDO.
+  lostReason ContactLostReason?
+
+  meetings SalesMeeting[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -5675,11 +5702,18 @@ model ContactTouch {
   /// Quem fez o contacto. Texto e não uma chave: é o nome de quem ligou no momento
   /// em que ligou, e não deve mudar se a conta for apagada.
   byName String?
+  /// O id de quem fez, para contar as chamadas de cada um. Texto solto e sem
+  /// chave estrangeira, como o nome: o histórico não muda se a conta sair.
+  byId   String?
+  /// O resultado da chamada, quando veio do painel comercial: `NAO_ATENDEU`,
+  /// `REUNIAO`… Ver `comercial.regras.ts`. Nulo nas linhas antigas.
+  outcome String?
 
   happenedAt DateTime @default(now())
   createdAt  DateTime @default(now())
 
   @@index([contactId, happenedAt])
+  @@index([byId, happenedAt])
 }
 
 enum ContactChannel {
@@ -5689,6 +5723,142 @@ enum ContactChannel {
   REUNIAO
   MENSAGEM
   OUTRO
+}
+
+/// Porque é que um clube disse que não. Lista fechada para se poder contar.
+enum ContactLostReason {
+  PRECO
+  JA_USA_OUTRO
+  NAO_E_ALTURA
+  SEM_DECISAO
+  CLUBE_PEQUENO
+  SEM_INTERESSE
+  OUTRO
+}
+
+/// Uma reunião marcada pelo comercial, para o Rui fazer a demonstração.
+///
+/// A ficha (com quem se falou, quantos atletas, o que usam hoje, o que os
+/// incomoda) é o que se lê antes da reunião. O resultado marca-se depois, por
+/// quem a fez. `countsForCommission` decide se entra na contagem da comissão:
+/// nasce ligado, desliga-se ao cancelar, e o dono pode mudar à mão.
+model SalesMeeting {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  scheduledAt DateTime
+  durationMin Int              @default(45)
+  mode        SalesMeetingMode @default(VIDEOCHAMADA)
+  /// A morada, se for presencial; o link, se for por vídeo.
+  location    String?
+
+  personName  String
+  personRole  String?
+  personPhone String?
+  personEmail String?
+  /// A pessoa decide sozinha? Nulo = não se sabe.
+  decides     Boolean?
+
+  athletes      Int?
+  /// Modalidades e escalões, como se disse na chamada.
+  teams         String?
+  /// O que usam hoje: Excel, papel, outro programa.
+  currentTool   String?
+  /// O que mais os incomoda. É por aqui que a demonstração começa.
+  pain          String?
+  /// "Consola", "Connect", "Connect Pro" ou vazio.
+  suggestedPlan String?
+  notes         String?
+
+  status      SalesMeetingStatus @default(MARCADA)
+  outcomeNote String?
+  outcomeAt   DateTime?
+
+  countsForCommission Boolean @default(true)
+
+  /// Quem marcou. O nome fica escrito à parte, como no histórico das chamadas.
+  bookedById   String?
+  bookedBy     PlatformAdmin? @relation("MeetingBookedBy", fields: [bookedById], references: [id], onDelete: SetNull)
+  bookedByName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduledAt])
+  @@index([bookedById, createdAt])
+  @@index([contactId])
+}
+
+enum SalesMeetingMode {
+  PRESENCIAL
+  VIDEOCHAMADA
+  TELEFONE
+}
+
+enum SalesMeetingStatus {
+  MARCADA
+  REALIZADA
+  FALTARAM
+  CANCELADA
+}
+
+/// Um turno do comercial: começa e acaba no painel. As horas pagam-se daqui.
+model SalesShift {
+  id      String        @id @default(cuid())
+  adminId String
+  admin   PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  startedAt DateTime
+  /// Nulo enquanto o turno está a correr.
+  endedAt   DateTime?
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([adminId, startedAt])
+}
+
+/// Quanto se paga a um comercial: à hora, e uma comissão por cada bloco de
+/// reuniões marcadas. Uma linha por pessoa; o dono ajusta.
+model SalesCompensation {
+  adminId String        @id
+  admin   PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  hourlyCents           Int @default(700)
+  /// Quantas reuniões marcadas fazem uma comissão. Conta acumulada: o que sobra
+  /// de um mês passa para o seguinte.
+  meetingsPerCommission Int @default(5)
+  commissionCents       Int @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Um mês aprovado: os números ficam como estavam no dia da aprovação, e o total
+/// entra nas Contas como gasto.
+model SalesPayout {
+  id      String        @id @default(cuid())
+  adminId String
+  admin   PlatformAdmin @relation("PayoutAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  /// `2026-11`.
+  month   String
+
+  minutes         Int
+  meetings        Int
+  commissions     Int
+  hoursCents      Int
+  commissionCents Int
+  totalCents      Int
+
+  approvedAt   DateTime       @default(now())
+  approvedById String?
+  approvedBy   PlatformAdmin? @relation("PayoutApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  transactionId String?              @unique
+  transaction   PlatformTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@unique([adminId, month])
 }
 
 /**

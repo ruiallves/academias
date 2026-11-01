@@ -14,7 +14,7 @@ import { cx } from "./primitives";
  */
 type Created = { link: string; expiresAt: string };
 
-const ROLES: PlatformRole[] = ["ADMIN", "SUPPORT", "OWNER"];
+const ROLES: PlatformRole[] = ["ADMIN", "SUPPORT", "COMERCIAL", "OWNER"];
 
 export function InviteAdminDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
@@ -113,6 +113,7 @@ const ROLE_HINT: Record<PlatformRole, string> = {
   OWNER: "Tudo, incluindo gerir administradores e planos",
   ADMIN: "Academias, subscrições, convites, analítica",
   SUPPORT: "Leitura e apoio ao cliente — não mexe em faturação",
+  COMERCIAL: "Só a área comercial: clubes, chamadas, reuniões e o seu mês",
 };
 
 /** O link, uma vez — a base guarda só o hash do token. */

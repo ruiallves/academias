@@ -40,9 +40,11 @@ const FATURA_MAX_BYTES = 5 * 1024 * 1024;
  * contas mostram os dois, e a previsão corre a **líquido**: é o que fica depois
  * de entregar o IVA, e é com isso que se pagam os custos.
  *
- * As mensalidades dos clubes são o caso especial: o preço combinado com um clube
- * é normalmente sem IVA, e `PlatformFinanceSettings` diz a taxa e se o preço já
- * a inclui.
+ * As mensalidades dos clubes são o caso especial: `PlatformFinanceSettings` diz a
+ * taxa e se o preço combinado já a inclui. Os preços são finais, com IVA (19,99 €
+ * é o que o clube paga e o que entra nas contas). Até 01/11/2026 a definição
+ * estava ao contrário e cada pagamento entrava com 23 % somados por cima; os
+ * movimentos dessa altura foram corrigidos (cópia em `scripts/.backups`).
  */
 @Injectable()
 export class PlatformFinanceService {
@@ -61,7 +63,10 @@ export class PlatformFinanceService {
   async settings() {
     const existente = await this.prisma.platformFinanceSettings.findFirst();
     if (existente) return existente;
-    return this.prisma.platformFinanceSettings.create({ data: { updatedAt: new Date() } });
+    // Os preços dos clubes são finais: já trazem os 23 % de IVA (decisão de 01/11/2026).
+    return this.prisma.platformFinanceSettings.create({
+      data: { subscriptionVatRate: 23, subscriptionVatIncluded: true, updatedAt: new Date() },
+    });
   }
 
   async saveSettings(dto: {
@@ -106,6 +111,9 @@ export class PlatformFinanceService {
       include: {
         academy: { select: { id: true, name: true, slug: true } },
         recurring: { select: { id: true, description: true } },
+        // De onde veio: a mensalidade (e de que período) ou o mês de um comercial.
+        notice: { select: { periodStart: true, periodEnd: true, billingPeriod: true } },
+        salesPayout: { select: { month: true } },
       },
     });
   }
@@ -297,7 +305,9 @@ export class PlatformFinanceService {
         ...(q.estado === "por-pagar" ? { paidAt: null } : {}),
         ...(q.estado === "pagos" ? { NOT: { paidAt: null } } : {}),
       },
-      orderBy: [{ issuedOn: "desc" }],
+      // Por pagar: o prazo mais antigo primeiro (é a dívida mais velha). Pagas: a mais recente.
+      orderBy:
+        q.estado === "por-pagar" ? [{ dueOn: "asc" }] : q.estado === "pagos" ? [{ paidAt: "desc" }] : [{ issuedOn: "desc" }],
       take,
       include: { academy: { select: { id: true, name: true, slug: true } } },
     });
