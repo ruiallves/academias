@@ -436,7 +436,7 @@ export const removePoll = (id: string) => apiDelete<{ ok: true }>(`/api/polls/${
 export const setMemberCard = (body: { cardEnabled?: boolean; qrEnabled?: boolean }) =>
   apiPatch<{ cardEnabled: boolean; qrEnabled: boolean }>("/api/member-card", body);
 
-export const listMembers = (filters: { status?: string; tierId?: string; q?: string } = {}) =>
+export const listMembers = (filters: { status?: string; tierId?: string; q?: string; athleteId?: string } = {}) =>
   apiGet<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> }>("/api/members", filters);
 
 /** Categoria de sócio menor: idade máxima até 18 (a regra de `socio-menor.ts` na API). */
@@ -444,6 +444,13 @@ export const categoriaDeMenores = (t: { maxAge?: number | null } | null | undefi
 
 export const createMember = (body: Record<string, unknown>) =>
   apiPost<{ id: string; name: string; number: number | null }>("/api/members", body);
+
+/** Resposta de `POST /api/members/varios`: uma linha por ficha pedida, pela mesma ordem. */
+export type ResultadoDeCriacao = { ok: true; id: string; name: string; number: number | null } | { ok: false; error: string };
+
+/** Vários sócios de uma vez (no máximo 25 por pedido; ver `MemberCreateManyDto`). */
+export const createMembers = (socios: Record<string, unknown>[]) =>
+  apiPost<{ resultados: ResultadoDeCriacao[] }>("/api/members/varios", { socios });
 
 export const getMember = (id: string) => apiGet<MemberDetail>(`/api/members/${id}`);
 

@@ -144,9 +144,10 @@ export class SageOne implements Conector {
     return (r.json ?? {}) as Record<string, unknown>;
   }
 
+  /** As listas da Sage vêm em `$resources` (com `$totalResults`, `$startIndex`, `$itemsPerPage`). */
   private lista(r: Resposta, oQue: string): Record<string, unknown>[] {
     const j = this.ok(r, oQue);
-    const itens = (j.$items ?? j.items ?? (Array.isArray(r.json) ? r.json : [])) as unknown[];
+    const itens = (j.$resources ?? j.$items ?? j.items ?? (Array.isArray(r.json) ? r.json : [])) as unknown[];
     return itens as Record<string, unknown>[];
   }
 
@@ -165,7 +166,8 @@ export class SageOne implements Conector {
     ]);
     return {
       contasBancarias: this.lista(contas, "as contas bancárias").map((b, i) => ({ id: String(b.id), label: String(b.account_name ?? b.name ?? b.id), porOmissao: i === 0 })),
-      tiposDePagamento: this.lista(tipos, "os tipos de pagamento").map((p) => ({ id: String(p.id), label: String(p.name ?? p.id), porOmissao: /banco/i.test(String(p.name ?? "")) })),
+      // "Recibo Banco" (BANK_RECEIPT); "Pagamento ao Banco" também diz banco, mas é para compras.
+      tiposDePagamento: this.lista(tipos, "os tipos de pagamento").map((p) => ({ id: String(p.id), label: String(p.name ?? p.id), porOmissao: p.$symbol === "BANK_RECEIPT" })),
     };
   }
 
@@ -186,8 +188,19 @@ export class SageOne implements Conector {
       if (t) interno[`taxa${iva}`] = String(t.id);
       else delete interno[`taxa${iva}`];
     }
-    const motivos = this.lista(await this.chamar(c, "GET", "/accounts/v2/vat_exemption_reasons"), "os motivos de isenção");
-    for (const m of motivos) if (m.code) interno[`isencao_${String(m.code)}`] = String(m.id);
+    /*
+     * Os motivos de isenção não estão na documentação da v2. Se a Sage não
+     * tiver esta lista, a ligação não pode ficar presa por isso: marca-se, e
+     * as faturas isentas seguem sem o id (ver `emitir`).
+     */
+    const r = await this.chamar(c, "GET", "/accounts/v2/vat_exemption_reasons");
+    for (const k of Object.keys(interno)) if (k.startsWith("isencao_")) delete interno[k];
+    if (r.status === 200) {
+      delete interno.semMotivos;
+      for (const m of this.lista(r, "os motivos de isenção")) if (m.code) interno[`isencao_${String(m.code)}`] = String(m.id);
+    } else {
+      interno.semMotivos = "1";
+    }
     interno.preparadoEm = new Date().toISOString();
     return { ...def, interno };
   }
@@ -209,7 +222,8 @@ export class SageOne implements Conector {
     const contacto = await this.contacto(c, doc);
     const isencao = isencaoDoDocumento(doc);
     const isencaoId = isencao ? interno[`isencao_${isencao}`] : undefined;
-    if (isencao && !isencaoId) throw new ErroDeFaturacao(`A Sage One não conhece o motivo de isenção ${isencao}. Escolhe outro nas Definições › Faturação.`, true);
+    // Sem a lista de motivos na conta, a fatura isenta segue só com a taxa "Isento" e a Sage decide.
+    if (isencao && !isencaoId && !interno.semMotivos) throw new ErroDeFaturacao(`A Sage One não conhece o motivo de isenção ${isencao}. Escolhe outro nas Definições › Faturação.`, true);
 
     const line_items_attributes = doc.linhas.map((l) => {
       const tax_rate_id = interno[`taxa${l.regra.iva}`];
@@ -259,9 +273,20 @@ export class SageOne implements Conector {
       throw new ErroDeFaturacao(`A Sage One calculou ${(total / 100).toFixed(2)} € e o pagamento foi de ${(doc.totalCents / 100).toFixed(2)} €. Confere as taxas de IVA nas Definições › Faturação.`, true);
     }
 
-    // O recibo: o pagamento registado na fatura, no dia e no valor pagos.
+    /*
+     * O recibo: o pagamento registado na fatura, no dia e no valor pagos. A
+     * página da v2 não documenta este pedido; o caminho v1 vem do guia em PDF.
+     * A lista chama-se `payment_methods` e as despesas da v2 usam
+     * `payment_method_id`, por isso vão os dois nomes.
+     */
     const p = await this.chamar(c, "POST", `/accounts/v1/sales_invoices/${id}/payments`, {
-      sales_invoice_payment: { date: dia, amount: (doc.totalCents / 100).toFixed(2), bank_account_id: def.bankAccountId, payment_type_id: def.paymentTypeId },
+      sales_invoice_payment: {
+        date: dia,
+        amount: (doc.totalCents / 100).toFixed(2),
+        bank_account_id: def.bankAccountId,
+        payment_type_id: def.paymentTypeId,
+        payment_method_id: def.paymentTypeId,
+      },
     });
     const recibo = this.ok(p, "o registo do pagamento");
 
@@ -294,27 +319,43 @@ export class SageOne implements Conector {
       if (r.status === 200) {
         const certo = this.lista(r, "os contactos").find((x) => (!doc.cliente.nif && !x.tax_number) || String(x.tax_number ?? "") === (doc.cliente.nif ?? ""));
         if (certo) {
+          // A Sage devolve a morada com street_one e town.
           const m = (certo.main_address ?? {}) as Record<string, unknown>;
           return {
             id: String(certo.id),
             morada: {
-              rua: String(m.address_line_1 ?? m.street_1 ?? morada.rua) || morada.rua,
-              codigoPostal: String(m.postcode ?? morada.codigoPostal) || morada.codigoPostal,
-              localidade: String(m.locality ?? m.city ?? morada.localidade) || morada.localidade,
+              rua: String(m.street_one ?? m.street_1 ?? m.address_line_1 ?? "") || morada.rua,
+              codigoPostal: String(m.postcode ?? "") || morada.codigoPostal,
+              localidade: String(m.town ?? m.locality ?? m.city ?? "") || morada.localidade,
             },
           };
         }
       }
     }
 
+    /*
+     * A documentação da Sage contradiz-se nos nomes da morada (street_one e
+     * town na lista de parâmetros, line_1 no exemplo, street_1 nas faturas).
+     * Vão os nomes da lista de parâmetros, que são os que a resposta devolve,
+     * e os das faturas; o que a Sage não reconhecer, ignora. Os textos do
+     * contacto têm 50 caracteres no máximo.
+     */
     const r = await this.chamar(c, "POST", "/accounts/v2/contacts", {
       contact: {
-        name: doc.cliente.nome.slice(0, 100),
-        company: doc.cliente.nome.slice(0, 100),
+        name: doc.cliente.nome.slice(0, 50),
+        company: doc.cliente.nome.slice(0, 50),
+        company_name: doc.cliente.nome.slice(0, 50),
         contact_type_id: TIPO_CLIENTE,
-        ...(doc.cliente.email ? { email: doc.cliente.email } : {}),
+        ...(doc.cliente.email ? { email: doc.cliente.email.slice(0, 100) } : {}),
         ...(doc.cliente.nif ? { tax_number: doc.cliente.nif } : {}),
-        main_address: { street_1: morada.rua, postcode: morada.codigoPostal, locality: morada.localidade, country_id: PORTUGAL },
+        main_address: {
+          street_one: morada.rua.slice(0, 50),
+          street_1: morada.rua.slice(0, 50),
+          town: morada.localidade.slice(0, 50),
+          locality: morada.localidade.slice(0, 50),
+          postcode: morada.codigoPostal,
+          country_id: PORTUGAL,
+        },
       },
     });
     const criado = this.ok(r, "a criação do cliente");

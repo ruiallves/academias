@@ -313,8 +313,10 @@ async function testarSage() {
   const sage = new SageOne({ clientId: "c", clientSecret: "s", signingSecret: "assina" });
   const cred = { provider: "SAGE_ONE" as const, accessToken: "tok", refreshToken: "ref", expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
   const def = { bankAccountId: "18918", paymentTypeId: "1", interno: { taxa0: "4", taxa23: "1", isencao_M07: "7", preparadoEm: "x" } };
-  rota((p) => p.url.startsWith("https://api.sageone.com/accounts/v2/sales_invoices?") || p.url === "https://api.sageone.com/accounts/v2/sales_invoices" && p.metodo === "GET", () => ({ json: { $items: [] } }));
-  rota((p) => p.url.includes("/accounts/v2/contacts") && p.metodo === "GET", () => ({ json: { $items: [] } }));
+  // As listas no formato da documentação da Sage: `$resources`.
+  const listaSage = (itens: unknown[]) => ({ json: { $totalResults: itens.length, $startIndex: 0, $itemsPerPage: 20, $resources: itens } });
+  rota((p) => p.url.startsWith("https://api.sageone.com/accounts/v2/sales_invoices?") || p.url === "https://api.sageone.com/accounts/v2/sales_invoices" && p.metodo === "GET", () => listaSage([]));
+  rota((p) => p.url.includes("/accounts/v2/contacts") && p.metodo === "GET", () => listaSage([]));
   rota((p) => p.url.includes("/accounts/v2/contacts") && p.metodo === "POST", () => ({ status: 201, json: { id: 25 } }));
   rota((p) => p.url === "https://api.sageone.com/accounts/v2/sales_invoices" && p.metodo === "POST", () => ({ status: 201, json: { id: 41869, artefact_number: "FT 2026/1", total_net_amount: "25.0", total_tax_amount: "0.0" } }));
   rota((p) => p.url.includes("/accounts/v1/sales_invoices/41869/payments"), () => ({ status: 201, json: { id: 113157 } }));
@@ -333,6 +335,48 @@ async function testarSage() {
 
   const semMotivo = await erroDe(sage.emitir(cred, { ...def, interno: { taxa0: "4", preparadoEm: "x" } }, doc));
   check("motivo de isenção desconhecido na conta: definitivo", semMotivo instanceof ErroDeFaturacao && semMotivo.definitivo);
+
+  const semCatalogo = await sage.emitir(cred, { ...def, interno: { taxa0: "4", semMotivos: "1", preparadoEm: "x" } }, doc);
+  check("sem lista de motivos na Sage, a fatura isenta segue", semCatalogo.externalId === "41869");
+
+  // O cliente que já existe na Sage (com a morada como a Sage a devolve) é reaproveitado.
+  limpar();
+  rota((p) => p.url.includes("/accounts/v2/contacts") && p.metodo === "GET", () =>
+    listaSage([{ id: 1, name: "Maria Silva", email: "maria@exemplo.pt", tax_number: "123456789", main_address: { street_one: "Rua A, 1", town: "Fafe", postcode: "4820-100" } }]),
+  );
+  rota((p) => p.url === "https://api.sageone.com/accounts/v2/sales_invoices" && p.metodo === "POST", () => ({ status: 201, json: { id: 41870, total_net_amount: "25.0", total_tax_amount: "0.0" } }));
+  rota((p) => p.url.includes("/payments"), () => ({ status: 201, json: { id: 1 } }));
+  await sage.emitir(cred, def, doc);
+  const comCliente = ultimo((p) => p.url === "https://api.sageone.com/accounts/v2/sales_invoices" && p.metodo === "POST")!;
+  check("cliente existente encontrado na lista $resources", !pedidos.some((p) => p.url.includes("/contacts") && p.metodo === "POST") && comCliente.corpo.includes("sales_invoice%5Bcontact_id%5D=1"));
+  check("a morada do cliente vem de street_one e town", comCliente.corpo.includes("main_address_locality%5D=Fafe") && comCliente.corpo.includes("main_address_postcode%5D=4820-100"));
+
+  // Preparar e opções com as listas como a documentação as mostra.
+  limpar();
+  rota((p) => p.url.endsWith("/accounts/v2/tax_rates"), () =>
+    listaSage([
+      { id: 1, name: "Normal", $symbol: "STANDARD", percentage: "23.0" },
+      { id: 2, name: "Intermédia", $symbol: "LOWER", percentage: "13.0" },
+      { id: 3, name: "Reduzida", $symbol: "EXTRALOWER", percentage: "6.0" },
+      { id: 4, name: "Isento", $symbol: "EXEMPT", percentage: "0.0" },
+    ]),
+  );
+  rota((p) => p.url.endsWith("/accounts/v2/vat_exemption_reasons"), () => ({ status: 404, json: { error: "not found" } }));
+  rota((p) => p.url.endsWith("/accounts/v2/bank_accounts"), () => listaSage([{ id: 11, account_name: "Current" }, { id: 12, account_name: "Cash in Hand" }]));
+  rota((p) => p.url.endsWith("/accounts/v2/payment_methods"), () =>
+    listaSage([
+      { id: 1, name: "Recibo Banco", $symbol: "BANK_RECEIPT" },
+      { id: 2, name: "Recibo Dinheiro", $symbol: "CASH_RECEIPT" },
+      { id: 4, name: "Pagamento ao Banco", $symbol: "BANK_PAYMENT" },
+    ]),
+  );
+  const preparado = await sage.preparar(cred, { interno: { isencao_M07: "velho" } });
+  const i = preparado.interno ?? {};
+  check("taxas lidas de $resources", i.taxa23 === "1" && i.taxa13 === "2" && i.taxa6 === "3" && i.taxa0 === "4");
+  check("sem lista de motivos: preparado na mesma, sem motivos antigos", Boolean(i.preparadoEm) && i.semMotivos === "1" && !i.isencao_M07);
+  const ops = await sage.opcoes(cred);
+  check("contas bancárias lidas de $resources", ops.contasBancarias.length === 2 && ops.contasBancarias[0].label === "Current");
+  check("só o Recibo Banco vem escolhido", ops.tiposDePagamento.filter((t) => t.porOmissao).map((t) => t.id).join() === "1");
 }
 
 async function testarPhcGo() {

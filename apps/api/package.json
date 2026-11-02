@@ -96,6 +96,7 @@
     "test:site": "node scripts/test-site.mjs",
     "test:denuncias": "node scripts/test-denuncias.mjs",
     "test:socio-atleta": "node scripts/test-socio-atleta.mjs",
+    "test:socios-varios": "node scripts/test-socios-varios.mjs",
     "test:announcements": "node scripts/test-announcements.mjs",
     "test:hierarquia": "node scripts/test-hierarquia.mjs",
     "test:emissao": "node scripts/test-emissao-automatica.mjs",

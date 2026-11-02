@@ -24,6 +24,7 @@ import { ClinicalPanel } from "@/components/ClinicalPanel";
 import { MedicalInfoPanel } from "@/components/MedicalInfoPanel";
 import { NutritionPanel } from "@/components/NutritionPanel";
 import { AppDoAtletaPanel } from "@/components/AppDoAtletaPanel";
+import { SocioDoAtletaPanel } from "@/components/SocioDoAtletaPanel";
 import { EquipasDoAtletaPanel } from "@/components/EquipasDoAtletaPanel";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "@/components/IdentificacaoField";
 import { HistoricoPanel } from "@/components/HistoricoPanel";
@@ -721,8 +722,9 @@ function Overview({
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/*
-          A ficha física é curta: a conta da app do atleta vai por baixo dela,
-          na mesma coluna, e fica à vista sem descer a página.
+          Duas filas: em cima as equipas e a ficha física, ao lado dos últimos
+          jogos; em baixo a app do clube e a ficha de sócio, lado a lado e à
+          mesma altura, à vista sem descer a página.
         */}
         <div className="min-w-0 space-y-3">
         {/* As equipas editam-se aqui mesmo, sem abrir a ficha inteira. */}
@@ -744,8 +746,6 @@ function Overview({
             )}
           </dl>
         </Panel>
-
-        <AppDoAtletaPanel athlete={athlete} />
         </div>
 
         {hasMatches ? (
@@ -777,6 +777,9 @@ function Overview({
         ) : (
           <AttendancePanel athleteId={athlete.id} />
         )}
+
+        <AppDoAtletaPanel athlete={athlete} />
+        <SocioDoAtletaPanel athlete={athlete} />
       </div>
 
       {hasMatches && <AttendancePanel athleteId={athlete.id} />}

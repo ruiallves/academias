@@ -77,13 +77,289 @@ export function PersonPicker({
   emptyLabel?: string;
   disabled?: boolean;
 }) {
+  const { aberto, q, setQ, pos, gatilho, painel, alternar, fechar } = useListaFlutuante();
+
+  const escolhida = pessoas.find((p) => p.id === value);
+
+  const filtradas = useMemo(() => filtrar(pessoas, q), [pessoas, q]);
+
+  function escolher(id: string) {
+    onChange(id);
+    fechar();
+  }
+
+  return (
+    <div className="relative">
+      <button
+        ref={gatilho}
+        type="button"
+        disabled={disabled}
+        onClick={alternar}
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        className={cx(
+          "flex h-9 w-full items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-left transition-colors",
+          disabled ? "opacity-50" : "hover:border-line-strong",
+        )}
+      >
+        <span className={cx("min-w-0 flex-1 truncate text-body", escolhida ? "text-ink" : "text-ink-4")}>
+          {escolhida?.name ?? emptyLabel}
+        </span>
+        {escolhida && !disabled && <Limpar onLimpar={() => escolher("")} />}
+        <ChevronDown className={cx("size-4 shrink-0 text-ink-3 transition-transform", aberto && "rotate-180")} strokeWidth={1.75} />
+      </button>
+
+      {aberto &&
+        pos &&
+        createPortal(
+          <>
+            {/*
+              O fecho ao clicar fora.
+
+              Um pano por cima de tudo em vez de um ouvinte de `mousedown` no
+              documento: com a lista num portal, ela deixou de estar dentro do
+              campo na árvore do DOM, e o teste de "clicou fora" passava a ter de
+              conhecer dois sítios. O pano tem o problema de comer o primeiro
+              clique noutro sítio qualquer — o mesmo compromisso que o menu de
+              estado das mensalidades já faz, e o mesmo comportamento.
+
+              Acima do `z-50` do diálogo, senão ficava por baixo dele.
+            */}
+            <div className="fixed inset-0 z-[60]" onMouseDown={fechar} aria-hidden />
+
+            <div
+              ref={painel}
+              style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
+              className="fixed z-[70] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+            >
+              <CampoDeProcura q={q} setQ={setQ} placeholder={placeholder} />
+
+              <ListaDeEscolha role="listbox" className="max-h-[min(50vh,240px)] overflow-y-auto">
+                <li>
+                  <Opcao label={emptyLabel} escolhida={value === ""} onClick={() => escolher("")} suave />
+                </li>
+                {filtradas.map((p) => (
+                  <li key={p.id}>
+                    <Opcao
+                      label={p.name}
+                      sub={p.sub}
+                      aviso={p.aviso}
+                      bloqueada={p.bloqueada}
+                      escolhida={p.id === value}
+                      onClick={() => escolher(p.id)}
+                    />
+                  </li>
+                ))}
+                {filtradas.length === 0 && (
+                  <li className="px-3 py-4 text-center text-meta text-ink-3">
+                    Ninguém com esse nome.
+                  </li>
+                )}
+              </ListaDeEscolha>
+            </div>
+          </>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+/**
+ * Escolher várias pessoas da mesma lista — o "Já está no clube?" do Novo sócio,
+ * para passar a sócios muitos atletas de uma vez.
+ *
+ * A lista **não fecha** a cada escolha: quem escolhe várias quer continuar a
+ * escolher, e reabrir a lista a cada nome era voltar ao um a um. Fecha no
+ * "Feito", no Escape ou ao clicar fora.
+ *
+ * "Escolher todos" age sobre o que **aparece**: escrever "Sub-13" e carregar
+ * escolhe a equipa toda (a procura também lê o subtítulo, onde está a equipa).
+ * Quem está bloqueado (já é sócio) fica sempre de fora.
+ */
+export function PersonMultiPicker({
+  pessoas,
+  values,
+  onChange,
+  placeholder = "Escrever um nome…",
+  emptyLabel = "Ninguém",
+  disabled,
+}: {
+  pessoas: Pessoa[];
+  values: string[];
+  onChange: (ids: string[]) => void;
+  placeholder?: string;
+  emptyLabel?: string;
+  disabled?: boolean;
+}) {
+  const { aberto, q, setQ, pos, gatilho, painel, alternar, fechar } = useListaFlutuante();
+
+  const escolhidas = useMemo(() => new Set(values), [values]);
+  const filtradas = useMemo(() => filtrar(pessoas, q), [pessoas, q]);
+  const escolhiveis = filtradas.filter((p) => !p.bloqueada);
+  const todasDentro = escolhiveis.length > 0 && escolhiveis.every((p) => escolhidas.has(p.id));
+
+  function alternarPessoa(id: string) {
+    onChange(escolhidas.has(id) ? values.filter((v) => v !== id) : [...values, id]);
+  }
+
+  function alternarTodas() {
+    if (todasDentro) {
+      const fora = new Set(escolhiveis.map((p) => p.id));
+      onChange(values.filter((v) => !fora.has(v)));
+    } else {
+      onChange([...values, ...escolhiveis.filter((p) => !escolhidas.has(p.id)).map((p) => p.id)]);
+    }
+  }
+
+  const resumo =
+    values.length === 0
+      ? emptyLabel
+      : values.length === 1
+        ? (pessoas.find((p) => p.id === values[0])?.name ?? emptyLabel)
+        : `${values.length} pessoas escolhidas`;
+
+  return (
+    <div className="relative">
+      <button
+        ref={gatilho}
+        type="button"
+        disabled={disabled}
+        onClick={alternar}
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        className={cx(
+          "flex h-9 w-full items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-left transition-colors",
+          disabled ? "opacity-50" : "hover:border-line-strong",
+        )}
+      >
+        <span className={cx("min-w-0 flex-1 truncate text-body", values.length ? "text-ink" : "text-ink-4")}>{resumo}</span>
+        {values.length > 0 && !disabled && <Limpar onLimpar={() => onChange([])} />}
+        <ChevronDown className={cx("size-4 shrink-0 text-ink-3 transition-transform", aberto && "rotate-180")} strokeWidth={1.75} />
+      </button>
+
+      {aberto &&
+        pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[60]" onMouseDown={fechar} aria-hidden />
+
+            <div
+              ref={painel}
+              style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
+              className="fixed z-[70] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+            >
+              <CampoDeProcura q={q} setQ={setQ} placeholder={placeholder} />
+
+              <ListaDeEscolha role="listbox" aria-multiselectable className="max-h-[min(50vh,240px)] overflow-y-auto">
+                {escolhiveis.length > 1 && (
+                  <li className="border-b border-line">
+                    <Opcao
+                      label={
+                        todasDentro
+                          ? `Tirar os ${escolhiveis.length} da lista`
+                          : q.trim()
+                            ? `Escolher os ${escolhiveis.length} que aparecem`
+                            : `Escolher todos (${escolhiveis.length})`
+                      }
+                      escolhida={todasDentro}
+                      multi
+                      suave
+                      onClick={alternarTodas}
+                    />
+                  </li>
+                )}
+                {filtradas.map((p) => (
+                  <li key={p.id}>
+                    <Opcao
+                      label={p.name}
+                      sub={p.sub}
+                      aviso={p.aviso}
+                      bloqueada={p.bloqueada}
+                      escolhida={escolhidas.has(p.id)}
+                      multi
+                      onClick={() => alternarPessoa(p.id)}
+                    />
+                  </li>
+                ))}
+                {filtradas.length === 0 && (
+                  <li className="px-3 py-4 text-center text-meta text-ink-3">Ninguém com esse nome.</li>
+                )}
+              </ListaDeEscolha>
+
+              <div className="flex items-center justify-between gap-2 border-t border-line px-3 py-2">
+                <span className="text-meta text-ink-3 tabular">
+                  {values.length === 0 ? "Ninguém escolhido" : values.length === 1 ? "1 escolhida" : `${values.length} escolhidas`}
+                </span>
+                <button type="button" className="ctl-primary h-8 px-3" onClick={fechar}>
+                  Feito
+                </button>
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+/** A procura no topo da lista. */
+function CampoDeProcura({ q, setQ, placeholder }: { q: string; setQ: (q: string) => void; placeholder: string }) {
+  return (
+    <div className="flex items-center gap-1.5 border-b border-line px-2.5">
+      <Search className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={placeholder}
+        className="h-9 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-4"
+      />
+    </div>
+  );
+}
+
+/*
+  Limpar sem abrir a lista.
+  Um `<span>` e não um `<button>`: um botão dentro de um botão não é
+  HTML válido, e o clique é apanhado aqui antes de chegar ao de fora.
+*/
+function Limpar({ onLimpar }: { onLimpar: () => void }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label="Tirar"
+      onClick={(e) => {
+        e.stopPropagation();
+        onLimpar();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          onLimpar();
+        }
+      }}
+      className="shrink-0 rounded p-0.5 text-ink-4 hover:text-risk"
+    >
+      <X className="size-3.5" strokeWidth={2} />
+    </span>
+  );
+}
+
+function filtrar(pessoas: Pessoa[], q: string): Pessoa[] {
+  const termo = semAcentos(q);
+  if (!termo) return pessoas;
+  return pessoas.filter((p) => semAcentos(p.name).includes(termo) || semAcentos(p.sub ?? "").includes(termo));
+}
+
+/** A lista que abre por baixo (ou por cima) do campo, fora do recorte do diálogo. */
+function useListaFlutuante() {
   const [aberto, setAberto] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
   const gatilho = useRef<HTMLButtonElement>(null);
   const painel = useRef<HTMLDivElement>(null);
-
-  const escolhida = pessoas.find((p) => p.id === value);
 
   function alternar() {
     if (aberto) {
@@ -130,125 +406,7 @@ export function PersonPicker({
     };
   }, [aberto]);
 
-  const filtradas = useMemo(() => {
-    const termo = semAcentos(q);
-    if (!termo) return pessoas;
-    return pessoas.filter((p) => semAcentos(p.name).includes(termo) || semAcentos(p.sub ?? "").includes(termo));
-  }, [pessoas, q]);
-
-  function escolher(id: string) {
-    onChange(id);
-    fechar();
-  }
-
-  return (
-    <div className="relative">
-      <button
-        ref={gatilho}
-        type="button"
-        disabled={disabled}
-        onClick={alternar}
-        aria-haspopup="listbox"
-        aria-expanded={aberto}
-        className={cx(
-          "flex h-9 w-full items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-left transition-colors",
-          disabled ? "opacity-50" : "hover:border-line-strong",
-        )}
-      >
-        <span className={cx("min-w-0 flex-1 truncate text-body", escolhida ? "text-ink" : "text-ink-4")}>
-          {escolhida?.name ?? emptyLabel}
-        </span>
-        {escolhida && !disabled && (
-          /*
-            Limpar sem abrir a lista.
-            Um `<span>` e não um `<button>`: um botão dentro de um botão não é
-            HTML válido, e o clique é apanhado aqui antes de chegar ao de fora.
-          */
-          <span
-            role="button"
-            tabIndex={0}
-            aria-label="Tirar"
-            onClick={(e) => {
-              e.stopPropagation();
-              escolher("");
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                escolher("");
-              }
-            }}
-            className="shrink-0 rounded p-0.5 text-ink-4 hover:text-risk"
-          >
-            <X className="size-3.5" strokeWidth={2} />
-          </span>
-        )}
-        <ChevronDown className={cx("size-4 shrink-0 text-ink-3 transition-transform", aberto && "rotate-180")} strokeWidth={1.75} />
-      </button>
-
-      {aberto &&
-        pos &&
-        createPortal(
-          <>
-            {/*
-              O fecho ao clicar fora.
-
-              Um pano por cima de tudo em vez de um ouvinte de `mousedown` no
-              documento: com a lista num portal, ela deixou de estar dentro do
-              campo na árvore do DOM, e o teste de "clicou fora" passava a ter de
-              conhecer dois sítios. O pano tem o problema de comer o primeiro
-              clique noutro sítio qualquer — o mesmo compromisso que o menu de
-              estado das mensalidades já faz, e o mesmo comportamento.
-
-              Acima do `z-50` do diálogo, senão ficava por baixo dele.
-            */}
-            <div className="fixed inset-0 z-[60]" onMouseDown={fechar} aria-hidden />
-
-            <div
-              ref={painel}
-              style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
-              className="fixed z-[70] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
-            >
-              <div className="flex items-center gap-1.5 border-b border-line px-2.5">
-                <Search className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
-                <input
-                  autoFocus
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder={placeholder}
-                  className="h-9 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-4"
-                />
-              </div>
-
-              <ListaDeEscolha role="listbox" className="max-h-[min(50vh,240px)] overflow-y-auto">
-                <li>
-                  <Opcao label={emptyLabel} escolhida={value === ""} onClick={() => escolher("")} suave />
-                </li>
-                {filtradas.map((p) => (
-                  <li key={p.id}>
-                    <Opcao
-                      label={p.name}
-                      sub={p.sub}
-                      aviso={p.aviso}
-                      bloqueada={p.bloqueada}
-                      escolhida={p.id === value}
-                      onClick={() => escolher(p.id)}
-                    />
-                  </li>
-                ))}
-                {filtradas.length === 0 && (
-                  <li className="px-3 py-4 text-center text-meta text-ink-3">
-                    Ninguém com esse nome.
-                  </li>
-                )}
-              </ListaDeEscolha>
-            </div>
-          </>,
-          document.body,
-        )}
-    </div>
-  );
+  return { aberto, q, setQ, pos, gatilho, painel, alternar, fechar };
 }
 
 function Opcao({
@@ -258,6 +416,7 @@ function Opcao({
   bloqueada,
   escolhida,
   suave,
+  multi,
   onClick,
 }: {
   label: string;
@@ -266,6 +425,8 @@ function Opcao({
   bloqueada?: boolean;
   escolhida: boolean;
   suave?: boolean;
+  /** Numa lista de várias: uma caixa de marcar à esquerda, em vez do visto à direita. */
+  multi?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -281,6 +442,18 @@ function Opcao({
         bloqueada ? "cursor-not-allowed" : "hover:bg-sunken",
       )}
     >
+      {multi && (
+        <span
+          aria-hidden
+          className={cx(
+            "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+            escolhida ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong bg-surface",
+            bloqueada && "opacity-40",
+          )}
+        >
+          {escolhida && <Check className="size-3" strokeWidth={3} />}
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className={cx("block truncate text-body", suave || bloqueada ? "text-ink-3" : "text-ink")}>{label}</span>
         {sub && <span className="block truncate text-meta text-ink-4">{sub}</span>}
@@ -288,7 +461,7 @@ function Opcao({
       {aviso && (
         <span className="shrink-0 rounded-full bg-sunken px-2 py-0.5 text-[11px] font-medium text-ink-3">{aviso}</span>
       )}
-      {escolhida && <Check className="size-3.5 shrink-0 text-signal-ink" strokeWidth={2.5} />}
+      {escolhida && !multi && <Check className="size-3.5 shrink-0 text-signal-ink" strokeWidth={2.5} />}
     </button>
   );
 }

@@ -8,6 +8,7 @@ import { MemberInvitesService } from "./member-invites.service";
 import {
   MemberAnnualYearDto,
   MemberCreateDto,
+  MemberCreateManyDto,
   MemberFeeCreateDto,
   MemberFeeSplitDto,
   MemberFeeStatusDto,
@@ -75,14 +76,21 @@ export class MembersController {
     @Query("status") status?: string,
     @Query("tierId") tierId?: string,
     @Query("q") q?: string,
+    @Query("athleteId") athleteId?: string,
   ) {
-    return this.members.list(req.ctx, { status, tierId, q });
+    return this.members.list(req.ctx, { status, tierId, q, athleteId });
   }
 
   /** Um sócio inscrito na secretaria, com a pessoa à frente. */
   @Post()
   create(@Req() req: AuthedRequest, @Body() dto: MemberCreateDto) {
     return this.members.create(req.ctx, dto);
+  }
+
+  /** Vários de uma vez — as pessoas do clube escolhidas no "Novo sócio". */
+  @Post("varios")
+  createMany(@Req() req: AuthedRequest, @Body() dto: MemberCreateManyDto) {
+    return this.members.createMany(req.ctx, dto.socios);
   }
 
   /**

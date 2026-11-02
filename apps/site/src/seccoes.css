@@ -31,8 +31,9 @@
   .heroi-grelha { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
 }
 @media (max-width: 860px) {
-  .heroi-montra { padding: 0 12px 56px 0; }
-  .heroi-tel .telemovel { --tw: 40vw; }
+  /* O portátil é 16:9 e baixo: o telemóvel desce abaixo dele em vez de subir por cima. */
+  .heroi-montra { padding: 0 9vw 20vw 0; }
+  .heroi-tel .telemovel { --tw: 26vw; }
 }
 
 /* As páginas de cada pesquisa (Solucao.tsx): o herói em duas colunas, como o da página inicial. */
@@ -123,8 +124,8 @@
 @media (max-width: 860px) {
   .areas-separadores { margin-inline: calc(-1 * var(--margem)); padding-inline: var(--margem); }
   .area { grid-template-columns: minmax(0, 1fr); }
-  .area-montra { order: -1; padding: 0 12px 48px 0; }
-  .area-tel .telemovel { --tw: 36vw; }
+  .area-montra { order: -1; padding: 0 10vw 22vw 0; }
+  .area-tel .telemovel { --tw: 28vw; }
 }
 
 /* ===========================================================================

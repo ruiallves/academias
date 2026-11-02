@@ -10,6 +10,9 @@
 export {
   SquarePen as Pencil,
   UserPlus,
+  /* A ficha de sócio no perfil do atleta: o número e a última quota paga. */
+  Hash,
+  CalendarCheck,
   LayoutGrid,
   Users,
   Home,

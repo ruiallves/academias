@@ -1,0 +1,91 @@
+{
+  "academy": [
+    {
+      "id": "cmugp7zqg01lso8151gq3lwwx",
+      "suspendedAt": "2026-10-28T00:52:47.329Z"
+    }
+  ],
+  "subscription": [
+    {
+      "id": "cmulde4xz001ro415efy21r88",
+      "academyId": "cmugp7zqg01lso8151gq3lwwx",
+      "planId": "plan_academia",
+      "status": "ACTIVE",
+      "currentPeriodEnd": null,
+      "cancelledAt": null,
+      "lastFailureAt": null,
+      "lastFailureNote": null,
+      "createdAt": "2026-09-28T13:56:04.487Z",
+      "updatedAt": "2026-10-13T17:07:46.833Z",
+      "priceCents": 1999,
+      "billingAnchorOn": "2026-09-27T23:00:00.000Z"
+    }
+  ],
+  "order": [
+    {
+      "id": "cmulde5bs001vo415b25qtsvy",
+      "startsOn": "2026-09-27T23:00:00.000Z",
+      "billingAnchorAt": null
+    }
+  ],
+  "notices": [
+    {
+      "id": "cmvreh7dl0010kz151sdx0e7c",
+      "academyId": "cmugp7zqg01lso8151gq3lwwx",
+      "orderId": "cmulde5bs001vo415b25qtsvy",
+      "periodStart": "2026-10-28T00:00:00.000Z",
+      "periodEnd": "2026-11-27T00:00:00.000Z",
+      "issuedOn": "2026-10-28T00:00:00.000Z",
+      "dueOn": "2026-11-27T00:00:00.000Z",
+      "planName": "Connect",
+      "billingPeriod": "MONTHLY",
+      "amountCents": 1999,
+      "toEmail": "rui.fernandes@hotmail.com",
+      "toName": "Rui Fernandes",
+      "sentAt": "2026-10-28T00:52:47.225Z",
+      "failureNote": null,
+      "createdAt": "2026-10-28T00:52:46.617Z",
+      "paidAt": "2026-11-02T18:35:04.088Z",
+      "paidNote": null,
+      "paidById": "cmt8pyix60004rs15wfrks9nz",
+      "paidMethod": "MANUAL",
+      "remindersSent": 0,
+      "lastReminderAt": null,
+      "suspensionSentAt": null,
+      "invoiceSentAt": null,
+      "invoicePath": null,
+      "invoiceFileName": null,
+      "invoiceEmailedTo": null,
+      "invoiceEmailedAt": null
+    },
+    {
+      "id": "cmuvd5l11000lmge0l7ssro5e",
+      "academyId": "cmugp7zqg01lso8151gq3lwwx",
+      "orderId": "cmulde5bs001vo415b25qtsvy",
+      "periodStart": "2026-09-27T23:00:00.000Z",
+      "periodEnd": "2026-10-27T00:00:00.000Z",
+      "issuedOn": "2026-09-27T23:00:00.000Z",
+      "dueOn": "2026-10-27T00:00:00.000Z",
+      "planName": "Connect",
+      "billingPeriod": "MONTHLY",
+      "amountCents": 1999,
+      "toEmail": "rui.fernandes@hotmail.com",
+      "toName": "Rui Fernandes",
+      "sentAt": "2026-10-05T14:47:08.749Z",
+      "failureNote": null,
+      "createdAt": "2026-10-05T14:47:07.189Z",
+      "paidAt": null,
+      "paidNote": null,
+      "paidById": null,
+      "paidMethod": null,
+      "remindersSent": 3,
+      "lastReminderAt": "2026-10-18T22:25:49.788Z",
+      "suspensionSentAt": "2026-10-28T00:52:47.947Z",
+      "invoiceSentAt": null,
+      "invoicePath": null,
+      "invoiceFileName": null,
+      "invoiceEmailedTo": null,
+      "invoiceEmailedAt": null
+    }
+  ]
+}

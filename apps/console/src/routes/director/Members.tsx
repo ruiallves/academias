@@ -7,11 +7,11 @@ import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Col
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmarSobrescrita, ConvidarAoCriar, EnviarConvites } from "@/components/ConfirmarSobrescrita";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { PersonPicker, type Pessoa } from "@/components/PersonPicker";
+import { PersonMultiPicker, type Pessoa } from "@/components/PersonPicker";
 import { BotaoExportar } from "@/components/BotaoExportar";
 import { COLUNAS_EXPORT_SOCIOS } from "@/lib/colunas-export";
 import type { RespostaComExistentes } from "@/lib/importacao";
-import { CalendarDays, Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
+import { CalendarDays, Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload, X } from "@/lib/icons";
 import { descarregarCartazDeAdesao, descarregarQrDeAdesao, linkDeAdesao, qrDeAdesao } from "@/lib/adesao";
 import {
   DIAS_DO_MES,
@@ -37,6 +37,7 @@ import {
   SEX_LABEL,
   STATUS_LABEL,
   createMember,
+  createMembers,
   categoriaDeMenores,
   feeStanding,
   ageOf,
@@ -413,7 +414,7 @@ const STATUS_TONE: Record<MemberStatus, Tone> = {
   CANCELLED: "neutral",
 };
 
-function StatusPill({ status }: { status: MemberStatus }) {
+export function StatusPill({ status }: { status: MemberStatus }) {
   return <Pill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Pill>;
 }
 
@@ -971,7 +972,16 @@ function TiersList({
  * assinou; marcá-la por omissão era o produto a decidir sozinho que existe um
  * consentimento que talvez ninguém tenha dado.
  */
-function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function NewMemberDialog({
+  onClose,
+  onCreated,
+  inicial,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+  /** Quem vem já escolhido em "Já está no clube?" (ids com prefixo, ex. `a:<atleta>`). O perfil do atleta abre assim. */
+  inicial?: string[];
+}) {
   const [tiers, setTiers] = useState<MemberTier[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1022,31 +1032,90 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
    * e é essa a ponte que interessa. O que se copia é só o que o formulário
    * já pedia.
    */
-  const [origem, setOrigem] = useState("");
+  /*
+   * Escolhem-se várias (pedido do Rui, 02/11/2026: um clube quer passar os
+   * atletas todos a sócios e só dava um a um). Com uma, o formulário é o de
+   * sempre, preenchido a partir dela. Com duas ou mais, os campos de cima dão
+   * lugar a um bloco por pessoa (nome, email, data de nascimento) e o resto da
+   * ficha vem do que ela já tem no clube; a categoria, o estado, os termos e o
+   * convite valem para todas.
+   */
+  const [origens, setOrigens] = useState<string[]>([]);
+  const origem = origens.length === 1 ? origens[0] : "";
+  const varios = origens.length > 1;
+  const [linhas, setLinhas] = useState<Record<string, LinhaDeSocio>>({});
+  /* O motivo por que o servidor recusou a ficha de cada um, depois de carregar em criar. */
+  const [recusas, setRecusas] = useState<Record<string, string>>({});
+  /* Emails já deixados: só aí é que um email a meio se diz inválido. */
+  const [emailsSaidos, setEmailsSaidos] = useState<Set<string>>(() => new Set());
+  const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
   /*
    * Os sócios que já existem, para marcar na lista quem já o é. Todos os
    * estados, também os cancelados: um atleta só pode ser sócio uma vez, e o
    * servidor recusa um segundo ainda que o primeiro esteja cancelado.
    */
   const [socios, setSocios] = useState<MemberRow[]>([]);
-  useEffect(() => {
+  const carregarSocios = useCallback(() => {
     listMembers()
       .then((r) => setSocios(r.members))
       .catch(() => setSocios([]));
   }, []);
+  useEffect(carregarSocios, [carregarSocios]);
   const pessoas = useMemo(() => marcarJaSocios(pessoasDoClube(), socios), [socios]);
   const escolhida = pessoas.find((p) => p.id === origem) ?? null;
   /* Um atleta escolhido: a ficha fica ligada a ele (sócio-atleta). Ver `socio-menor.ts` na API. */
   const atletaEscolhido = origem.startsWith("a:") ? origem.slice(2) : null;
 
-  function preencherDe(id: string) {
-    setOrigem(id);
+  /*
+   * Mudar quem está escolhido. Passar de uma para várias guarda o que já se
+   * tinha corrigido no formulário dessa uma; voltar a uma devolve-lho.
+   */
+  function escolher(ids: string[]) {
+    const antes = origens;
+    if (ids.length === 1) {
+      const linha = linhas[ids[0]];
+      preencherDe(ids[0], antes.length > 1 ? linha : undefined);
+    } else if (ids.length > 1) {
+      setLinhas((ls) => {
+        const novas: Record<string, LinhaDeSocio> = {};
+        for (const id of ids) {
+          if (ls[id]) novas[id] = ls[id];
+          else if (antes.length === 1 && antes[0] === id) novas[id] = { name, email, birthdate };
+          else {
+            const f = pessoas.find((p) => p.id === id)?.ficha;
+            novas[id] = { name: f?.name ?? "", email: f?.email ?? "", birthdate: f?.birthdate ?? "" };
+          }
+        }
+        return novas;
+      });
+    }
+    setOrigens(ids);
+  }
+
+  /* Aberto a partir do perfil de alguém: essa pessoa vem escolhida e a ficha preenchida. */
+  useEffect(() => {
+    const validos = (inicial ?? []).filter((id) => pessoas.some((p) => p.id === id));
+    if (validos.length) escolher(validos);
+    // Só ao abrir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function mudarLinha(id: string, campo: keyof LinhaDeSocio, valor: string) {
+    setLinhas((ls) => ({ ...ls, [id]: { ...ls[id], [campo]: valor } }));
+    setRecusas((r) => {
+      if (!r[id]) return r;
+      const { [id]: _, ...resto } = r;
+      return resto;
+    });
+  }
+
+  function preencherDe(id: string, corrigido?: LinhaDeSocio) {
     const p = pessoas.find((x) => x.id === id);
     if (!p) return;
     const f = p.ficha;
-    setName(f.name);
-    setEmail(f.email ?? "");
-    setBirthdate(f.birthdate ?? "");
+    setName(corrigido?.name ?? f.name);
+    setEmail(corrigido?.email ?? f.email ?? "");
+    setBirthdate(corrigido?.birthdate ?? f.birthdate ?? "");
     setSex(f.sex ?? "UNSPECIFIED");
     setDocumentKind(f.documentKind ?? "CC");
     setDocumentNumber(f.documentNumber ?? "");
@@ -1091,30 +1160,139 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
    * tem a app), e a caixa "Enviar o convite" desaparece: o servidor manda só o
    * aviso de que a área de sócio abriu, para entrar com a conta que já tem.
    */
+  const contaDoEmail = (valor: string) => {
+    const e = valor.trim().toLowerCase();
+    return e ? (pessoas.find((p) => p.temConta && (p.ficha.email ?? "").trim().toLowerCase() === e) ?? null) : null;
+  };
   const emailEscrito = email.trim().toLowerCase();
-  const contaExistente = emailEscrito
-    ? pessoas.find((p) => p.temConta && (p.ficha.email ?? "").trim().toLowerCase() === emailEscrito) ?? null
-    : null;
+  const contaExistente = contaDoEmail(email);
   /* Há convite para decidir? Só com email, sem conta, e fora de uma categoria de menores. */
   const haConvite = Boolean(emailEscrito) && !contaExistente && !socioAtletaMenor;
 
-  const emailOk = !email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const emailOk = !email.trim() || EMAIL_RE.test(email.trim());
   const phoneOk = !phone.trim() || /^\d{6,15}$/.test(phone.replace(/\s/g, ""));
-  const temContacto = Boolean(email.trim() || phone.trim());
+  /* O sócio-atleta dispensa contacto: chega-se a ele pela ficha de atleta e pelos encarregados. */
+  const temContacto = Boolean(email.trim() || phone.trim() || atletaEscolhido);
+  /* A categoria só é exigida se existir alguma para escolher: um clube que
+     ainda não as criou não pode ficar sem conseguir inscrever ninguém. */
+  const categoriaOk = tiers.length === 0 || Boolean(tierId);
 
   const valid =
     name.trim().length >= 3 &&
     temContacto &&
     emailOk &&
     phoneOk &&
-    // A categoria só é exigida se existir alguma para escolher: um clube que
-    // ainda não as criou não pode ficar sem conseguir inscrever ninguém.
-    (tiers.length === 0 || Boolean(tierId)) &&
+    categoriaOk &&
     (!birthdate || /^\d{4}-\d{2}-\d{2}$/.test(birthdate)) &&
     (!postalCode.trim() || /^\d{4}-\d{3}$/.test(postalCode)) &&
     (!taxId.trim() || /^\d{9}$/.test(taxId));
 
+  /* ----- Várias pessoas ----- */
+
+  const menoresNaCategoria = categoriaDeMenores(tiers.find((t) => t.id === tierId));
+  /* O que falta ou está mal na linha de uma pessoa, em palavras. Nulo se está pronta. */
+  function problemaDe(id: string): string | null {
+    const l = linhas[id];
+    if (!l) return null;
+    if (l.name.trim().length < 3) return "Falta o nome completo.";
+    if (l.email.trim() && !EMAIL_RE.test(l.email.trim()) && emailsSaidos.has(id)) return "Este email não está bem escrito.";
+    const ficha = pessoas.find((p) => p.id === id)?.ficha;
+    if (!l.email.trim() && !ficha?.phone && !id.startsWith("a:")) return "Sem email nem telemóvel no clube: escreve um email.";
+    return null;
+  }
+  const linhaPronta = (id: string) => {
+    const l = linhas[id];
+    return Boolean(l) && !problemaDe(id) && (!l.email.trim() || EMAIL_RE.test(l.email.trim()));
+  };
+  const porCorrigir = varios ? origens.filter((id) => !linhaPronta(id)).length : 0;
+  const validVarios = varios && porCorrigir === 0 && categoriaOk;
+
+  /* Quem, de entre os escolhidos, recebe o quê. Para a frase de cima e para o botão. */
+  const contagem = (() => {
+    let convites = 0;
+    let contas = 0;
+    let menores = 0;
+    let comEmail = 0;
+    if (!varios) return { convites, contas, menores, comEmail };
+    for (const id of origens) {
+      const l = linhas[id];
+      if (!l) continue;
+      const menor = id.startsWith("a:") && menoresNaCategoria;
+      if (menor) menores++;
+      if (!l.email.trim()) continue;
+      comEmail++;
+      if (menor) continue;
+      if (contaDoEmail(l.email)) contas++;
+      else convites++;
+    }
+    return { convites, contas, menores, comEmail };
+  })();
+
+  /* O corpo de uma ficha para o servidor. O que não está no formato que ele aceita fica de fora. */
+  function corpoDe(id: string): Record<string, unknown> {
+    const p = pessoas.find((x) => x.id === id);
+    const l = linhas[id];
+    const f = p?.ficha ?? { name: l.name };
+    const menor = id.startsWith("a:") && menoresNaCategoria;
+    const comEmail = Boolean(l.email.trim());
+    return {
+      ...fichaParaEnviar(f),
+      name: l.name.trim(),
+      ...(comEmail ? { email: l.email.trim() } : {}),
+      ...(l.birthdate && /^\d{4}-\d{2}-\d{2}$/.test(l.birthdate) ? { birthdate: l.birthdate } : {}),
+      ...(tierId ? { tierId } : {}),
+      ...(anual ? { annualStart: `${String(annualMes).padStart(2, "0")}-${String(annualDia).padStart(2, "0")}` } : {}),
+      status,
+      acceptedTerms,
+      ...(id.startsWith("a:") ? { athleteId: id.slice(2) } : {}),
+      ...(comEmail ? { sendInvite: menor ? false : contaDoEmail(l.email) ? true : convidar } : {}),
+    };
+  }
+
+  async function saveVarios() {
+    if (!validVarios || busy) return;
+    setBusy(true);
+    setError(null);
+    const ids = [...origens];
+    const corpos = ids.map(corpoDe);
+    const criados: string[] = [];
+    const novasRecusas: Record<string, string> = {};
+    let interrompido: string | null = null;
+    try {
+      /* Em pedidos de 25 (o máximo do servidor), com o avanço à vista. */
+      for (let i = 0; i < ids.length; i += 25) {
+        setProgresso({ feitos: i, total: ids.length });
+        const { resultados } = await createMembers(corpos.slice(i, i + 25));
+        resultados.forEach((r, k) => {
+          if (r.ok) criados.push(ids[i + k]);
+          else novasRecusas[ids[i + k]] = r.error;
+        });
+      }
+    } catch (e) {
+      interrompido = e instanceof Error ? e.message : "A ligação falhou a meio.";
+    } finally {
+      setProgresso(null);
+      setBusy(false);
+    }
+
+    if (criados.length) onCreated();
+    const sobram = ids.filter((id) => !criados.includes(id));
+    if (sobram.length === 0) {
+      onClose();
+      return;
+    }
+    /* Ficam escolhidos só os que não entraram, com o motivo ao lado de cada um. */
+    carregarSocios();
+    setRecusas(novasRecusas);
+    escolher(sobram);
+    const feitos = criados.length ? `${criados.length} criados. ` : "";
+    if (interrompido) setError(`${feitos}Parou a meio: ${interrompido}`);
+    else if (sobram.length === 1) setError(`${feitos}${novasRecusas[sobram[0]] ?? "Uma ficha ficou por criar."}`);
+    else setError(`${feitos}${sobram.length} ficaram por criar: o motivo está ao lado de cada nome.`);
+  }
+
   async function save() {
+    if (varios) return saveVarios();
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
@@ -1174,12 +1352,38 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
       labelledBy="new-member"
       footer={
         <>
-          {error && <span className="mr-auto text-meta text-risk">{error}</span>}
+          {error ? (
+            <span role="alert" className="mr-auto text-meta text-risk">
+              {error}
+            </span>
+          ) : (
+            varios &&
+            porCorrigir > 0 && (
+              <span className="mr-auto text-meta text-ink-3">
+                {porCorrigir === 1 ? "1 pessoa por corrigir" : `${porCorrigir} pessoas por corrigir`}
+              </span>
+            )
+          )}
           <button type="button" className="ctl-ghost" onClick={onClose}>
             Cancelar
           </button>
-          <button type="button" className="ctl-primary" disabled={!valid || busy} onClick={() => void save()}>
-            {busy ? "A criar…" : haConvite && convidar ? "Criar e convidar" : "Criar sócio"}
+          <button
+            type="button"
+            className="ctl-primary"
+            disabled={(varios ? !validVarios : !valid) || busy}
+            onClick={() => void save()}
+          >
+            {varios
+              ? busy
+                ? progresso
+                  ? `A criar ${progresso.feitos} de ${progresso.total}…`
+                  : "A criar…"
+                : `Criar ${origens.length} sócios`
+              : busy
+                ? "A criar…"
+                : haConvite && convidar
+                  ? "Criar e convidar"
+                  : "Criar sócio"}
           </button>
         </>
       }
@@ -1198,10 +1402,24 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         <p
           className={cx(
             "rounded-[var(--radius-control)] px-3 py-2 text-meta leading-relaxed",
-            email.trim() ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3",
+            (varios ? contagem.comEmail > 0 : email.trim()) ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3",
           )}
         >
-          {socioAtletaMenor
+          {varios
+            ? [
+                `Vais criar ${origens.length} sócios. Cada ficha leva o que a pessoa já tem no clube (telemóvel, NIF, morada, documento); aqui acertas o nome, o email e a data de nascimento. A categoria e o estado valem para todos.`,
+                contagem.convites > 0 &&
+                  (convidar
+                    ? `${contagem.convites} ${contagem.convites === 1 ? "recebe" : "recebem"} o convite da app por email.`
+                    : "Não sai convite nenhum."),
+                contagem.contas > 0 &&
+                  `${contagem.contas} já ${contagem.contas === 1 ? "tem" : "têm"} conta na app e ${contagem.contas === 1 ? "recebe" : "recebem"} só o aviso da área de sócio.`,
+                contagem.menores > 0 &&
+                  `${contagem.menores === 1 ? "1 atleta fica" : `${contagem.menores} atletas ficam`} com as quotas pagas pelos encarregados, em Pagamentos.`,
+              ]
+                .filter(Boolean)
+                .join(" ")
+            : socioAtletaMenor
             ? "Sócio-atleta numa categoria de menores: as quotas vão para os encarregados do atleta, na área da família da app, em Pagamentos. Não sai convite nenhum, e o atleta não vê nada de sócio."
             : !email.trim()
             ? "Sem email não sai convite nenhum — a ficha fica criada e podes convidá-lo depois, a partir da lista ou da ficha."
@@ -1218,13 +1436,19 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         */}
         {pessoas.length > 0 && (
           <DialogField label="Já está no clube?" hint="atleta, encarregado ou staff">
-            <PersonPicker
+            <PersonMultiPicker
               pessoas={pessoas}
-              value={origem}
-              onChange={preencherDe}
-              placeholder="Escrever o nome…"
+              values={origens}
+              onChange={escolher}
+              placeholder="Escrever o nome ou a equipa…"
               emptyLabel="Ninguém — ficha nova"
             />
+            {origens.length === 0 && (
+              <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                Podes escolher várias pessoas de uma vez. Para uma equipa inteira, escreve o nome da equipa e carrega em
+                “Escolher os que aparecem”.
+              </p>
+            )}
             {escolhida && (
               <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
                 Ficha preenchida a partir de {escolhida.name} ({escolhida.sub}). Podes corrigir o que quiseres antes de
@@ -1235,6 +1459,84 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           </DialogField>
         )}
 
+        {/*
+          Uma linha por pessoa escolhida: os três campos que mais vezes vêm
+          errados ou em falta. O resto da ficha copia-se do que ela já tem.
+        */}
+        {varios && (
+          <div className="rounded-[var(--radius-control)] border border-line">
+            <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+              <span className="text-meta font-medium text-ink-2 tabular">{origens.length} fichas a criar</span>
+              <button type="button" className="text-meta text-ink-3 hover:text-risk" onClick={() => escolher([])}>
+                Tirar todas
+              </button>
+            </div>
+            <ul className="max-h-[440px] divide-y divide-line overflow-y-auto">
+              {origens.map((id) => {
+                const p = pessoas.find((x) => x.id === id);
+                const l = linhas[id];
+                if (!l) return null;
+                const aviso = recusas[id] ?? problemaDe(id);
+                const notas = [
+                  p?.sub,
+                  id.startsWith("a:") && (menoresNaCategoria ? "quotas pagas pelos encarregados" : "sócio-atleta"),
+                  l.email.trim() && contaDoEmail(l.email) && "já tem conta na app",
+                ].filter(Boolean);
+                return (
+                  <li key={id} className="px-3 py-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-meta text-ink-3">{notas.join(" · ")}</span>
+                      <button
+                        type="button"
+                        aria-label={`Tirar ${l.name || p?.name || "esta pessoa"}`}
+                        onClick={() => escolher(origens.filter((x) => x !== id))}
+                        className="-m-1 flex size-8 shrink-0 items-center justify-center rounded text-ink-4 hover:text-risk"
+                      >
+                        <X className="size-3.5" strokeWidth={2} />
+                      </button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1fr)]">
+                      <DialogField label="Nome completo">
+                        <input
+                          value={l.name}
+                          onChange={(e) => mudarLinha(id, "name", e.target.value)}
+                          maxLength={120}
+                          className={dialogInputClass}
+                        />
+                      </DialogField>
+                      <DialogField label="Email">
+                        <input
+                          value={l.email}
+                          onChange={(e) => mudarLinha(id, "email", e.target.value)}
+                          onBlur={() => setEmailsSaidos((s) => (s.has(id) ? s : new Set(s).add(id)))}
+                          type="email"
+                          placeholder="nome@exemplo.pt"
+                          className={dialogInputClass}
+                        />
+                      </DialogField>
+                      <DialogField label="Data de nascimento">
+                        <input
+                          value={l.birthdate}
+                          onChange={(e) => mudarLinha(id, "birthdate", e.target.value)}
+                          type="date"
+                          className={dialogInputClass}
+                        />
+                      </DialogField>
+                    </div>
+                    {aviso && (
+                      <p role="alert" className="mt-1.5 text-meta text-risk">
+                        {aviso}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {!varios && (
+        <>
         <DialogField label="Nome completo">
           <input
             autoFocus
@@ -1338,17 +1640,21 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             />
           </DialogField>
         </div>
+        </>
+        )}
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <DialogField label="Sexo">
-            <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
-              {(Object.keys(SEX_LABEL) as Sex[]).map((k) => (
-                <option key={k} value={k}>
-                  {SEX_LABEL[k]}
-                </option>
-              ))}
-            </select>
-          </DialogField>
+        <div className={cx("grid gap-3", varios ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+          {!varios && (
+            <DialogField label="Sexo">
+              <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
+                {(Object.keys(SEX_LABEL) as Sex[]).map((k) => (
+                  <option key={k} value={k}>
+                    {SEX_LABEL[k]}
+                  </option>
+                ))}
+              </select>
+            </DialogField>
+          )}
           <DialogField label="Categoria" hint={tiers.length === 0 ? "ainda não há" : undefined}>
             <select value={tierId} onChange={(e) => setTierId(e.target.value)} className={dialogInputClass}>
               <option value="">Sem categoria</option>
@@ -1430,7 +1736,7 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             className="mt-0.5 size-4 accent-[var(--color-signal)]"
           />
           <span className="text-body text-ink-2">
-            O sócio aceitou os termos e condições
+            {varios ? "Estes sócios aceitaram os termos e condições" : "O sócio aceitou os termos e condições"}
             <span className="block text-meta text-ink-4">
               Guarda a data de hoje. Deixa por marcar se a assinatura ficou em papel — o clube não fica a dizer
               que tem um consentimento que não deu.
@@ -1442,11 +1748,11 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             última coisa que se decide, e é a única que sai do clube para fora.
             Não aparece quando não há convite para decidir: a pessoa já tem a
             app (a frase de cima di-lo), ou é um sócio-atleta menor. */}
-        {(haConvite || !emailEscrito) && (
+        {(varios ? contagem.convites > 0 : haConvite || !emailEscrito) && (
           <ConvidarAoCriar
             ligado={convidar}
             onChange={setConvidar}
-            temEmail={Boolean(emailEscrito)}
+            temEmail={varios || Boolean(emailEscrito)}
             substantivo="sócio"
           />
         )}
@@ -1488,6 +1794,46 @@ function marcarJaSocios(pessoas: PessoaDoClube[], socios: MemberRow[]): PessoaDo
             : "Já é sócio";
     return { ...p, aviso, bloqueada: true };
   });
+}
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** O que se acerta à mão de cada pessoa, quando se escolhem várias. */
+type LinhaDeSocio = { name: string; email: string; birthdate: string };
+
+/**
+ * O resto da ficha de uma pessoa do clube, pronto a seguir para o servidor.
+ *
+ * Com várias pessoas, estes campos não se veem no formulário; vão como estão na
+ * ficha de origem. O que não estiver no formato que o servidor aceita (um código
+ * postal antigo, um NIF com oito dígitos) fica de fora em vez de recusar o pedido
+ * inteiro: são todos opcionais e completam-se depois na ficha do sócio.
+ */
+function fichaParaEnviar(f: FichaDeOrigem): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const texto = (v: string | undefined, min: number, max: number) => {
+    const t = v?.trim();
+    return t && t.length >= min && t.length <= max ? t : undefined;
+  };
+  const phone = f.phone?.replace(/\s/g, "");
+  if (phone && /^\d{6,15}$/.test(phone)) {
+    out.phone = phone;
+    if (f.phoneCountry && /^\+\d{1,4}$/.test(f.phoneCountry)) out.phoneCountry = f.phoneCountry;
+  }
+  if (f.sex) out.sex = f.sex;
+  const doc = texto(f.documentNumber, 4, 40);
+  if (doc) {
+    out.documentNumber = doc;
+    out.documentKind = f.documentKind ?? "CC";
+  }
+  const nif = f.taxId?.replace(/[\s.]/g, "");
+  if (nif && /^\d{9}$/.test(nif)) out.taxId = nif;
+  const address = texto(f.address, 3, 160);
+  if (address) out.address = address;
+  if (f.postalCode && /^\d{4}-\d{3}$/.test(f.postalCode.trim())) out.postalCode = f.postalCode.trim();
+  const city = texto(f.city, 2, 80);
+  if (city) out.city = city;
+  return out;
 }
 
 /** O que da ficha de alguém do clube cabe na ficha de sócio. */

@@ -63,8 +63,7 @@
   background: #f7f6f3;
 }
 
-/* A câmara tem sempre a proporção da captura; num ecrã mais alto do que ela,
-   o zoom calculado em `Monitor` faz-a encher a altura. */
+/* A câmara tem sempre a proporção da captura, a mesma do ecrã. */
 .monitor-camara {
   position: absolute; left: 0; top: 0;
   width: 100%; aspect-ratio: 16 / 9;
@@ -86,7 +85,6 @@
 }
 
 @media (max-width: 860px) {
-  .monitor-ecra { aspect-ratio: 1 / 1.15; }
   /* No telemóvel a margem da página é estreita: a base quase não sai para os lados. */
   .monitor { --aba: 1.5%; }
 }

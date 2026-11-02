@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { assertZeroOuCobravel } from "../billing/minimos";
 import type { MemberDocumentKind, MemberSex, MemberStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
@@ -195,7 +195,7 @@ export class MembersService {
   /* Consola — a direção                                                    */
   /* ---------------------------------------------------------------------- */
 
-  async list(ctx: RequestContext, filters: { status?: string; tierId?: string; q?: string }) {
+  async list(ctx: RequestContext, filters: { status?: string; tierId?: string; q?: string; athleteId?: string }) {
     this.mustRead(ctx);
 
     const lista = await this.prisma.runAs(ctx.academyId, async (db) => {
@@ -203,6 +203,8 @@ export class MembersService {
         where: {
           ...(filters.status ? { status: filters.status as MemberStatus } : {}),
           ...(filters.tierId ? { tierId: filters.tierId } : {}),
+          /* A ficha de sócio de um atleta: o painel "Sócio" no perfil dele, sem trazer o livro todo. */
+          ...(filters.athleteId ? { athleteId: filters.athleteId } : {}),
           ...(filters.q
             ? {
                 OR: [
@@ -746,11 +748,64 @@ export class MembersService {
    * outra vez.
    */
   async create(ctx: RequestContext, dto: MemberCreateDto) {
+    const { member, ligado } = await this.criar(ctx, dto);
+    this.avisarCriado(ctx.academyId, dto, member, ligado);
+    return member;
+  }
+
+  /**
+   * Vários sócios de uma vez: as pessoas escolhidas em "Já está no clube?".
+   *
+   * Cada ficha é uma inscrição à parte, com as mesmas regras de `create`, e uma
+   * que falhe não desfaz as outras: a consola tira da lista as que ficaram
+   * criadas e deixa as recusadas com o motivo ao lado do nome, para corrigir e
+   * voltar a carregar. Tudo ou nada aqui obrigava a recomeçar uma lista de cem
+   * atletas por causa de um NIF repetido.
+   *
+   * Os convites saem **depois** e em série, como em `enviarMuitos`: cem emails
+   * disparados ao mesmo tempo é a forma mais rápida de o fornecedor de correio
+   * nos limitar.
+   */
+  async createMany(ctx: RequestContext, dtos: MemberCreateDto[]) {
+    this.mustWrite(ctx);
+
+    const resultados: ({ ok: true; id: string; name: string; number: number | null } | { ok: false; error: string })[] = [];
+    const avisos: { dto: MemberCreateDto; member: { id: string; paidByFamily: boolean }; ligado: Ligado }[] = [];
+
+    for (const dto of dtos) {
+      try {
+        const { member, ligado } = await this.criar(ctx, dto);
+        resultados.push({ ok: true, id: member.id, name: member.name, number: member.number });
+        avisos.push({ dto, member, ligado });
+      } catch (e) {
+        resultados.push({
+          ok: false,
+          error:
+            e instanceof HttpException && e.getStatus() < 500 ? e.message : "Não foi possível criar esta ficha.",
+        });
+      }
+    }
+
+    void (async () => {
+      for (const a of avisos) {
+        if (a.dto.sendInvite !== false && !a.member.paidByFamily) {
+          await this.invites.enviarSePossivel(ctx.academyId, a.member.id);
+        }
+        if (a.ligado && a.dto.sendInvite !== false) {
+          await this.aviso.avisar(ctx.academyId, "member", a.ligado).catch(() => undefined);
+        }
+      }
+    })();
+
+    return { resultados };
+  }
+
+  private async criar(ctx: RequestContext, dto: MemberCreateDto) {
     this.mustWrite(ctx);
 
     const now = new Date();
     /* Fora do `runAs` — ver a nota em `update`. */
-    let ligado: { userId: string; name: string; email: string } | null = null;
+    let ligado: Ligado = null;
 
     /*
      * Um sócio sem contacto nenhum é uma linha que ninguém consegue usar.
@@ -759,8 +814,12 @@ export class MembersService {
      * chegar à pessoa para cobrar a quota ou convocar a assembleia. Qual dos
      * dois é indiferente — quem tem email dá email, quem só tem telemóvel dá
      * telemóvel.
+     *
+     * O sócio-atleta é a excepção: chega-se a ele pela ficha de atleta e pelos
+     * encarregados, que já estão no clube. Pedir um contacto aqui travava a
+     * conversão de atletas pequenos, que quase nunca têm email nem telemóvel.
      */
-    if (!dto.email?.trim() && !dto.phone?.trim()) {
+    if (!dto.email?.trim() && !dto.phone?.trim() && !dto.athleteId) {
       throw new BadRequestException("Um sócio precisa de pelo menos um contacto — email ou telemóvel");
     }
 
@@ -869,30 +928,37 @@ export class MembersService {
         }
         throw error;
       }
-    }).then((member) => {
-      /*
-       * O convite para a app, logo a seguir — foi pedido assim: quem é inscrito
-       * à mão recebe imediatamente o email para configurar a conta. **Depois**
-       * da transacção (HTTP nunca entra num `runAs`), **sem** await (a resposta
-       * da secretaria não espera pelo Resend) e silencioso (um email que falha
-       * não desfaz uma inscrição — o botão de reenviar existe para isso).
-       *
-       * A não ser que quem inscreveu tenha dito que não. `sendInvite` ausente
-       * é `true`: o comportamento de sempre fica, e desligar passou a ser
-       * possível para quem carrega a ficha antes de a pessoa saber que vai ser
-       * inscrita. Ver `MemberCreateDto.sendInvite`.
-       */
-      // Um sócio-atleta menor não recebe convite: pagam os encarregados (o `preparar` recusa-o na mesma).
-      if (dto.sendInvite !== false && !member.paidByFamily) void this.invites.enviarSePossivel(ctx.academyId, member.id);
-      /*
-       * E se a ficha se colou a uma conta que já existia, não houve convite
-       * nenhum: o aviso da área nova toma o lugar dele. Respeita o mesmo
-       * `sendInvite`, porque quem carrega a ficha antes de a pessoa saber que vai
-       * ser inscrita também não quer que ela receba isto.
-       */
-      if (ligado && dto.sendInvite !== false) void this.aviso.avisar(ctx.academyId, "member", ligado);
-      return member;
-    });
+    }).then((member) => ({ member, ligado }));
+  }
+
+  /** O convite (ou o aviso da área de sócio) de uma ficha acabada de criar. */
+  private avisarCriado(
+    academyId: string,
+    dto: MemberCreateDto,
+    member: { id: string; paidByFamily: boolean },
+    ligado: Ligado,
+  ) {
+    /*
+     * O convite para a app, logo a seguir — foi pedido assim: quem é inscrito
+     * à mão recebe imediatamente o email para configurar a conta. **Depois**
+     * da transacção (HTTP nunca entra num `runAs`), **sem** await (a resposta
+     * da secretaria não espera pelo Resend) e silencioso (um email que falha
+     * não desfaz uma inscrição — o botão de reenviar existe para isso).
+     *
+     * A não ser que quem inscreveu tenha dito que não. `sendInvite` ausente
+     * é `true`: o comportamento de sempre fica, e desligar passou a ser
+     * possível para quem carrega a ficha antes de a pessoa saber que vai ser
+     * inscrita. Ver `MemberCreateDto.sendInvite`.
+     */
+    // Um sócio-atleta menor não recebe convite: pagam os encarregados (o `preparar` recusa-o na mesma).
+    if (dto.sendInvite !== false && !member.paidByFamily) void this.invites.enviarSePossivel(academyId, member.id);
+    /*
+     * E se a ficha se colou a uma conta que já existia, não houve convite
+     * nenhum: o aviso da área nova toma o lugar dele. Respeita o mesmo
+     * `sendInvite`, porque quem carrega a ficha antes de a pessoa saber que vai
+     * ser inscrita também não quer que ela receba isto.
+     */
+    if (ligado && dto.sendInvite !== false) void this.aviso.avisar(academyId, "member", ligado);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1691,6 +1757,9 @@ function isUniqueViolation(error: unknown, field: string): boolean {
 /* -------------------------------------------------------------------------- */
 /* A importação: reconhecer quem já cá está                                    */
 /* -------------------------------------------------------------------------- */
+
+/** A conta a que uma ficha nova se colou pelo email (`ligarFichaAConta`). */
+type Ligado = Awaited<ReturnType<typeof ligarFichaAConta>>;
 
 type Existente = {
   id: string;

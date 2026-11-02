@@ -366,6 +366,21 @@ export class MemberCreateDto {
 }
 
 /**
+ * Vários sócios de uma vez, escolhidos em "Já está no clube?".
+ *
+ * No máximo 25 por pedido: a consola parte uma lista maior em pedidos
+ * seguidos e mostra o avanço, em vez de um pedido só que fica um minuto
+ * calado à espera de cem transacções.
+ */
+export class MemberCreateManyDto {
+  @IsArray()
+  @ArrayMaxSize(25, { message: "No máximo 25 sócios de cada vez" })
+  @ValidateNested({ each: true })
+  @Type(() => MemberCreateDto)
+  socios!: MemberCreateDto[];
+}
+
+/**
  * Lançar quotas a um sócio, à mão — um valor, vários meses.
  *
  * O formato do mês é validado aqui e não só no serviço: `AAAA-MM` é o
