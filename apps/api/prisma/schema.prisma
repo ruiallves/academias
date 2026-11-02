@@ -5829,7 +5829,7 @@ model SalesCompensation {
   hourlyCents           Int @default(700)
   /// Quantas reuniões marcadas fazem uma comissão. Conta acumulada: o que sobra
   /// de um mês passa para o seguinte.
-  meetingsPerCommission Int @default(5)
+  meetingsPerCommission Int @default(10)
   commissionCents       Int @default(0)
 
   updatedAt DateTime @updatedAt

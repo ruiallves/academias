@@ -34,7 +34,7 @@ import {
  * marcam o resultado das reuniões, corrigem turnos e aprovam meses.
  */
 
-const DEFAULTS = { hourlyCents: 700, meetingsPerCommission: 5, commissionCents: 0 };
+const DEFAULTS = { hourlyCents: 700, meetingsPerCommission: 10, commissionCents: 0 };
 
 /** Um turno com mais do que isto é quase de certeza um "esqueci-me de terminar". */
 const TURNO_MAXIMO_MIN = 16 * 60;

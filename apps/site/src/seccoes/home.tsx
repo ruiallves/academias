@@ -27,7 +27,7 @@ const DESDE = euro(Math.min(...PLANS.filter((p) => !p.soon).map((p) => p.monthly
 
 export function Heroi() {
   return (
-    <section className="heroi palco-noite">
+    <section className="heroi bloco palco-noite">
       <div className="wrap heroi-grelha">
         <div>
           {/* O que se escreve no Google. O título por baixo é o slogan. */}

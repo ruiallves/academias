@@ -147,7 +147,7 @@ export default function Mes({ me }: { me: Me }) {
             </div>
           </dl>
           {!d.configured && gere && (
-            <p className="mt-4 text-meta text-warn">As condições ainda não foram definidas: está a contar 7 €/h, comissão a 0 € a cada 5 reuniões.</p>
+            <p className="mt-4 text-meta text-warn">As condições ainda não foram definidas: está a contar 7 €/h, comissão a 0 € a cada 10 reuniões.</p>
           )}
         </div>
         <div className="flex items-center gap-5 border-t border-line bg-canvas/60 p-6 md:border-t-0 md:border-l">
