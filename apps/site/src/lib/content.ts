@@ -111,24 +111,28 @@ export function euro(value: number): string {
  * Os clubes com subscrição ativa a 2 de outubro de 2026, por ordem alfabética.
  *
  * São clubes reais. Antes de publicar, confirmar com cada um que pode aparecer
- * aqui. Quando houver o emblema de um clube, entra em `public/clubes/` e o
- * nome passa a levar o emblema ao lado.
+ * aqui. Os emblemas em `public/clubes/` são o símbolo que cada clube carregou
+ * na plataforma (`Academy.logoUrl`), aparado e a 192 px. Só aparecem na página
+ * os clubes com emblema: um nome sem emblema ao lado dos outros parecia um erro.
  */
-export const CLUBES = [
-  "AD Márcia Miranda Felgueiras",
-  "Casa do Povo da Gafanha da Boa Hora",
-  "Castanheira Sport Clube",
-  "Clube de Basquetebol do Fundão",
-  "Clube Desportivo de Loureiro",
-  "Futebol Clube Ferreirense",
-  "Juventude Atlético Clube",
-  "Santa Maria Futebol Clube",
+export const CLUBES: { nome: string; curto: string; emblema?: string }[] = [
+  { nome: "Futebol Clube Ferreirense", curto: "FC Ferreirense", emblema: "/clubes/fcferreirense.webp" },
+  { nome: "Clube Desportivo de Loureiro", curto: "CD Loureiro", emblema: "/clubes/cdloureiro.webp" },
+  { nome: "Clube de Basquetebol do Fundão", curto: "CB Fundão", emblema: "/clubes/cbfundao.webp" },
+  { nome: "Santa Maria Futebol Clube", curto: "Santa Maria FC", emblema: "/clubes/santamariafc.webp" },
+  { nome: "Castanheira Sport Clube", curto: "Castanheira SC", emblema: "/clubes/castanheirasportclube.webp" },
+  { nome: "Juventude Atlético Clube", curto: "Juventude AC", emblema: "/clubes/juventudeatleticoclube.webp" },
+  { nome: "AD Márcia Miranda Felgueiras", curto: "AD Márcia Miranda", emblema: "/clubes/admarciamirandafelgueiras.webp" },
+  { nome: "Casa do Povo da Gafanha da Boa Hora", curto: "CP Gafanha da Boa Hora", emblema: "/clubes/vaboahora.webp" },
 ];
+
+/** Os clubes que a página mostra: os que têm emblema. */
+export const CLUBES_COM_EMBLEMA = CLUBES.filter((c): c is (typeof CLUBES)[number] & { emblema: string } => !!c.emblema);
 
 /**
  * Os números da plataforma.
  *
- * **São contagens verdadeiras**, feitas à base de dados a 20 de outubro de 2026:
+ * **São contagens verdadeiras**, feitas à base de dados a 1 de novembro de 2026:
  * tudo o que os clubes criaram na plataforma (clubes cancelados incluídos),
  * sem contar os dois clubes de testes (`life-club` e `ad-fafe`). Não se
  * arredonda para cima e não se inventa. Um número inventado numa página de
@@ -140,13 +144,13 @@ export const CLUBES = [
  * valores e a data. Pode descer: treinos e equipas apagados pelos clubes saem.
  */
 export const NUMEROS = {
-  data: "20 de outubro de 2026",
+  data: "1 de novembro de 2026",
   itens: [
-    { valor: 941, rotulo: "atletas" },
-    { valor: 74, rotulo: "equipas" },
-    { valor: 667, rotulo: "sócios" },
-    { valor: 5430, rotulo: "treinos marcados" },
-    { valor: 282, rotulo: "jogos" },
+    { valor: 1003, rotulo: "atletas" },
+    { valor: 80, rotulo: "equipas" },
+    { valor: 678, rotulo: "sócios" },
+    { valor: 5646, rotulo: "treinos marcados" },
+    { valor: 346, rotulo: "jogos" },
   ],
 };
 

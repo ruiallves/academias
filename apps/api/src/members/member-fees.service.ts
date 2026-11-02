@@ -7,7 +7,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { assertZeroOuCobravel } from "../billing/minimos";
+import { assertZeroOuCobravel, nasceIsenta } from "../billing/minimos";
 import { ConfigService } from "@nestjs/config";
 import {
   ChargeStatus,
@@ -233,7 +233,7 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
         period: { in: [...new Set(novas.map((n) => n.period))] },
       },
       select: {
-        id: true, memberId: true, period: true, label: true, amountCents: true,
+        id: true, memberId: true, period: true, label: true, amountCents: true, status: true,
         member: { select: MEMBRO_A_AVISAR },
       },
     });
@@ -241,6 +241,8 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
 
     for (const q of quotas) {
       if (!pedidas.has(`${q.memberId}|${q.period}`)) continue;
+      // Uma quota de 0 € nasce paga: não há nada para avisar.
+      if (q.status !== ChargeStatus.OPEN || nasceIsenta(q.amountCents)) continue;
       await this.avisarQuota(db, academyId, q);
     }
   }
@@ -888,6 +890,9 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
       },
     });
     const tier = member?.tier && !member.tier.archivedAt ? member.tier : null;
+    if (tier?.feeCents === 0) {
+      throw new BadRequestException("A tua categoria não paga quota: não há nada a pagar");
+    }
     if (!tier?.feeCents) {
       throw new BadRequestException("A tua categoria ainda não tem valor de quota — fala com o clube");
     }
@@ -1095,6 +1100,7 @@ function novaQuota(
       coversFrom: null,
       coversTo: null,
       noticedAt: agora,
+      ...isenta(amountCents, agora),
       updatedAt: new Date(),
     };
   }
@@ -1117,8 +1123,18 @@ function novaQuota(
      * deve. Ver `avisarQuotasQueComecaram`.
      */
     noticedAt: de <= agora ? agora : null,
+    ...isenta(amountCents, agora),
     updatedAt: new Date(),
   };
+}
+
+/**
+ * Uma quota de 0 € (categoria isenta, ou lançada a 0 € à mão) nasce paga: fica no
+ * histórico do sócio, não gera aviso e nunca conta como atraso. Ver `nasceIsenta`.
+ * Fica carimbada como avisada, para a passagem das que começaram não a apanhar.
+ */
+function isenta(amountCents: number, agora: Date) {
+  return nasceIsenta(amountCents) ? { status: ChargeStatus.SETTLED, settledAt: agora, noticedAt: agora } : {};
 }
 
 /**
@@ -1167,7 +1183,8 @@ export async function situacaoDeQuotas(
     },
   });
 
-  const abertas = fees.filter((f) => f.status === "OPEN");
+  // Uma quota de 0 € nunca é dívida, mesmo uma antiga que ficou por pagar.
+  const abertas = fees.filter((f) => f.status === "OPEN" && f.amountCents > 0);
   const pagas = fees.filter((f) => f.status === "SETTLED");
 
   /*

@@ -1,74 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Monitor, Telemovel, type Plano } from "@/components/aparelhos";
-import { cx, Mark, Seta } from "@/components/marca";
-import { CLUBES, NUMEROS } from "@/lib/content";
-import { seguir, useEstreito, useParado } from "@/lib/scroll";
-import { Passeio, type Passo } from "./Passeio";
+import { Monitor, Telemovel } from "@/components/aparelhos";
+import { Seta } from "@/components/marca";
+import { CLUBES_COM_EMBLEMA, euro, NUMEROS, PLANS } from "@/lib/content";
+import { useParado } from "@/lib/scroll";
 
 /**
  * As secções da página inicial.
  *
- * A página mostra o produto a funcionar. Os ecrãs são capturas reais da
- * consola e da app, com os dados de um clube inventado, o CD Academias (ver
- * `scripts/capturas/GUIAO.md`).
+ * Quatro, de propósito: o produto no computador e no telemóvel, os clubes que
+ * já cá estão, um passeio por separadores (como o "Vê a plataforma em ação" da
+ * Adjunto) e o convite. Os números da plataforma saíram a pedido do Rui. O inventário completo vive em /produto e os preços em
+ * /planos. Já houve aqui nove secções, e depois oito: as duas versões foram
+ * recusadas por serem confusas.
+ *
+ * Os ecrãs são capturas reais da consola e da app, com os dados de um clube
+ * inventado, o CD Academias (ver `scripts/capturas/GUIAO.md`).
  */
 
-const limitar = (x: number) => Math.min(1, Math.max(0, x));
-
-/**
- * Escreve o progresso em `--p`, e só quando muda. Mudar uma variável obriga o
- * navegador a recalcular o estilo de tudo o que está dentro da secção, e uma
- * secção fora do ecrã tem sempre o mesmo valor.
- */
-function escrever(el: HTMLElement, p: number) {
-  const v = p.toFixed(3);
-  if (el.dataset.p === v) return;
-  el.dataset.p = v;
-  el.style.setProperty("--p", v);
-}
-
-/** Quanto da secção já atravessou o ecrã: 0 quando entra por baixo, 1 quando sai por cima. */
-function useAtravessar() {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    return seguir(el, (_p, r, vh) => {
-      escrever(el, limitar((vh - r.top) / (vh + r.height)));
-    });
-  }, []);
-  return ref;
-}
+/** O preço de entrada, para a página poder dizer "desde". */
+const DESDE = euro(Math.min(...PLANS.filter((p) => !p.soon).map((p) => p.monthly)));
 
 /* -------------------------------------------------------------------------- */
 /* Herói                                                                       */
 /* -------------------------------------------------------------------------- */
 
 export function Heroi() {
-  const ref = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    return seguir(el, (_p, r) => {
-      escrever(el, limitar(-r.top / (r.height * 0.6)));
-    });
-  }, []);
-
   return (
-    <section ref={ref} className="heroi palco-noite">
-      <div className="wrap">
-        {/* O que se escreve no Google. O título por baixo é o slogan. */}
-        <p className="rotulo mb-6">Software de gestão de clubes desportivos</p>
-        <h1 className="titulo t1 max-w-[13ch]">A infraestrutura digital do teu clube<span className="ponto">.</span></h1>
-
-        <div className="mt-8 flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
-          <p className="lede">
+    <section className="heroi palco-noite">
+      <div className="wrap heroi-grelha">
+        <div>
+          {/* O que se escreve no Google. O título por baixo é o slogan. */}
+          <p className="rotulo mb-6">Software de gestão de clubes desportivos</p>
+          <h1 className="titulo t1 max-w-[14ch]">
+            A infraestrutura digital do teu clube<span className="ponto">.</span>
+          </h1>
+          <p className="lede mt-7">
             Atletas, treinos, jogos, mensalidades e sócios. Uma consola para quem trabalha no clube e uma app para as
             famílias, os atletas e os sócios.
           </p>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="mt-9 flex flex-wrap items-center gap-3">
             <Link to="/contactos" className="btn btn-cheio">
               Experimentar 30 dias
               <Seta />
@@ -77,14 +48,14 @@ export function Heroi() {
               Ver planos
             </Link>
           </div>
+          <p className="mt-4 text-[0.92rem] text-texto-3">Sem cartão. Depois, desde {DESDE} por mês.</p>
         </div>
-      </div>
 
-      <div className="px-[clamp(8px,1.2vw,20px)]">
-        <div className="heroi-montra">
+        {/* À direita, a consola no computador e a app no telemóvel, à frente. */}
+        <div className="heroi-montra" aria-hidden>
           <Monitor capturas={["con-visao-geral"]} plano={{ captura: "con-visao-geral" }} urgente />
           <div className="heroi-tel">
-            <Telemovel capturas={["app-inicio"]} atual="app-inicio" rot={4} urgente />
+            <Telemovel capturas={["app-inicio"]} atual="app-inicio" urgente />
           </div>
         </div>
       </div>
@@ -93,360 +64,49 @@ export function Heroi() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Clubes a correr                                                             */
+/* Os clubes                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A faixa dos clubes, como a da Adjunto: o emblema num círculo e o nome ao
+ * lado, a correr devagar, e os números da plataforma por baixo, a contar.
+ * (Recusados antes: os nomes em letra gigante a correr, uma parede só de
+ * nomes, e os números num bloco próprio com mais espaço à volta.)
+ */
 export function Clubes() {
   const lista = (escondida: boolean) => (
     <ul aria-hidden={escondida || undefined}>
-      {CLUBES.map((c) => (
-        <li key={c}>{c}</li>
+      {CLUBES_COM_EMBLEMA.map((c) => (
+        <li key={c.nome}>
+          <img src={c.emblema} alt="" width={56} height={56} loading="lazy" />
+          <span>{c.nome}</span>
+        </li>
       ))}
     </ul>
   );
 
   return (
-    <section className="clubes palco-cal" aria-label="Clubes que já confiam em nós">
-      <p className="rotulo wrap mb-6">Clubes que já confiam em nós</p>
+    <section className="clubes palco-cal" aria-label="Clubes que já usam a Academias">
+      <p className="clubes-titulo">Clubes que já usam a Academias</p>
       {/* A lista vai duas vezes para a faixa dar a volta sem costura. */}
       <div className="clubes-pista">
         {lista(false)}
         {lista(true)}
       </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* A app do clube: o telemóvel preso                                           */
-/* -------------------------------------------------------------------------- */
-
-type Capitulo = Passo & { captura: string; rot: number; escala?: number };
-
-const APP: Capitulo[] = [
-  {
-    captura: "app-mensalidades-por-pagar",
-    rot: 0,
-    rotulo: "Mensalidades",
-    titulo: "Mensalidades sem complicações.",
-    texto: "A família vê o que há para pagar, mês a mês, e o que já está pago.",
-  },
-  {
-    captura: "app-pagar",
-    rot: 2,
-    rotulo: "Pagamento",
-    titulo: "Paga-se em dois toques.",
-    texto: "MB WAY ou Multibanco, sem sair da app do clube.",
-  },
-  {
-    captura: "app-mensalidades-pago",
-    rot: -3,
-    rotulo: "Confirmação",
-    titulo: "O pagamento confirma‑se sozinho.",
-    texto: "A confirmação vem do banco. No clube, ninguém marca nada à mão.",
-  },
-  {
-    captura: "app-agenda",
-    rot: 2,
-    rotulo: "Calendário",
-    titulo: "Treinos, jogos e convocatórias.",
-    texto: "A semana do atleta, sempre atualizada, com resposta à convocatória na app.",
-  },
-  {
-    captura: "app-atleta",
-    rot: -2,
-    rotulo: "Presenças",
-    titulo: "Acompanhar cada treino.",
-    texto: "A assiduidade fica registada, e a família avisa quando o atleta vai faltar.",
-  },
-  {
-    captura: "app-atleta-avaliacoes",
-    rot: 3,
-    rotulo: "Evolução",
-    titulo: "Ver o progresso do atleta.",
-    texto: "As avaliações do treinador, competência a competência, ao longo da época.",
-  },
-  {
-    captura: "app-socio-inicio",
-    rot: -3,
-    rotulo: "Sócios",
-    titulo: "O cartão de sócio no telemóvel.",
-    texto: "Com as quotas, os jogos e as novidades do clube.",
-  },
-  {
-    captura: "app-inicio-serra",
-    rot: 2,
-    escala: 0.97,
-    rotulo: "A marca do clube",
-    titulo: "Com o nome e as cores do clube.",
-    texto: "Cada clube tem a sua app. Instala-se a partir de um link, sem loja.",
-  },
-];
-
-export function AppDoClube() {
-  return (
-    <section className="bloco palco-cal bg-sup mt-[clamp(8px,1.2vw,20px)]">
-      <div className="wrap pt-[clamp(64px,9vw,130px)]">
-        <p className="rotulo">A app do clube</p>
-        <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube no telemóvel de cada família<span className="ponto">.</span></h2>
-      </div>
-
-      <Passeio id="app" ecras={6} passos={APP} variante="centro">
-        {(passo) => {
-          const c = APP[passo];
-          return (
-            // O disco de cor fica parado por trás; só o telemóvel roda.
-            <div className="app-disco">
-              <Telemovel capturas={APP.map((x) => x.captura)} atual={c.captura} rot={c.rot} escala={c.escala ?? 1} />
-            </div>
-          );
-        }}
-      </Passeio>
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* A consola: o ecrã preso                                                     */
-/* -------------------------------------------------------------------------- */
-
-type Cena = Passo & { plano: Plano };
-
-const CONSOLA: Cena[] = [
-  {
-    plano: { captura: "con-visao-geral" },
-    rotulo: "Visão geral",
-    titulo: "Saber o que precisa de atenção.",
-    texto: "A consola abre com a lista do que há para tratar: mensalidades em atraso, exames a caducar, treinos por registar.",
-  },
-  {
-    plano: { captura: "con-mensalidades-depois", realce: "linha-tomas" },
-    rotulo: "Mensalidades",
-    titulo: "Mensalidades que se cobram sozinhas.",
-    texto: "Emitidas no início do mês, pagas na app e confirmadas pelo banco.",
-  },
-  {
-    // A captura deste passo é escolhida pelo scroll: ver `QUADROS`, mais abaixo.
-    plano: { captura: "con-quadro-1", foco: "campo", zoom: 1.3 },
-    rotulo: "Treino",
-    titulo: "Desenhar a jogada, fotograma a fotograma.",
-    texto: "No editor tático, os jogadores e a bola movem-se de um fotograma para o seguinte. Continua a fazer scroll para os ver.",
-  },
-  {
-    plano: { captura: "con-planeamento", focoMovel: "semana" },
-    rotulo: "Planeamento",
-    titulo: "Planear a semana e a época.",
-    texto: "Cada treino com o seu plano, a distância ao jogo e a carga da semana.",
-  },
-  {
-    plano: { captura: "con-presencas-depois", realce: "linha-tomas", focoMovel: "lista" },
-    rotulo: "Presenças",
-    titulo: "Presenças marcadas no campo.",
-    texto: "Com as faltas avisadas pela família e as baixas do departamento clínico.",
-  },
-  {
-    plano: { captura: "con-jogo-ficha", realce: "linha-tomas" },
-    rotulo: "Jogos",
-    titulo: "Da convocatória à ficha de jogo.",
-    texto: "A equipa inicial, os minutos e os golos de cada atleta.",
-  },
-  {
-    plano: { captura: "con-atleta-avaliacoes" },
-    rotulo: "Avaliações",
-    titulo: "Avaliar cada atleta, por competência.",
-    texto: "O treinador avalia o plantel e publica. A família vê a avaliação na app.",
-  },
-  {
-    plano: { captura: "con-comunicacao", foco: "leitura", zoom: 1.4, focoMovel: "aviso" },
-    rotulo: "Comunicação",
-    titulo: "Comunicar e saber quem leu.",
-    texto: "Avisos por equipa ou por escalão, com a taxa de leitura à vista.",
-  },
-  {
-    plano: { captura: "con-inventario" },
-    rotulo: "Inventário",
-    titulo: "Saber o material que o clube tem.",
-    texto: "Equipamentos, bolas e coletes, com o stock de cada artigo e o que foi entregue.",
-  },
-  {
-    plano: { captura: "con-contas" },
-    rotulo: "Contas",
-    titulo: "As contas do clube, mês a mês.",
-    texto: "Receitas e despesas no mesmo sítio, com o saldo sempre à vista.",
-  },
-];
-
-/** Os quatro fotogramas da jogada no editor tático, tal como o treinador os desenhou. */
-const QUADROS = ["con-quadro-1", "con-quadro-2", "con-quadro-3", "con-quadro-4"];
-const PASSO_DO_TREINO = 2;
-// Pela ordem em que aparecem, com os quatro fotogramas seguidos: o ecrã só monta a captura à vista e as vizinhas.
-const CAPTURAS_DA_CONSOLA = CONSOLA.flatMap((x) => (x.plano.captura === QUADROS[0] ? QUADROS : [x.plano.captura]));
-
-export function Consola() {
-  // Dentro do passo do treino, o scroll passa os fotogramas da jogada um a um.
-  const [quadro, setQuadro] = useState(0);
-  const estreito = useEstreito();
-
-  return (
-    <section className="bloco palco-noite">
-      <div className="wrap pt-[clamp(64px,9vw,130px)]">
-        <p className="rotulo">A consola</p>
-        <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube inteiro, para quem lá trabalha<span className="ponto">.</span></h2>
-      </div>
-
-      <Passeio
-        id="consola"
-        ecras={9}
-        passos={CONSOLA}
-        aoAndar={(p) => {
-          const dentro = limitar(p * CONSOLA.length - PASSO_DO_TREINO);
-          setQuadro(Math.min(QUADROS.length - 1, Math.floor(dentro * QUADROS.length)));
-        }}
-      >
-        {(passo) => {
-          const cena = CONSOLA[passo];
-          const plano = passo === PASSO_DO_TREINO ? { ...cena.plano, captura: QUADROS[quadro] } : cena.plano;
-          /*
-           * No telemóvel mostra-se a consola como ela é no telemóvel: a área de
-           * Staff da app, com as tabelas em cartões. São capturas próprias, com
-           * o sufixo `-tel` (ver `scripts/capturas`).
-           */
-          if (estreito) {
-            return <Telemovel capturas={CAPTURAS_DA_CONSOLA.map((c) => `${c}-tel`)} atual={`${plano.captura}-tel`} />;
-          }
-          return <Monitor capturas={CAPTURAS_DA_CONSOLA} plano={plano} />;
-        }}
-      </Passeio>
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* O ciclo                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Os seis momentos do ciclo, cada um num cartão de cor com um número grande.
- * Os números são os do clube de exemplo, os mesmos que aparecem nos ecrãs acima.
- */
-const CICLO: { titulo: string; texto: string; valor: string; legenda: string; cor: "acento" | "noite" | "branco" }[] = [
-  { titulo: "Pagamento", texto: "A mensalidade é emitida, paga na app e confirmada pelo banco.", valor: "35,00 €", legenda: "Pago por MB WAY", cor: "acento" },
-  { titulo: "Treino", texto: "O treinador desenha o exercício e monta o plano da sessão.", valor: "75 min", legenda: "Quarta, 19:00, Campo 2", cor: "noite" },
-  { titulo: "Presença", texto: "No campo, marca quem veio. As faltas avisadas já lá estão.", valor: "14/16", legenda: "Presentes no treino", cor: "branco" },
-  { titulo: "Avaliação", texto: "De tempos a tempos, avalia cada atleta por competência.", valor: "4,3", legenda: "Média em cinco", cor: "acento" },
-  { titulo: "Evolução", texto: "As avaliações juntam-se e mostram o caminho do atleta.", valor: "", legenda: "De junho a outubro", cor: "noite" },
-  { titulo: "Comunicação", texto: "O clube avisa as famílias e vê quem já leu.", valor: "41/46", legenda: "Famílias leram o aviso", cor: "branco" },
-];
-
-export function Ciclo() {
-  const ref = useRef<HTMLElement>(null);
-  const parado = useParado();
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    return seguir(el, (p) => escrever(el, p));
-  }, []);
-
-  // Com movimento reduzido, a pista deixa de andar com o scroll e passa a rolar à mão.
-  if (parado) {
-    return (
-      <section className="palco-cal faixa">
-        <div className="wrap">
-          <h2 className="titulo t1 max-w-[13ch]">Do pagamento à evolução do atleta<span className="ponto">.</span></h2>
-        </div>
-        <div className="mt-10 overflow-x-auto">
-          <CicloPista />
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section ref={ref} className="ciclo palco-cal" style={{ height: "340svh" }}>
-      <div className="ciclo-preso">
-        <div className="wrap">
-          <p className="rotulo">Tudo ligado</p>
-          <h2 className="titulo t2 mt-3 max-w-[18ch]">Do pagamento à evolução do atleta<span className="ponto">.</span></h2>
-        </div>
-        <CicloPista />
-      </div>
-    </section>
-  );
-}
-
-function CicloPista() {
-  return (
-    <ol className="ciclo-pista">
-      {CICLO.map((c, i) => (
-        <li key={c.titulo} className={cx("ciclo-cartao", c.cor === "branco" ? "ciclo-branco" : "palco-" + c.cor)}>
-          <span className="ciclo-n">{i + 1}</span>
-          <div className="ciclo-valor" aria-hidden>
-            {c.valor ? (
-              <b>{c.valor}</b>
-            ) : (
-              // A evolução não é um número: é a linha a subir.
-              <svg viewBox="0 0 200 90" fill="none">
-                <polyline points="6,78 52,62 98,58 146,34 194,10" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="194" cy="10" r="9" fill="var(--acento)" />
-              </svg>
-            )}
-            <span>{c.legenda}</span>
+      {/* Os números ocupam o espaço que já havia entre a faixa e a secção seguinte, e só esse. */}
+      <dl className="clubes-numeros">
+        {NUMEROS.itens.map((x) => (
+          <div key={x.rotulo}>
+            <dd>
+              <Contador valor={x.valor} />
+            </dd>
+            <dt>{x.rotulo}</dt>
           </div>
-          <div>
-            <h3 className="titulo t3">{c.titulo}</h3>
-            <p className="mt-2 text-texto-2">{c.texto}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-/* -------------------------------------------------------------------------- */
-/* De sete ferramentas para uma                                                */
-/* -------------------------------------------------------------------------- */
-
-const FERRAMENTAS = [
-  "A folha de Excel das mensalidades",
-  "O grupo dos pais",
-  "A folha de presenças em papel",
-  "Os comprovativos de transferência",
-  "O caderno do treinador",
-  "A pasta dos exames médicos",
-  "Os cartões de sócio em cartolina",
-];
-
-export function Ferramentas() {
-  const ref = useAtravessar();
-
-  return (
-    <section ref={ref} className="ferramentas palco-cal faixa">
-      <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-20">
-        <div>
-          <h2 className="titulo t1 max-w-[9ch]">De sete sítios para um<span className="ponto">.</span></h2>
-          <p className="lede mt-6">Um clube vive hoje espalhado por folhas, grupos e pastas. Na Academias fica tudo ligado.</p>
-        </div>
-        <div className="flex flex-col justify-center gap-8">
-          <ul className="ferramentas-lista">
-            {FERRAMENTAS.map((f, i) => (
-              <li key={f} className="ferramenta" style={{ ["--a" as string]: 0.16 + i * 0.035 }}>
-                {f}
-              </li>
-            ))}
-          </ul>
-          <p className="ferramenta-uma self-start">
-            <Mark size={44} />
-            Academias
-          </p>
-        </div>
-      </div>
+        ))}
+      </dl>
     </section>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Números                                                                     */
-/* -------------------------------------------------------------------------- */
 
 /** "5093" passa a "5 093", com um espaço que não parte a linha. */
 const milhares = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -467,10 +127,11 @@ function Contador({ valor }: { valor: number }) {
         io.disconnect();
         const inicio = performance.now();
         const andar = (agora: number) => {
-          const t = limitar((agora - inicio) / 1400);
+          const t = Math.min(1, (agora - inicio) / 1400);
           setN(Math.round(valor * (1 - Math.pow(1 - t, 3))));
           if (t < 1) quadro = requestAnimationFrame(andar);
         };
+        setN(0);
         quadro = requestAnimationFrame(andar);
       },
       { threshold: 0.6 },
@@ -482,27 +143,200 @@ function Contador({ valor }: { valor: number }) {
     };
   }, [valor, parado]);
 
+  return <b ref={ref}>{milhares(n)}</b>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* O que a Academias faz: um passeio por separadores                           */
+/* -------------------------------------------------------------------------- */
+
+type Area = {
+  nome: string;
+  titulo: string;
+  texto: string;
+  /** A consola no computador e a app no telemóvel: o mesmo assunto dos dois lados. */
+  pc: string;
+  tel: string;
+  mais: { to: string; label: string };
+};
+
+const AREAS: Area[] = [
+  {
+    nome: "Gestão",
+    titulo: "O clube inteiro arrumado",
+    texto: "Atletas, famílias, equipas e staff, com os cargos e as permissões que o clube definir. A ficha de cada atleta junta os jogos, a assiduidade, os documentos e as mensalidades, e as contas do clube abrem também no telemóvel.",
+    pc: "con-atleta",
+    tel: "con-contas-tel",
+    mais: { to: "/produto", label: "Tudo o que a consola faz" },
+  },
+  {
+    nome: "Mensalidades",
+    titulo: "O clube emite, a família paga, o banco confirma",
+    texto: "As mensalidades saem no início do mês, por escalão ou por atleta. A família paga na app por MB WAY, Multibanco ou cartão, e o estado muda sozinho na consola.",
+    pc: "con-mensalidades-depois",
+    tel: "app-mensalidades-pago",
+    mais: { to: "/mensalidades-clube", label: "Como funcionam as mensalidades" },
+  },
+  {
+    nome: "Treinos",
+    titulo: "Do exercício à presença no campo",
+    texto: "O treinador desenha o exercício no editor tático, monta o plano da sessão e marca as presenças. A família vê a agenda e avisa quando o atleta falta.",
+    pc: "con-quadro-2",
+    tel: "app-agenda",
+    mais: { to: "/gestao-clubes-futebol", label: "Para clubes de futebol" },
+  },
+  {
+    nome: "Jogos",
+    titulo: "Da convocatória à ficha de jogo",
+    texto: "A convocatória chega ao telemóvel de cada família, que confirma ou diz que não pode. No fim, a ficha guarda os minutos e os golos de cada atleta.",
+    pc: "con-jogo-ficha",
+    tel: "app-convocatoria",
+    mais: { to: "/gestao-clubes-futebol", label: "Jogos e convocatórias" },
+  },
+  {
+    nome: "Comunicação",
+    titulo: "Avisos que chegam, e saber quem leu",
+    texto: "O clube escreve para uma equipa, um escalão ou o clube todo. O aviso chega como notificação, e a consola mostra quantas famílias já leram.",
+    pc: "con-comunicacao",
+    tel: "app-aviso",
+    mais: { to: "/app-clube", label: "A app do clube" },
+  },
+  {
+    nome: "Sócios",
+    titulo: "Quotas, cartão e adesão online",
+    texto: "As categorias e as quotas definem-se na consola. O sócio tem o cartão digital e paga as quotas na mesma app das famílias.",
+    pc: "con-socios",
+    tel: "app-socio-inicio",
+    mais: { to: "/gestao-socios", label: "Sócios e quotas" },
+  },
+  {
+    nome: "Website",
+    titulo: "O site do clube, com loja e bilheteira",
+    texto: "As notícias, as equipas e o calendário saem do que o clube já tem na consola. A loja vende no próprio site, e o bilhete chega ao telemóvel com um código QR que se lê à porta.",
+    pc: "site-inicio",
+    tel: "site-tel-bilhete",
+    mais: { to: "/site-clube", label: "O site do clube" },
+  },
+];
+
+export function OQueFaz() {
+  const [i, setI] = useState(0);
+  const a = AREAS[i];
+
   return (
-    <b ref={ref}>
-      {milhares(n)}
-    </b>
+    <section className="oquefaz palco-cal faixa">
+      <div className="wrap">
+        <h2 className="titulo t2">
+          O que a Academias faz<span className="ponto">.</span>
+        </h2>
+
+        <div className="areas-separadores" role="tablist" aria-label="Áreas da plataforma">
+          {AREAS.map((x, n) => (
+            <button
+              key={x.nome}
+              type="button"
+              role="tab"
+              id={`area-${n}`}
+              aria-selected={n === i}
+              aria-controls="area-painel"
+              onClick={() => setI(n)}
+            >
+              {x.nome}
+            </button>
+          ))}
+        </div>
+
+        <div id="area-painel" role="tabpanel" aria-labelledby={`area-${i}`} className="area">
+          <div className="area-texto">
+            <h3 className="titulo t2">
+              {a.titulo}
+              <span className="ponto">.</span>
+            </h3>
+            <p className="lede mt-5">{a.texto}</p>
+            <Link to={a.mais.to} className="ligacao-seta mt-8">
+              {a.mais.label}
+              <Seta />
+            </Link>
+          </div>
+          <div className="area-montra" aria-hidden>
+            <Monitor capturas={AREAS.map((x) => x.pc)} plano={{ captura: a.pc }} />
+            <div className="area-tel">
+              <Telemovel capturas={AREAS.map((x) => x.tel)} atual={a.tel} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
-export function Numeros() {
+/* -------------------------------------------------------------------------- */
+/* O que o clube ganha                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * As contas da estimativa, para um clube com `atletas`. Estão escritas na
+ * própria secção, por baixo: não são medições, e a página diz isso.
+ */
+const CONTAS = {
+  atletas: 150,
+  atletasPorEquipa: 15,
+  treinosPorSemana: 2,
+  semanasPorMes: 4.33,
+  jogosPorMes: 4,
+  avisosPorMes: 4,
+  minPorMensalidade: 2,
+  minPorTreino: 5,
+  minPorConvocatoria: 15,
+  minPorAviso: 5,
+};
+
+const EQUIPAS = Math.round(CONTAS.atletas / CONTAS.atletasPorEquipa);
+
+/** As horas por mês de cada tarefa que deixa de ser feita à mão. */
+const PARTES = [
+  { horas: (CONTAS.atletas * CONTAS.minPorMensalidade) / 60, texto: "a confirmar e marcar mensalidades" },
+  { horas: (EQUIPAS * CONTAS.treinosPorSemana * CONTAS.semanasPorMes * CONTAS.minPorTreino) / 60, texto: "a passar presenças para o Excel" },
+  { horas: (EQUIPAS * CONTAS.jogosPorMes * CONTAS.minPorConvocatoria) / 60, texto: "a perguntar quem vai ao jogo" },
+  { horas: (EQUIPAS * CONTAS.avisosPorMes * CONTAS.minPorAviso) / 60, texto: "a repetir avisos em cada grupo" },
+].map((p) => ({ ...p, horas: Math.max(1, Math.round(p.horas)) }));
+
+const TOTAL_HORAS = PARTES.reduce((s, p) => s + p.horas, 0);
+
+/**
+ * O que o clube ganha: uma frase grande e as quatro partes por baixo.
+ *
+ * (Recusado antes: um seletor de atletas com barras por tarefa e linhas de
+ * antes e agora, num bloco de fundo areia. O Rui quis mais simples.)
+ */
+export function Ganhos() {
   return (
-    <section className="bloco palco-noite">
-      <div className="wrap faixa">
-        <h2 className="titulo t2 max-w-[16ch]">O que os clubes já fizeram na Academias<span className="ponto">.</span></h2>
-        <div className="numeros-grelha mt-[clamp(36px,5vw,72px)]">
-          {NUMEROS.itens.map((x) => (
-            <p key={x.rotulo} className="numero">
-              <Contador valor={x.valor} />
-              <span>{x.rotulo}</span>
-            </p>
+    <section className="ganhos palco-cal">
+      <div className="wrap">
+        <h2 className="ganhos-frase titulo">
+          Um clube com {CONTAS.atletas} atletas ganha cerca de{" "}
+          <span className="ganhos-realce">
+            <Contador valor={TOTAL_HORAS} /> horas
+          </span>{" "}
+          por mês<span className="ponto">.</span>
+        </h2>
+
+        <ul className="ganhos-partes">
+          {PARTES.map((p) => (
+            <li key={p.texto}>
+              <span className="ganhos-horas">
+                <Contador valor={p.horas} /> h
+              </span>
+              <span>{p.texto}</span>
+            </li>
           ))}
-        </div>
-        <p className="mt-10 text-[0.9rem] text-texto-3">Contados na plataforma a {NUMEROS.data}.</p>
+        </ul>
+
+        <p className="ganhos-nota">
+          Uma estimativa, com {CONTAS.minPorMensalidade} minutos por mensalidade, {CONTAS.minPorTreino} por treino,{" "}
+          {CONTAS.minPorConvocatoria} por convocatória e {CONTAS.minPorAviso} por aviso, em equipas de {CONTAS.atletasPorEquipa} atletas com{" "}
+          {CONTAS.treinosPorSemana} treinos por semana, {CONTAS.jogosPorMes} jogos e {CONTAS.avisosPorMes} avisos por mês.
+        </p>
       </div>
     </section>
   );
@@ -516,14 +350,19 @@ export function Fecho() {
   return (
     <section className="bloco palco-noite mb-[clamp(8px,1.2vw,20px)]">
       <div className="wrap faixa flex flex-col items-start gap-9">
-        <h2 className="titulo t1 max-w-[12ch]">Experimenta com o teu clube lá dentro<span className="ponto">.</span></h2>
+        <h2 className="titulo t1 max-w-[12ch]">
+          Experimenta com o teu clube lá dentro<span className="ponto">.</span>
+        </h2>
         <div className="flex flex-wrap items-center gap-x-7 gap-y-4">
           <Link to="/contactos" className="btn btn-cheio">
             Experimentar 30 dias
             <Seta />
           </Link>
-          <p className="text-texto-2">Sem cartão e sem período mínimo.</p>
+          <Link to="/planos" className="btn btn-fio">
+            Ver planos
+          </Link>
         </div>
+        <p className="text-texto-2">Trinta dias com tudo, sem cartão e sem período mínimo. Depois, desde {DESDE} por mês.</p>
       </div>
     </section>
   );

@@ -247,5 +247,21 @@
         297.3
       ]
     }
+  },
+  "porta-ok": {
+    "ficheiro": "porta-ok-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Leitor da porta: o bilhete do sábado aceite, ecrã verde",
+    "focos": {}
+  },
+  "porta-repetido": {
+    "ficheiro": "porta-repetido-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Leitor da porta: o mesmo bilhete outra vez, recusado",
+    "focos": {}
   }
 }

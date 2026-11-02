@@ -739,5 +739,35 @@
         40.4
       ]
     }
+  },
+  "con-futsal": {
+    "ficheiro": "con-futsal.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Editor tático de futsal: saída de pressão em 3-1 no campo inteiro, frame 2 de 3",
+    "focos": {
+      "campo": [
+        413.8,
+        293.4,
+        910.3,
+        480.9
+      ]
+    }
+  },
+  "con-basquetebol-lancamento": {
+    "ficheiro": "con-basquetebol-lancamento.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Editor tático de basquetebol: lançamento em cinco posições, na biblioteca do clube",
+    "focos": {
+      "campo": [
+        413.8,
+        293.4,
+        910.3,
+        560
+      ]
+    }
   }
 }

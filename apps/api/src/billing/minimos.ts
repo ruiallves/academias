@@ -43,3 +43,13 @@ export function assertZeroOuCobravel(amountCents: number, o = "O valor"): void {
     throw new BadRequestException(`${o} tem de ser 0 € ou pelo menos ${euros(MINIMO_COBRAVEL)}: abaixo disso não se consegue pagar online`);
   }
 }
+
+/**
+ * Uma cobrança de 0 € nasce paga: a mensalidade do atleta isento e a quota do
+ * sócio de uma categoria a 0 €.
+ *
+ * Não há nada a pedir, e deixá-la "por pagar" punha um isento na lista das
+ * dívidas, num lembrete automático e num ecrã de pagamento sem nada para pagar.
+ * Fica `SETTLED`, sem registo de pagamento (não entrou dinheiro) e sem aviso.
+ */
+export const nasceIsenta = (amountCents: number): boolean => amountCents === 0;

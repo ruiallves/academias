@@ -190,6 +190,77 @@ export const EXERCICIOS_BASQUETEBOL = [
   }),
 ];
 
+/* -------------------------------------------------------------------------- */
+/* O exercício de futsal                                                       */
+/* -------------------------------------------------------------------------- */
+
+const PRETO = "#26231f";
+const gr = (id, x, y, color) => ({ id, kind: "gk", x, y, label: "GR", ...(color ? { color } : {}) });
+
+/**
+ * Saída de pressão em 3-1, no campo de futsal inteiro (40×20, em metros).
+ *
+ * A equipa ataca a baliza da direita (x = 40). O guarda-redes sai curto no
+ * fixo, a bola vai para a ala do lado contrário à pressão, entra no pivô de
+ * costas e ele devolve para a ala de fora, que aparece a rematar.
+ */
+const SAIDA_EM_3_1 = {
+  field: "futsal",
+  frames: [
+    {
+      id: "fs1", durationMs: 1400, note: "O guarda-redes sai curto no fixo. As alas abrem e o pivô fixa os centrais.",
+      items: [
+        gr("gr", 1.6, 10), bola(2.8, 10.7),
+        at("p1", 8, 10, "4"), at("p2", 13, 3, "7"), at("p3", 13, 17, "8"), at("p4", 29, 10, "9"),
+        def("d1", 10.5, 6.5, "10"), def("d2", 10.5, 13.5, "11"), def("d3", 16.5, 10, "6"), def("d4", 26.5, 10, "3"),
+        gr("gra", 38.4, 10, PRETO),
+      ],
+      arrows: [seta("s1", "pass", 3.2, 10.4, 7.2, 10.1), seta("s2", "run", 13.4, 17.4, 18.2, 18.2), seta("s3", "press", 16, 10.4, 9.6, 10.4)],
+    },
+    {
+      id: "fs2", durationMs: 1400, note: "Com a pressão a fechar por dentro, a bola sai para a ala direita. O pivô vem receber de costas.",
+      items: [
+        gr("gr", 2.2, 10), bola(8.8, 10.7),
+        at("p1", 8, 10, "4"), at("p2", 14, 3, "7"), at("p3", 18.2, 17.8, "8"), at("p4", 26.4, 12.6, "9"),
+        def("d1", 9.6, 7.4, "10"), def("d2", 11.6, 13.6, "11"), def("d3", 12.4, 10.2, "6"), def("d4", 24.4, 12.2, "3"),
+        gr("gra", 38.4, 10, PRETO),
+      ],
+      arrows: [seta("s1", "pass", 8.8, 11.2, 17.6, 17.2), seta("s2", "run", 28.6, 10.4, 26.8, 12)],
+    },
+    {
+      id: "fs3", durationMs: 1600, note: "O pivô devolve para a ala de fora, que aparece nas costas e remata ao segundo poste.",
+      items: [
+        gr("gr", 3, 10), bola(26, 12),
+        at("p1", 11, 10, "4"), at("p2", 22, 4.4, "7"), at("p3", 18.4, 17.4, "8"), at("p4", 26.4, 12.6, "9"),
+        def("d1", 14.6, 7.6, "10"), def("d2", 17.8, 15.6, "11"), def("d3", 15.4, 11, "6"), def("d4", 25, 11.2, "3"),
+        gr("gra", 38.2, 10.6, PRETO),
+      ],
+      arrows: [seta("s1", "pass", 25.6, 11.6, 29.4, 6.2), seta("s2", "run", 22.4, 4.2, 29.8, 5.4), seta("s3", "shot", 30.2, 5.8, 39.6, 8.6)],
+    },
+  ],
+};
+
+export const EX_SAIDA_FUTSAL = "ex-saida-pressao-3-1";
+
+export const EXERCICIOS_FUTSAL = [
+  exercicio({
+    id: EX_SAIDA_FUTSAL, sportId: FUTSAL.id, name: "Saída de pressão em 3-1 com finalização da ala",
+    description: "4x4 com guarda-redes no campo inteiro. A equipa sai curta contra a pressão alta, entra no pivô e finaliza pela ala do lado contrário.",
+    category: "Ataque", objectives: ["Saída de pressão", "Jogo no pivô"], type: "4x4 + GR",
+    intensity: 7, players: "4x4 + 2 GR", durationMin: 15, space: "Campo inteiro", material: "4 bolas, 4 coletes brancos",
+    ageMin: 14, ageMax: 99, complexity: 3, authorName: "Hugo Matias", diagram: SAIDA_EM_3_1,
+    updatedAt: "2026-10-05T22:40:00.000Z",
+    rules: "A primeira bola do guarda-redes é sempre curta. Golo depois de passe do pivô vale dois.",
+    progressions: "A pressão passa a quatro. Limitar o fixo a dois toques.",
+    regressions: "Pressão a dois, sem o defensor do pivô.",
+    coachingPoints: "A ala do lado da bola abre cedo. O pivô recebe de lado, com o corpo entre a bola e o defensor. A ala de fora só ataca a profundidade quando a bola entra no pivô.",
+    commonErrors: "Passe do guarda-redes para a ala do lado da pressão. Pivô parado de frente para a baliza.",
+  }),
+];
+
+/** Os exercícios das outras modalidades, na biblioteca do clube com várias modalidades. */
+export const EXERCICIOS_EXTRA = [...EXERCICIOS_BASQUETEBOL, ...EXERCICIOS_FUTSAL];
+
 /** A ficha resumida da biblioteca, como em `tecnica.mjs`. */
 export const resumoDoExercicio = (e) => {
   const { rules, progressions, regressions, coachingPoints, commonErrors, diagram, images, editable, deletable, usedIn, ...r } = e;

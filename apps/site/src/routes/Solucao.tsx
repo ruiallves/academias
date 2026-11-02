@@ -6,26 +6,27 @@ import { SOLUCOES, solucaoDe, type Solucao as Dados } from "@/lib/solucoes";
 /**
  * Uma página por pesquisa: futebol, futsal, basquetebol, mensalidades, sócios…
  *
- * O texto vive em `lib/solucoes.ts`. A página segue o desenho do Produto: o
- * título com a pesquisa por cima, blocos com o ecrã real ao lado, as perguntas
- * e links para as outras páginas. Os links entre elas contam para o Google
- * tanto como para quem lê.
+ * O texto vive em `lib/solucoes.ts`. O herói é o da página inicial: o texto à
+ * esquerda e os aparelhos à direita. Cada bloco mostra o assunto dos dois
+ * lados quando os há: a consola no computador com a app à frente, ou dois
+ * telemóveis lado a lado. Os links entre as páginas contam para o Google tanto
+ * como para quem lê.
  */
 export default function Solucao({ s }: { s: Dados }) {
   const outras = s.relacionadas.map(solucaoDe).filter((x): x is Dados => Boolean(x));
 
   return (
     <>
-      <header className="palco-cal sob-o-topo">
-        <div className="wrap">
-          <p className="rotulo text-texto-3">{s.rotulo}</p>
-          <h1 className="titulo t1 mt-5 max-w-[18ch]">
-            {s.h1}
-            <span className="ponto">.</span>
-          </h1>
-          <div className="mt-9 grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <p className="lede">{s.lede}</p>
-            <div className="flex flex-wrap gap-3">
+      <header className="solucao-heroi palco-cal sob-o-topo">
+        <div className="wrap heroi-grelha">
+          <div>
+            <p className="rotulo text-texto-3">{s.rotulo}</p>
+            <h1 className="titulo t1 mt-5 max-w-[16ch]">
+              {s.h1}
+              <span className="ponto">.</span>
+            </h1>
+            <p className="lede mt-7">{s.lede}</p>
+            <div className="mt-9 flex flex-wrap gap-3">
               <Link to="/contactos" className="btn btn-cheio">
                 Experimentar 30 dias
                 <Seta />
@@ -35,11 +36,7 @@ export default function Solucao({ s }: { s: Dados }) {
               </Link>
             </div>
           </div>
-        </div>
-        <div className="px-[clamp(8px,1.2vw,20px)]">
-          <div className="solucao-montra">
-            <Aparelho captura={s.captura} urgente />
-          </div>
+          <Montra captura={s.captura} tel={s.tel} urgente />
         </div>
       </header>
 
@@ -48,7 +45,7 @@ export default function Solucao({ s }: { s: Dados }) {
           {s.blocos.map((b, i) => (
             <article
               key={b.titulo}
-              className="fio-cima grid items-center gap-10 py-[clamp(48px,8vw,112px)] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-16"
+              className="fio-cima grid items-center gap-10 py-[clamp(48px,8vw,112px)] lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"
             >
               <div className={i % 2 ? "lg:order-2" : undefined}>
                 <h2 className="titulo t2 max-w-[16ch]">
@@ -64,9 +61,7 @@ export default function Solucao({ s }: { s: Dados }) {
                   ))}
                 </ul>
               </div>
-              <div className="grid min-w-0 place-items-center">
-                <Aparelho captura={b.captura} />
-              </div>
+              <Montra captura={b.captura} tel={b.tel} />
             </article>
           ))}
         </div>
@@ -129,12 +124,34 @@ export default function Solucao({ s }: { s: Dados }) {
   );
 }
 
-/** A consola num ecrã, a app num telemóvel. As capturas da app começam por `app-`. */
-function Aparelho({ captura, urgente }: { captura: string; urgente?: boolean }) {
-  return captura.startsWith("app-") ? (
-    <Telemovel capturas={[captura]} atual={captura} urgente={urgente} />
-  ) : (
-    <Monitor capturas={[captura]} plano={{ captura }} urgente={urgente} />
+/** Uma captura de telemóvel: a app, o site ou o leitor no telemóvel, ou a consola tirada no telemóvel. */
+const eTelemovel = (id: string) => /^(app-|site-tel-|porta-)/.test(id) || id.endsWith("-tel");
+
+/**
+ * Os ecrãs de um assunto.
+ *
+ * - computador e telemóvel: o telemóvel à frente, no canto de baixo;
+ * - dois telemóveis: lado a lado, o segundo um pouco mais abaixo;
+ * - um só ecrã: o aparelho dele.
+ */
+function Montra({ captura, tel, urgente }: { captura: string; tel?: string; urgente?: boolean }) {
+  if (eTelemovel(captura)) {
+    return (
+      <div className={tel ? "montra-par" : "montra-um"} aria-hidden>
+        <Telemovel capturas={[captura]} atual={captura} urgente={urgente} />
+        {tel && <Telemovel capturas={[tel]} atual={tel} urgente={urgente} />}
+      </div>
+    );
+  }
+  return (
+    <div className={tel ? "area-montra" : "montra-um"} aria-hidden>
+      <Monitor capturas={[captura]} plano={{ captura }} urgente={urgente} />
+      {tel && (
+        <div className="area-tel">
+          <Telemovel capturas={[tel]} atual={tel} urgente={urgente} />
+        </div>
+      )}
+    </div>
   );
 }
 

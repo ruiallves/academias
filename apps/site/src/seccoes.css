@@ -1,229 +1,121 @@
 /* ---------------------------------------------------------------------------
-   As secções da página.
-
-   O que acompanha o scroll sem degraus lê `--p`, o progresso de 0 a 1 que o
-   `Passeio` (ou a própria secção) escreve a cada fotograma.
+   As secções da página inicial e das páginas por pesquisa.
    --------------------------------------------------------------------------- */
 
 /* ===========================================================================
-   Herói
+   Herói: o texto à esquerda, o computador e o telemóvel à direita
    =========================================================================== */
 
-.heroi { --p: 0; padding-top: calc(var(--topo) + clamp(40px, 7vw, 104px)); overflow: hidden; }
+.heroi { padding-top: calc(var(--topo) + clamp(24px, 4vw, 64px)); padding-bottom: clamp(48px, 6vw, 96px); overflow: hidden; }
+.heroi-grelha { display: grid; gap: clamp(36px, 5vw, 80px); align-items: center; }
+/* O título é mais contido do que o `t1` das outras páginas: tem de caber ao lado dos aparelhos. */
+.heroi .t1 { font-size: clamp(2.6rem, 4.4vw, 4.4rem); }
 
-.heroi-montra {
-  position: relative;
-  margin-top: clamp(40px, 6vw, 88px);
-  padding: clamp(14px, 3.2vw, 56px) clamp(14px, 3.2vw, 56px) 0;
-  border-radius: var(--raio-g) var(--raio-g) 0 0;
-  background: var(--areia);
-  /* A montra aproxima-se um pouco à medida que a página desce. */
-  transform: scale(calc(0.955 + var(--p) * 0.045));
-  transform-origin: 50% 0;
-  will-change: transform;
-}
-.heroi-montra .monitor { border-radius: clamp(10px, 1.2vw, 18px) clamp(10px, 1.2vw, 18px) 0 0; }
+/* O ecrã da consola ocupa a coluna; o telemóvel fica à frente, no canto de baixo à direita. */
+.heroi-montra { position: relative; padding: 0 clamp(48px, 7vw, 110px) clamp(40px, 5vw, 72px) 0; }
+.heroi-montra .monitor { width: 100%; }
+.heroi-tel { position: absolute; right: 0; bottom: 0; }
+.heroi-tel .telemovel { --tw: clamp(130px, 12vw, 200px); }
 
-/* A montra das páginas de cada pesquisa (Solucao.tsx): a do herói, parada. */
-.solucao-montra {
-  display: grid;
-  place-items: end center;
-  margin-top: clamp(40px, 6vw, 88px);
-  padding: clamp(14px, 3.2vw, 56px) clamp(14px, 3.2vw, 56px) 0;
-  border-radius: var(--raio-g) var(--raio-g) 0 0;
-  background: var(--areia);
-  overflow: hidden;
+@media (min-width: 861px) {
+  .heroi-grelha { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
 }
-.solucao-montra .monitor { border-radius: clamp(10px, 1.2vw, 18px) clamp(10px, 1.2vw, 18px) 0 0; }
-.solucao-montra .telemovel { --tw: clamp(220px, 26vw, 340px); margin-bottom: -18%; }
 @media (max-width: 860px) {
-  .solucao-montra { padding: 12px 12px 0; }
+  .heroi-montra { padding: 0 12px 56px 0; }
+  .heroi-tel .telemovel { --tw: 40vw; }
 }
-.heroi-tel {
-  position: absolute; right: clamp(8px, 5vw, 96px); bottom: 0;
-  transform: translateY(calc(18% - var(--p) * 16%));
-  will-change: transform;
-}
-.heroi-tel .telemovel { --tw: clamp(118px, 19vw, 310px); }
+
+/* As páginas de cada pesquisa (Solucao.tsx): o herói em duas colunas, como o da página inicial. */
+.solucao-heroi { padding-bottom: clamp(48px, 6vw, 96px); }
+.solucao-heroi .t1 { font-size: clamp(2.6rem, 4.4vw, 4.4rem); }
+
+/* Um ecrã só, ou dois telemóveis lado a lado. */
+.montra-um { display: grid; place-items: center; min-width: 0; }
+.montra-um .monitor { width: 100%; }
+.montra-um .telemovel { --tw: clamp(230px, 22vw, 300px); }
+.montra-par { display: flex; justify-content: center; align-items: flex-start; gap: clamp(16px, 2.4vw, 36px); min-width: 0; }
+.montra-par .telemovel { --tw: clamp(170px, 17vw, 260px); }
+.montra-par .telemovel:nth-child(2) { margin-top: clamp(32px, 4vw, 64px); }
 @media (max-width: 860px) {
-  /* No telemóvel o ecrã da consola fica alto e o telemóvel cresce, por cima dele. */
-  .heroi-montra { padding: 12px 12px 0; }
-  .heroi-tel { right: 4px; }
-  .heroi-tel .telemovel { --tw: 46vw; }
+  .montra-um .telemovel { --tw: min(280px, 66vw); }
+  .montra-par .telemovel { --tw: 42vw; }
 }
 
 /* ===========================================================================
-   Clubes a correr
+   Os clubes: emblema num círculo e nome, a correr devagar
    =========================================================================== */
 
-.clubes { overflow: hidden; padding-block: clamp(36px, 5vw, 72px); }
-.clubes-pista { display: flex; width: max-content; animation: correr 46s linear infinite; }
-.clubes-pista:hover { animation-play-state: paused; }
-.clubes-pista ul { display: flex; align-items: center; list-style: none; flex: none; }
-.clubes-pista li {
-  display: flex; align-items: center; gap: clamp(22px, 3vw, 44px);
-  padding-right: clamp(22px, 3vw, 44px);
-  font-weight: 800; font-stretch: 88%; letter-spacing: -0.035em;
-  font-size: clamp(1.6rem, 3.4vw, 3.1rem); line-height: 1; white-space: nowrap;
+.clubes { overflow: hidden; padding-top: clamp(36px, 4.5vw, 64px); }
+
+/*
+ * Os números, entre a faixa e "O que a Academias faz". Ficam num contentor com a
+ * altura exata do espaço que lá havia (o fundo desta secção mais o topo da
+ * seguinte), e esses dois espaçamentos passam a zero: a página não cresce.
+ */
+.clubes-numeros {
+  height: calc(clamp(36px, 4.5vw, 64px) + clamp(72px, 10vw, 150px));
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-content: center;
+  gap: 0 clamp(8px, 2vw, 32px);
+  width: 100%; max-width: 1080px; margin-inline: auto; padding-inline: var(--margem);
+  text-align: center;
 }
-.clubes-pista li::after { content: ""; width: 0.34em; height: 0.34em; border-radius: 50%; background: var(--acento); flex: none; box-shadow: 0 0 0 1.5px var(--texto); }
+.clubes-numeros dd { margin: 0; }
+.clubes-numeros b {
+  display: block; font-weight: 800; font-stretch: 86%; letter-spacing: -0.04em; line-height: 1;
+  font-size: clamp(1.35rem, 3vw, 2.8rem); color: var(--texto);
+}
+.clubes-numeros dt { margin-top: 6px; font-size: clamp(0.78rem, 1vw, 0.95rem); line-height: 1.25; color: var(--texto-2); }
+.oquefaz.faixa { padding-top: 0; }
+.clubes-titulo { text-align: center; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--texto-3); }
+.clubes-pista { display: flex; width: max-content; margin-top: clamp(20px, 2.5vw, 32px); animation: correr 50s linear infinite; }
+.clubes-pista:hover { animation-play-state: paused; }
+.clubes-pista ul { display: flex; align-items: center; flex: none; }
+.clubes-pista li { display: flex; align-items: center; gap: 16px; padding-right: clamp(40px, 5vw, 80px); white-space: nowrap; }
+.clubes-pista img {
+  width: 64px; height: 64px; flex: none; padding: 6px;
+  border-radius: 50%; background: #fff; object-fit: contain;
+  box-shadow: 0 0 0 1px var(--fio);
+}
+.clubes-pista span { font-weight: 650; font-size: 1.05rem; letter-spacing: -0.01em; color: var(--texto-2); }
 @keyframes correr { to { transform: translateX(-50%); } }
 
 /* ===========================================================================
-   O passeio: o aparelho preso ao ecrã
+   O que a Academias faz: separadores em cima, o texto e os aparelhos por baixo
    =========================================================================== */
 
-.passeio { position: relative; --p: 0; }
-
-.passeio-preso {
-  position: sticky; top: 0;
-  height: 100svh;
-  overflow: hidden;
-  padding: calc(var(--topo) + 8px) clamp(18px, 4vw, 72px) 44px;
-  display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.55fr);
-  gap: clamp(28px, 4vw, 84px);
-  align-items: center;
+.areas-separadores {
+  display: flex; gap: clamp(18px, 2.6vw, 40px);
+  margin-top: clamp(32px, 4vw, 56px);
+  border-bottom: 1px solid var(--fio);
+  overflow-x: auto; scrollbar-width: none;
 }
-
-.passeio-legendas { display: grid; align-content: center; min-width: 0; }
-.legenda {
-  grid-area: 1 / 1;
-  opacity: 0;
-  transform: translateY(18px);
-  transition: opacity 300ms var(--ease-saida), transform 700ms var(--ease-saida);
-  pointer-events: none;
+.areas-separadores::-webkit-scrollbar { display: none; }
+.areas-separadores button {
+  flex: none; padding: 14px 0; margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  font-weight: 700; font-size: clamp(1rem, 1.3vw, 1.15rem); letter-spacing: -0.01em;
+  color: var(--texto-3); transition: color 200ms, border-color 200ms;
 }
-.legenda[data-on] { opacity: 1; transform: none; pointer-events: auto; transition-delay: 100ms; }
-.legenda .t2 { font-size: clamp(1.9rem, 3.6vw, 3.6rem); }
-.legenda .rotulo { color: var(--texto-2); }
+.areas-separadores button:hover { color: var(--texto); }
+.areas-separadores button[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--texto); }
 
-.passeio-visual { min-width: 0; min-height: 0; height: 100%; display: grid; place-items: center; }
-/* A largura que deixa o ecrã inteiro caber na altura que sobra. */
-.passeio-visual .monitor { width: min(100%, calc((100svh - var(--topo) - 130px) * 1.68)); }
-
-/* Os traços que dizem em que passo se vai. */
-.passeio-fio { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 6px; }
-.passeio-fio i { width: 22px; height: 4px; border-radius: 4px; background: var(--fio-2); transition: background-color 300ms, width 400ms var(--ease-saida); }
-.passeio-fio i[data-on] { background: var(--texto); width: 38px; }
-
-/* O telemóvel ao centro, as legendas de um lado e do outro. */
-.passeio-centro { --tw-c: min(350px, calc((100svh - var(--topo) - 110px) / 2.3)); }
-.passeio-centro .passeio-preso { grid-template-columns: minmax(0, 1fr); }
-.passeio-centro .passeio-legendas,
-.passeio-centro .passeio-visual { grid-area: 1 / 1; }
-.passeio-centro .legenda { width: min(32ch, calc(50% - var(--tw-c) / 2 - 48px)); align-self: center; }
-.passeio-centro .legenda:nth-child(even) { justify-self: end; }
-.passeio-centro .telemovel { --tw: var(--tw-c); position: relative; }
-
-/* A cor da secção da app: um disco por trás do telemóvel. */
-.app-disco { position: relative; display: grid; place-items: center; }
-.app-disco::before {
-  content: ""; position: absolute;
-  width: calc(var(--tw-c) * 1.9); aspect-ratio: 1; border-radius: 50%;
-  background: var(--acento);
+.area {
+  display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: clamp(32px, 5vw, 80px); align-items: center;
+  padding-top: clamp(36px, 5vw, 72px);
 }
+.area-texto .t2 { font-size: clamp(1.9rem, 3.2vw, 3.2rem); }
+.area-montra { position: relative; min-width: 0; padding: 0 clamp(40px, 6vw, 96px) clamp(36px, 4.5vw, 64px) 0; }
+.area-montra .monitor { width: 100%; }
+.area-tel { position: absolute; right: 0; bottom: 0; }
+.area-tel .telemovel { --tw: clamp(120px, 11vw, 180px); }
 
 @media (max-width: 860px) {
-  .passeio-preso,
-  .passeio-centro .passeio-preso {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 18px;
-    padding-bottom: 40px;
-  }
-  .passeio-visual { order: -1; grid-area: auto !important; }
-  .passeio-legendas { min-height: 12rem; align-content: start; grid-area: auto !important; }
-  .passeio-centro .legenda { width: auto; align-self: start; }
-  .passeio-centro .legenda:nth-child(even) { justify-self: start; }
-  .passeio-centro { --tw-c: min(270px, calc((100svh - var(--topo) - 250px) / 2.2)); }
-  .passeio-visual .monitor { width: min(100%, calc((100svh - var(--topo) - 250px) / 1.15)); }
-  .passeio-legendas { min-height: 10.5rem; }
-  .passeio-lado .telemovel { --tw: min(270px, calc((100svh - var(--topo) - 250px) / 2.2)); }
-  .legenda .t2 { font-size: 1.8rem; }
-  .legenda .lede { font-size: 1rem; margin-top: 10px; }
-  .passeio-fio { bottom: 14px; }
+  .areas-separadores { margin-inline: calc(-1 * var(--margem)); padding-inline: var(--margem); }
+  .area { grid-template-columns: minmax(0, 1fr); }
+  .area-montra { order: -1; padding: 0 12px 48px 0; }
+  .area-tel .telemovel { --tw: 36vw; }
 }
-
-/* ===========================================================================
-   O ciclo: uma pista que anda para o lado
-   =========================================================================== */
-
-.ciclo { position: relative; --p: 0; }
-.ciclo-preso {
-  position: sticky; top: 0; height: 100svh; overflow: hidden;
-  display: flex; flex-direction: column; justify-content: center; gap: clamp(22px, 4svh, 48px);
-  padding-top: var(--topo);
-}
-.ciclo-pista {
-  display: flex; gap: clamp(14px, 1.6vw, 24px);
-  padding-inline: var(--margem);
-  width: max-content;
-  /* A pista anda até o último cartão encostar à margem direita. */
-  transform: translateX(calc(var(--p) * (100vw - 100%)));
-  will-change: transform;
-}
-.ciclo-cartao {
-  width: clamp(270px, 27vw, 400px);
-  height: min(54svh, 480px);
-  flex: none;
-  padding: clamp(20px, 2vw, 30px);
-  border-radius: var(--raio-g);
-  display: flex; flex-direction: column; justify-content: space-between; gap: 18px;
-}
-.ciclo-branco { background: #ffffff; color: var(--tinta); }
-.ciclo-n {
-  display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
-  border: 1.5px solid currentColor; font-weight: 800; font-size: 0.95rem;
-}
-.ciclo-valor b { display: block; font-weight: 800; font-stretch: 84%; letter-spacing: -0.05em; line-height: 0.9; font-size: clamp(3.4rem, 6vw, 5.6rem); white-space: nowrap; }
-.ciclo-valor svg { display: block; width: 72%; height: auto; }
-.ciclo-valor span { display: block; margin-top: 10px; font-weight: 650; color: var(--texto-2); }
-.ciclo-branco .ciclo-valor span, .ciclo-branco p { color: #55554f; }
-
-@media (max-width: 860px) {
-  .ciclo-cartao { width: 76vw; }
-}
-
-/* ===========================================================================
-   De sete ferramentas para uma
-   =========================================================================== */
-
-.ferramentas { --p: 0; }
-.ferramentas-lista { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; }
-.ferramenta {
-  /* Cada ferramenta risca-se na sua vez, à medida que a secção sobe no ecrã. */
-  --t: clamp(0, calc((var(--p) - var(--a)) / 0.07), 1);
-  position: relative;
-  display: inline-flex; align-items: center; height: clamp(44px, 5vw, 64px); padding-inline: clamp(18px, 2vw, 28px);
-  border-radius: 999px;
-  background: var(--sup);
-  font-weight: 700; font-size: clamp(1rem, 1.7vw, 1.5rem); letter-spacing: -0.02em;
-  opacity: calc(1 - var(--t) * 0.6);
-}
-.ferramenta::after {
-  content: ""; position: absolute; left: 14px; right: 14px; top: 50%; height: 2.5px; background: currentColor;
-  transform: scaleX(var(--t)); transform-origin: left;
-}
-.ferramenta-uma {
-  --t: clamp(0, calc((var(--p) - 0.42) / 0.08), 1);
-  display: inline-flex; align-items: center; gap: 14px;
-  height: clamp(64px, 8vw, 104px); padding-inline: clamp(24px, 3vw, 44px);
-  border-radius: 999px;
-  background: var(--acento); color: var(--sobre-acento);
-  font-weight: 800; font-stretch: 88%; font-size: clamp(1.6rem, 3.6vw, 3.2rem); letter-spacing: -0.035em;
-  opacity: calc(0.25 + var(--t) * 0.75);
-  transform: scale(calc(0.92 + var(--t) * 0.08));
-  transform-origin: left center;
-}
-
-/* ===========================================================================
-   Números
-   =========================================================================== */
-
-.numeros-grelha { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: clamp(20px, 3vw, 48px) clamp(16px, 2vw, 32px); }
-.numero b { display: block; font-weight: 800; font-stretch: 84%; letter-spacing: -0.05em; line-height: 0.86; font-size: clamp(3.2rem, 7vw, 6.6rem); }
-.numero span { display: block; margin-top: 10px; font-weight: 650; }
 
 /* ===========================================================================
    Planos
@@ -268,10 +160,27 @@
 .interruptor button[aria-pressed="true"] { background: var(--tinta); color: #ffffff; }
 
 /* ===========================================================================
-   No verde escuro
+   O que o clube ganha: uma frase grande e as quatro partes por baixo
    =========================================================================== */
 
-/* A montra do herói assenta numa placa clara e translúcida, e não na areia. */
-.palco-noite .heroi-montra { background: rgb(255 255 255 / 0.06); }
-/* Os números em verde vivo, como os números grandes dos posts. */
-.palco-noite .numero b { color: var(--acento); }
+.ganhos { padding-block: clamp(24px, 3vw, 48px) clamp(72px, 9vw, 140px); }
+.ganhos-frase {
+  max-width: 19ch;
+  font-size: clamp(2.3rem, 5.2vw, 5rem); line-height: 0.98; letter-spacing: -0.04em;
+}
+/* As horas sublinhadas com a cor viva, como um marcador: a cor não escreve texto. */
+.ganhos-realce {
+  white-space: nowrap;
+  background: linear-gradient(transparent 62%, var(--acento) 62%, var(--acento) 90%, transparent 90%);
+}
+.ganhos-partes {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px clamp(16px, 2.5vw, 40px);
+  margin-top: clamp(40px, 5vw, 72px);
+}
+.ganhos-partes li { display: flex; flex-direction: column; gap: 6px; padding-top: 16px; border-top: 1px solid var(--fio-2); color: var(--texto-2); line-height: 1.35; }
+.ganhos-horas { font-weight: 800; font-stretch: 86%; letter-spacing: -0.04em; line-height: 1; font-size: clamp(1.8rem, 2.6vw, 2.4rem); color: var(--texto); }
+.ganhos-nota { margin-top: clamp(28px, 3vw, 40px); max-width: 80ch; font-size: 0.82rem; line-height: 1.5; color: var(--texto-3); }
+@media (max-width: 720px) {
+  .ganhos-partes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

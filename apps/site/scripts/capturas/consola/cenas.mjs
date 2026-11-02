@@ -8,7 +8,7 @@
 import { em } from "./clube.mjs";
 import { EX_SAIDA, TREINO_DE_QUARTA } from "./tecnica.mjs";
 import { JOGO_DE_SABADO } from "./jogos.mjs";
-import { BASQUETEBOL, EX_PICK_AND_ROLL } from "./modalidades.mjs";
+import { BASQUETEBOL, EX_PICK_AND_ROLL, EX_SAIDA_FUTSAL, FUTSAL } from "./modalidades.mjs";
 
 const quadro = (n) => ({
   id: `con-quadro-${n}`,
@@ -355,6 +355,30 @@ export const CENAS = [
       modalidades: (p) => p.locator("nav").getByText("Basquetebol", { exact: true }),
     },
   },
+  {
+    id: "con-basquetebol-lancamento",
+    descricao: "Editor tático de basquetebol: lançamento em cinco posições, na biblioteca do clube",
+    agora: em("2026-10-06", "19:05"),
+    clube: { multimodalidade: true },
+    url: `/modalidades/${BASQUETEBOL.id}/exercicios/ex-lancamento-5-posicoes`,
+    focos: {
+      campo: (p) => p.locator("svg:has(g[data-id])"),
+    },
+  },
+  {
+    id: "con-futsal",
+    descricao: "Editor tático de futsal: saída de pressão em 3-1 no campo inteiro, frame 2 de 3",
+    agora: em("2026-10-06", "19:10"),
+    clube: { multimodalidade: true },
+    url: `/modalidades/${FUTSAL.id}/exercicios/${EX_SAIDA_FUTSAL}`,
+    preparar: async (page) => {
+      const regua = page.locator("div", { has: page.getByText("Frames", { exact: true }) }).last();
+      await regua.getByRole("button", { name: "2", exact: true }).click();
+    },
+    focos: {
+      campo: (p) => p.locator("svg:has(g[data-id])"),
+    },
+  },
   /*
    * As modalidades do clube, nas Definições: o futebol (com a federação e a
    * área técnica) e cinco criadas pelo clube. É o ecrã que diz "qualquer
@@ -381,13 +405,64 @@ export const CENAS = [
       aviso: (p) => p.locator("li", { hasText: "Jogo de sábado em casa" }),
     },
   },
+  porta("porta-ok", "Leitor da porta: o bilhete do sábado aceite, ecrã verde", "BILHETE-OK"),
+  porta("porta-repetido", "Leitor da porta: o mesmo bilhete outra vez, recusado", "BILHETE-USADO"),
 ];
+
+/*
+ * O leitor de bilhetes dos seguranças (`/porta/<token>`), no jogo de sábado.
+ *
+ * Não pede conta: entra com o PIN e lê códigos. A câmara não existe no browser
+ * das capturas, por isso o código escreve-se à mão, que é o caminho que o
+ * leitor tem para quando a câmara falha; o ecrã do resultado é o mesmo.
+ *
+ * O slug do clube vem do endereço (`127` em 127.0.0.1): as rotas casam com
+ * qualquer slug. As frases são as da API (`porta.service.ts`).
+ */
+function porta(id, descricao, codigo) {
+  const ESTADO = {
+    jogo: { startsAt: "2026-10-10T14:00:00.000Z", nome: "CD Academias vs União da Serra" },
+    porta: { nome: "Porta A", bancadas: ["Central", "Poente"] },
+    entradas: 212,
+  };
+  const BILHETE = { tipo: "Público geral", bancada: "Bancada Central", lugar: null };
+  return {
+    id,
+    descricao,
+    agora: em("2026-10-10", "14:32"),
+    url: "/porta/porta-sabado-a",
+    api: () => ({
+      POST: [
+        [/^\/api\/clubes\/[^/]+\/porta\/entrar$/, () => ({ ...ESTADO, sessao: "sessao-das-capturas" })],
+        [/^\/api\/clubes\/[^/]+\/porta\/estado$/, () => ESTADO],
+        [/^\/api\/clubes\/[^/]+\/porta\/ler$/, (_m, corpo) =>
+          corpo.codigo === "BILHETE-OK"
+            ? { resultado: "OK", ok: true, mensagem: "Bilhete válido.", bilhete: BILHETE }
+            : { resultado: "ALREADY_USED", ok: false, mensagem: "Este bilhete já entrou às 14:31, pela Porta A.", bilhete: BILHETE }],
+      ],
+    }),
+    preparar: async (page) => {
+      // O resultado volta sozinho à câmara ao fim de 2 s; na captura fica no ecrã.
+      await page.evaluate(() => {
+        const original = window.setTimeout;
+        window.setTimeout = (f, ms, ...a) => (ms === 2000 ? 0 : original(f, ms, ...a));
+      });
+      await page.locator("#porta-pin").fill("482913");
+      await page.getByText("Escrever código").or(page.getByPlaceholder("Código do bilhete")).first().waitFor();
+      if (!(await page.getByPlaceholder("Código do bilhete").isVisible())) await page.getByText("Escrever código").click();
+      await page.getByPlaceholder("Código do bilhete").fill(codigo);
+      await page.getByRole("button", { name: "Validar" }).click();
+      await page.locator('[role="alert"]').last().waitFor();
+    },
+    focos: {},
+  };
+}
 
 /** As cenas que se tiram também no telemóvel (`--telemovel`), por esta ordem. */
 export const CENAS_TELEMOVEL = [
   "con-visao-geral", "con-mensalidades-depois", "con-quadro-1", "con-quadro-2", "con-quadro-3", "con-quadro-4",
   "con-planeamento", "con-presencas-depois", "con-jogo-ficha", "con-atleta-avaliacoes", "con-comunicacao",
-  "con-inventario", "con-contas",
+  "con-inventario", "con-contas", "porta-ok", "porta-repetido",
 ];
 
 /* -------------------------------------------------------------------------- */

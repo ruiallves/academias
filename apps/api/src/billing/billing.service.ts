@@ -12,7 +12,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
 import { montarIdentificador } from "./identificador";
 import { diaPorOmissao, instanteDoPagamento } from "./dia-do-pagamento";
-import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
+import { assertMinimoDoMetodo, MINIMO_COBRAVEL, nasceIsenta } from "./minimos";
 import { EupagoFeesService } from "./eupago-fees";
 import { BilheteiraEmissao } from "../bilheteira/emissao.service";
 import { LojaEmissao } from "../loja/emissao.service";
@@ -3394,16 +3394,8 @@ function assertValidAmount(amountCents: number, permitirZero = false): void {
   }
 }
 
-/**
- * Uma mensalidade de 0 € nasce paga.
- *
- * Não há nada a pedir à família, e deixá-la "por pagar" punha um atleta isento
- * na lista das dívidas, num lembrete automático e num ecrã de pagamento que
- * não tem o que pagar. Fica `SETTLED`, sem registo de pagamento: não entrou
- * dinheiro, e inventar um pagamento de zero euros era escrever no livro uma
- * coisa que não aconteceu.
- */
-export const nasceIsenta = (amountCents: number): boolean => amountCents === 0;
+/* `nasceIsenta` vive em `minimos.ts`: as quotas dos sócios usam a mesma regra. */
+export { nasceIsenta };
 
 /** A inscrição individual activa de um atleta — a que sobrepõe o preço da equipa. */
 /**

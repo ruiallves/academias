@@ -17,8 +17,14 @@ export type Bloco = {
   titulo: string;
   texto: string;
   itens: string[];
-  /** Captura da consola (`con-…`) ou da app (`app-…`). */
+  /**
+   * O ecrã principal: uma captura da consola ou do site no computador
+   * (`con-…`, `site-…`), ou de um telemóvel (`app-…`, `site-tel-…`, `porta-…`,
+   * `…-tel`).
+   */
   captura: string;
+  /** Um segundo ecrã, sempre num telemóvel: à frente do computador, ou ao lado do outro telemóvel. */
+  tel?: string;
 };
 
 export type Solucao = {
@@ -32,6 +38,8 @@ export type Solucao = {
   h1: string;
   lede: string;
   captura: string;
+  /** O telemóvel do herói, à frente do computador (ou ao lado de outro telemóvel). */
+  tel?: string;
   blocos: Bloco[];
   perguntas: { q: string; a: string }[];
   /** Outras páginas desta lista, pelo `path`. */
@@ -51,51 +59,65 @@ export const SOLUCOES: Solucao[] = [
     lede:
       "Atletas por escalão, treinos e convocatórias, a ficha de cada jogo e as mensalidades pagas por MB WAY. Para futebol de 11, 9, 7 e 5, dos petizes aos seniores.",
     captura: "con-jogo-ficha",
+    tel: "app-agenda",
     blocos: [
       {
-        titulo: "Plantéis e escalões",
+        titulo: "A ficha de cada atleta",
         texto:
-          "Cada atleta tem uma ficha com os dados pessoais, os documentos, a licença de cada época e o percurso pelos escalões. A passagem de época faz-se com um botão, e o escalão conta pela idade a 31 de dezembro.",
+          "Na consola, a ficha junta os jogos, os minutos e os golos da época, as equipas em que o atleta joga, a ficha física e a assiduidade. Na app, a família vê a mesma ficha: a presença nos treinos, as convocatórias e a avaliação do treinador.",
         itens: [
-          "Equipas por escalão, com treinadores e staff",
-          "Um atleta pode estar em duas equipas, com número e posição em cada uma",
-          "Licenças federativas por época",
-          "Importação e exportação do plantel por Excel",
+          "Jogos, minutos e golos de cada época",
+          "Equipas, número e posição",
+          "Assiduidade nos treinos",
+          "Documentos, licenças e percurso pelos escalões",
         ],
         captura: "con-atleta",
+        tel: "app-atleta",
       },
       {
-        titulo: "Treino",
+        titulo: "Exercícios desenhados no campo",
         texto:
-          "O treinador desenha os exercícios no campo, monta o plano da sessão por blocos e planeia a época por ciclos, com a carga de cada semana à vista. As presenças marcam-se no telemóvel, no campo.",
+          "O treinador desenha o exercício no editor tático e anima-o fotograma a fotograma: os jogadores e a bola movem-se de um para o seguinte. O exercício fica na biblioteca do clube e entra no plano da sessão.",
         itens: [
-          "Editor tático para futebol de 11, 9, 7 e 5, com animação",
+          "Campos de futebol de 11, 9, 7 e 5",
+          "Animação por fotogramas",
           "Biblioteca de exercícios do clube",
-          "Planeamento por mesociclos e microciclos",
-          "Presenças e assiduidade por atleta",
+          "Exercícios usados nos planos de sessão",
         ],
         captura: "con-quadro-2",
       },
       {
-        titulo: "Jogo",
+        titulo: "Convocatórias com resposta da família",
         texto:
-          "A convocatória chega à família pela app e a resposta volta ao treinador. No dia do jogo regista-se o resultado, quem jogou e quanto tempo, e no fim fica a ficha completa e o relatório.",
+          "A convocatória chega ao telemóvel de cada família, que confirma ou diz que não pode. Na consola, o treinador vê quem confirmou, quem não vai e porquê, e quem ainda não respondeu.",
         itens: [
-          "Convocatórias com confirmação da família",
-          "Equipa inicial e substituições",
-          "Jogo ao vivo com relógio por parte e tempo de compensação",
-          "Golos, assistências, cartões e minutos de cada jogador",
-          "Relatório do jogo e do adversário",
+          "Convocados, confirmados e por responder",
+          "Motivo de quem não pode ir",
+          "Aviso ao treinador quando alguém recusa",
+          "Hora de cada resposta",
         ],
         captura: "con-convocatoria",
+        tel: "app-convocatoria-confirmada",
       },
       {
-        titulo: "Federação e certificação",
+        titulo: "Inscrições no Modelo 2 da FPF",
         texto:
-          "As inscrições saem no Modelo 2 da FPF, já preenchido com os dados de cada atleta, prontas a assinar. Para a certificação de entidade formadora, a consola estima o nível do clube e mostra o que falta para a estrela seguinte.",
+          "As inscrições saem no Modelo 2 da FPF, já preenchido com os dados de cada atleta. A lista mostra em que passo está cada boletim, de por gerar a validado.",
         itens: [
-          "Modelo 2 da FPF preenchido, um ou muitos atletas de cada vez",
-          "Estimativa do nível de certificação FPF",
+          "Modelo 2 da FPF preenchido",
+          "Um atleta ou muitos de uma vez",
+          "Estado de cada boletim",
+          "Licenças por época",
+        ],
+        captura: "con-inscricoes",
+      },
+      {
+        titulo: "A certificação da FPF",
+        texto:
+          "Para a certificação de entidade formadora, a consola estima o nível do clube a partir do que já está registado e mostra o que falta para a estrela seguinte.",
+        itens: [
+          "Estimativa do nível e dos pontos",
+          "O que falta para a estrela seguinte",
           "Requisitos por nível, com o que já está cumprido",
         ],
         captura: "con-certificacao",
@@ -134,46 +156,50 @@ export const SOLUCOES: Solucao[] = [
     description:
       "Gestão do clube de futsal: equipas, treinos, convocatórias, jogo ao vivo com substituições ilimitadas, minutos por atleta e inscrições FPF. 30 dias grátis.",
     rotulo: "Software de gestão para clubes de futsal",
-    h1: "O clube de futsal, com os minutos de cada atleta",
+    h1: "O clube de futsal, do pavilhão ao telemóvel das famílias",
     lede:
-      "No futsal entra-se e sai-se muitas vezes. A consola acompanha as substituições ilimitadas, soma os minutos de cada atleta e guarda a ficha do jogo, com o resto do clube à volta.",
-    captura: "con-jogo-visao",
+      "O editor tático tem o campo de futsal, as famílias recebem os treinos e os jogos na app, e a ficha do jogo soma os minutos de cada atleta mesmo com substituições ilimitadas.",
+    captura: "con-futsal",
+    tel: "app-agenda",
     blocos: [
       {
-        titulo: "Jogo ao vivo",
+        titulo: "Presenças no treino",
         texto:
-          "Durante o jogo regista-se quem entra e quem sai, as vezes que for preciso. O relógio corre parte a parte, com pausas e intervalo, e os minutos de cada atleta somam-se sozinhos.",
+          "O treinador marca as presenças no pavilhão, com as faltas avisadas pela família já justificadas e os atletas de baixa assinalados. Na app, a família vê a assiduidade do atleta.",
         itens: [
-          "Substituições ilimitadas, ligadas por equipa",
-          "Minutos de cada atleta somados pelos períodos em campo",
-          "Golos, assistências e cartões",
-          "Prolongamento quando o jogo o tem",
+          "Folha de presenças de cada treino",
+          "Faltas avisadas pela família, já justificadas",
+          "Atletas de baixa no dia do treino",
+          "Assiduidade do atleta na app",
         ],
-        captura: "con-jogo-ficha",
+        captura: "con-presencas-depois",
+        tel: "app-atleta",
       },
       {
-        titulo: "Treino",
+        titulo: "Convocatórias com resposta da família",
         texto:
-          "O editor tático tem o campo de futsal. O treinador desenha os exercícios, monta o plano da sessão e marca as presenças.",
+          "A convocatória chega ao telemóvel de cada família, com o local, a hora de encontro e o que levar. A família confirma ou diz que não pode, e a resposta volta ao treinador.",
         itens: [
-          "Editor tático com campo de futsal e animação",
-          "Planos de sessão por blocos",
-          "Planeamento da época por ciclos",
-          "Presenças e assiduidade",
+          "Convocatória no telemóvel",
+          "Confirmar ou dizer que não pode, com o motivo",
+          "Local, ponto de encontro e hora",
+          "Notas do clube para o jogo",
         ],
-        captura: "con-plano-sessao",
+        captura: "app-convocatoria",
+        tel: "app-convocatoria-confirmada",
       },
       {
-        titulo: "Clube e federação",
+        titulo: "Inscrições na FPF e mensalidades",
         texto:
-          "As inscrições de futsal saem no Modelo 2 da FPF, preenchido. As mensalidades cobram-se por MB WAY, Multibanco ou cartão, e as famílias recebem as convocatórias na app.",
+          "As inscrições de futsal saem no Modelo 2 da FPF, preenchido. As mensalidades chegam à app da família, que paga por MB WAY, Multibanco ou cartão.",
         itens: [
           "Modelo 2 da FPF preenchido",
           "Atletas em várias modalidades com uma só ficha",
-          "Mensalidades com confirmação automática",
-          "Convocatórias com resposta da família",
+          "Mensalidade que soma as modalidades do atleta",
+          "Confirmação automática de cada pagamento",
         ],
         captura: "con-inscricoes",
+        tel: "app-mensalidades-por-pagar",
       },
     ],
     perguntas: [
@@ -204,38 +230,41 @@ export const SOLUCOES: Solucao[] = [
     h1: "O clube de basquetebol, do minibasquete aos seniores",
     lede:
       "Equipas por escalão, treinos desenhados no campo FIBA, jogos com substituições ilimitadas e as inscrições da FPB preenchidas. As famílias recebem tudo na app do clube.",
-    captura: "con-jogo-ficha",
+    captura: "con-basquetebol",
+    tel: "app-agenda",
     blocos: [
       {
-        titulo: "Treino",
+        titulo: "Exercícios no campo FIBA",
         texto:
-          "O editor tático tem o campo de basquetebol com as marcações FIBA. Desenham-se jogadas e exercícios com animação, e o plano da sessão monta-se por blocos.",
+          "O editor tático tem o campo de basquetebol com as marcações FIBA. Desenham-se jogadas e exercícios com animação, e cada um fica na biblioteca do clube.",
         itens: [
-          "Campo FIBA no editor tático",
+          "Campo FIBA inteiro ou meio campo",
           "Jogadas e exercícios com animação por fotogramas",
           "Biblioteca de exercícios do clube",
-          "Presenças e assiduidade",
+          "Exercícios usados nos planos de sessão",
         ],
-        captura: "con-basquetebol",
+        captura: "con-basquetebol-lancamento",
       },
       {
-        titulo: "Jogo",
+        titulo: "Convocatórias com resposta da família",
         texto:
-          "O jogo regista-se ao vivo, período a período, com as substituições que houver. No fim ficam os pontos, as assistências e os minutos de cada atleta.",
+          "A convocatória chega ao telemóvel de cada família, que confirma ou diz que não pode. O treinador vê as respostas na consola antes do jogo.",
         itens: [
-          "Substituições ilimitadas",
-          "Pontos, assistências e minutos por atleta",
-          "Prolongamento",
-          "Convocatórias com resposta da família",
+          "Convocatória no telemóvel",
+          "Confirmar ou dizer que não pode, com o motivo",
+          "Local, ponto de encontro e hora",
+          "Hora de cada resposta",
         ],
-        captura: "con-jogo-ficha",
+        captura: "app-convocatoria",
+        tel: "app-convocatoria-confirmada",
       },
       {
         titulo: "Inscrições na FPB",
         texto:
-          "As inscrições saem no Modelo 1 da Federação Portuguesa de Basquetebol, preenchido com os dados de cada atleta. O clube imprime, assina e entrega.",
+          "As inscrições saem no Modelo 1 da Federação Portuguesa de Basquetebol, preenchido com os dados de cada atleta. A lista mostra em que passo está cada boletim.",
         itens: [
           "Modelo 1 da FPB preenchido",
+          "Estado de cada boletim, de por gerar a validado",
           "Licenças por época",
           "Documentos guardados na ficha do atleta",
         ],
@@ -267,14 +296,15 @@ export const SOLUCOES: Solucao[] = [
     lede:
       "O clube define o preço, a família recebe o aviso na app e paga por MB WAY, Multibanco ou cartão. A confirmação chega do banco e o estado muda sozinho na consola.",
     captura: "con-mensalidades-depois",
+    tel: "app-mensalidades-pago",
     blocos: [
       {
-        titulo: "Preço à medida do clube",
+        titulo: "As mensalidades do mês",
         texto:
-          "A mensalidade define-se por escalão, por modalidade ou atleta a atleta. Um atleta em duas modalidades paga a soma das duas numa só mensalidade, e cada escalão pode ter o seu período de cobrança.",
+          "No início do mês as mensalidades são emitidas para cada atleta, com o preço do escalão, da modalidade ou do próprio atleta. A lista mostra o que está pago, o que está por pagar e o que já venceu.",
         itens: [
           "Preço por escalão, por modalidade ou por atleta",
-          "Ajustes de preço atleta a atleta",
+          "Pagas, por pagar e vencidas",
           "Período de cobrança do clube todo ou por escalão",
           "Meses sem cobrança, como agosto",
         ],
@@ -283,21 +313,28 @@ export const SOLUCOES: Solucao[] = [
       {
         titulo: "A família paga no telemóvel",
         texto:
-          "Na app do clube a família vê o que tem por pagar e escolhe como paga. A referência Multibanco e o pedido MB WAY são gerados na hora.",
-        itens: ["MB WAY", "Referência Multibanco", "Cartão", "Histórico de pagamentos na app"],
-        captura: "app-pagar-metodos",
+          "Na app do clube a família vê o que tem por pagar e escolhe como paga. O pedido MB WAY e a referência Multibanco são gerados na hora.",
+        itens: [
+          "MB WAY",
+          "Referência Multibanco",
+          "Cartão",
+          "Histórico de pagamentos na app",
+        ],
+        captura: "app-mensalidades-por-pagar",
+        tel: "app-pagar-metodos",
       },
       {
-        titulo: "O dinheiro vai para a conta do clube",
+        titulo: "As contas do clube, mês a mês",
         texto:
-          "Os pagamentos passam pela euPago, uma instituição de pagamento portuguesa, na conta do próprio clube. A Academias não toca no dinheiro. A confirmação chega ao nosso servidor e a mensalidade fica paga na consola, com quem pagou e quando.",
+          "Os pagamentos entram na conta euPago do próprio clube e aparecem nas contas como receita do mês. A Academias não toca no dinheiro.",
         itens: [
-          "Conta euPago em nome do clube",
-          "Confirmação automática de cada pagamento",
+          "Saldo, receitas e despesas de cada mês",
+          "Previsão dos próximos meses",
           "O clube escolhe se a taxa fica com quem paga",
-          "Contas do clube com receitas por mês",
+          "Também no telemóvel, na área de staff",
         ],
         captura: "con-contas",
+        tel: "con-contas-tel",
       },
     ],
     perguntas: [
@@ -333,42 +370,32 @@ export const SOLUCOES: Solucao[] = [
     lede:
       "O sócio adere online, paga as quotas na app e tem o cartão com fotografia no telemóvel. O clube vê na consola quem tem as quotas em dia.",
     captura: "con-socios",
+    tel: "app-socio-inicio",
     blocos: [
       {
-        titulo: "Categorias e quotas",
+        titulo: "Adesão a sócio no site do clube",
         texto:
-          "O clube cria as categorias que tem, com o preço de cada uma. As quotas podem ser mensais ou anuais, e a quota anual abre no dia e mês que o clube escolher.",
+          "Quem quer ser sócio escolhe a categoria numa página com a marca do clube, vê o preço e o que a categoria dá, e faz o pedido sem papel. O pedido chega à consola para o clube aprovar.",
         itens: [
           "Categorias de sócio com preço próprio",
           "Quotas mensais ou anuais",
-          "Quotas pagas por MB WAY, Multibanco ou cartão",
+          "Pedido de adesão online",
           "Quotas de sócios menores pagas pelos encarregados",
         ],
-        captura: "con-socios",
+        captura: "site-socio",
       },
       {
         titulo: "O sócio na app",
         texto:
-          "O sócio tem a área dele na app do clube: o cartão digital com fotografia, as quotas, os jogos de todos os escalões e as novidades do clube.",
+          "O sócio vê as quotas que já pagou e paga as seguintes na app. Quem é sócio e pai, ou sócio e atleta, escolhe a área ao abrir a app e troca quando quiser, sem sair da conta.",
         itens: [
+          "Quotas em dia e próximos meses",
+          "Pagamento adiantado de quotas",
+          "Uma conta para várias áreas",
           "Cartão de sócio digital com fotografia",
-          "Quotas pagas na app",
-          "Jogos de todos os escalões, dia a dia",
-          "Novidades e sondagens",
-        ],
-        captura: "app-socio-inicio",
-      },
-      {
-        titulo: "Adesão online",
-        texto:
-          "O clube tem uma página pública de adesão a sócio. Quem quer ser sócio preenche o pedido online e escolhe a categoria, sem papel.",
-        itens: [
-          "Página de adesão com a marca do clube",
-          "Escolha da categoria",
-          "Sócio-atleta com as duas áreas na mesma conta",
-          "Exportação da lista de sócios para Excel",
         ],
         captura: "app-socio-quotas",
+        tel: "app-contextos",
       },
     ],
     perguntas: [
@@ -400,37 +427,46 @@ export const SOLUCOES: Solucao[] = [
     lede:
       "Uma app para as famílias, os atletas e os sócios. Instala-se a partir de um link, sem loja, e cada pessoa vê a sua parte do clube.",
     captura: "app-inicio",
+    tel: "app-inicio-serra",
     blocos: [
       {
-        titulo: "Para as famílias",
+        titulo: "Convocatórias e mensalidades",
         texto:
-          "Os pais veem os treinos e os jogos dos filhos, respondem às convocatórias, avisam quando o filho falta e pagam as mensalidades.",
+          "Os pais respondem às convocatórias dos filhos e pagam as mensalidades sem sair da app. O treinador fica a saber quem vai, e o clube recebe o pagamento confirmado pelo banco.",
         itens: [
-          "Treinos, jogos e convocatórias com resposta",
-          "Aviso de falta ao treino",
-          "Assiduidade, avaliações e relatórios",
+          "Convocatória com local, hora e notas do clube",
+          "Confirmar ou dizer que não pode",
           "Mensalidades por MB WAY, Multibanco e cartão",
+          "Histórico do que já está pago",
         ],
         captura: "app-convocatoria",
+        tel: "app-mensalidades-por-pagar",
       },
       {
         titulo: "Para os atletas e os sócios",
         texto:
-          "O atleta tem a sua área, com a agenda e o que o treinador partilha com ele. O sócio tem o cartão, as quotas e os jogos do clube.",
+          "O atleta tem a sua área, com os treinos, os jogos e as convocatórias dele. O sócio tem o cartão, as quotas e os jogos do clube.",
         itens: [
-          "Área do atleta com treinos, jogos e partilhas do treinador",
+          "Área do atleta com treinos, jogos e convocatórias",
           "Área do sócio com cartão digital e quotas",
           "Uma conta para quem é pai e sócio",
           "Área de staff que abre a consola",
         ],
         captura: "app-area-atleta",
+        tel: "app-socio-inicio",
       },
       {
-        titulo: "Avisos que chegam",
+        titulo: "Avisos que chegam, e saber quem leu",
         texto:
-          "O clube envia avisos por público, com notificações no telemóvel, e vê quem já leu. Acabam as mensagens perdidas no grupo de WhatsApp.",
-        itens: ["Notificações push no iPhone e no Android", "Avisos por equipa, escalão ou clube", "Taxa de leitura", "Novidades e sondagens"],
-        captura: "app-aviso",
+          "O clube escreve na consola para uma equipa, um escalão ou o clube todo. O aviso chega como notificação ao telemóvel, e a consola mostra quantas famílias já o leram.",
+        itens: [
+          "Notificações no iPhone e no Android",
+          "Avisos por equipa, escalão ou clube",
+          "Taxa de leitura",
+          "Novidades e sondagens",
+        ],
+        captura: "con-comunicacao",
+        tel: "app-aviso",
       },
     ],
     perguntas: [
@@ -454,28 +490,117 @@ export const SOLUCOES: Solucao[] = [
   {
     path: "/site-clube",
     nome: "Site do clube",
-    title: "Site para clubes desportivos com domínio .pt | Academias",
+    title: "Site para clubes desportivos com loja, bilheteira e domínio .pt | Academias",
     description:
-      "Site do clube com domínio .pt, notícias, equipas, calendário, loja online e bilheteira, ligado à gestão do clube. Alojamento e manutenção incluídos.",
+      "Site do clube com domínio .pt: notícias, equipas e plantéis, calendário, loja online e bilheteira com bilhete QR lido à porta. Ligado à gestão do clube, com alojamento incluído.",
     rotulo: "Site para clubes desportivos",
     h1: "O site do clube, ligado ao que o clube já tem",
     lede:
-      "As equipas e o calendário saem da consola, as notícias escrevem-se lá, e a loja e a bilheteira ficam no próprio site. Tratamos do domínio .pt, do alojamento e da manutenção.",
-    captura: "con-visao-geral",
+      "As equipas, os jogos e os resultados saem da consola, as notícias escrevem-se lá, e a loja e a bilheteira vendem no próprio site. Tratamos do domínio .pt, do alojamento e da manutenção.",
+    captura: "site-inicio",
+    tel: "site-tel-loja",
     blocos: [
       {
-        titulo: "Conteúdo que se atualiza sozinho",
+        titulo: "Notícias com a cara do clube",
         texto:
-          "O site lê as equipas, os jogos e o calendário da consola. O que o clube muda lá aparece no site, sem ninguém o copiar.",
-        itens: ["Notícias", "Equipas e plantéis", "Calendário de jogos", "Contactos e formulário"],
-        captura: "con-visao-geral",
+          "As notícias escrevem-se no menu Website da consola, com fotografia, categoria e destaque. Na página inicial aparecem as mais recentes, o próximo jogo e o último resultado.",
+        itens: [
+          "Notícias por categoria, com destaque na página inicial",
+          "Próximo jogo e último resultado",
+          "Partilha com imagem no WhatsApp e no Facebook",
+          "Páginas preparadas para o Google",
+        ],
+        captura: "site-noticias",
+        tel: "site-tel-noticia",
       },
       {
-        titulo: "Loja e bilheteira",
+        titulo: "Equipas e plantéis",
         texto:
-          "O clube vende equipamentos e bilhetes no próprio site, e o dinheiro entra na conta euPago do clube.",
-        itens: ["Loja online com stock", "Bilheteira para os jogos, a partir de novembro de 2026", "Pagamento por MB WAY, Multibanco e cartão", "Página de adesão a sócio"],
-        captura: "con-contas",
+          "Cada equipa tem a sua página, com a equipa técnica, o plantel, os jogos e os resultados. O clube escolhe que equipas aparecem, se o plantel leva fotografias e se os resultados dos escalões mais novos ficam de fora.",
+        itens: [
+          "Equipa técnica e plantel com número e posição",
+          "Fotografias dos atletas, ligadas por equipa",
+          "Resultados escondidos onde a federação não os deixa publicar",
+          "Tudo atualizado a partir da consola",
+        ],
+        captura: "site-plantel",
+        tel: "site-tel-equipa",
+      },
+      {
+        titulo: "Calendário de jogos e eventos",
+        texto:
+          "Os jogos de todas as equipas e os eventos do clube, por ordem, com o local e a competição. Um jogo marcado na consola aparece no site sem ninguém o copiar.",
+        itens: [
+          "Jogos de todas as equipas e modalidades",
+          "Eventos do clube, como a assembleia ou o jantar de Natal",
+          "Resultados à medida que os jogos acabam",
+          "Ligação direta para os bilhetes de cada jogo",
+        ],
+        captura: "site-calendario",
+        tel: "site-tel-calendario",
+      },
+      {
+        titulo: "Loja online",
+        texto:
+          "O clube vende equipamentos e artigos de adepto no próprio site, com tamanhos, stock e fotografias. Quem compra paga por MB WAY, Multibanco ou cartão, e o dinheiro entra na conta euPago do clube.",
+        itens: [
+          "Artigos com tamanhos e stock por tamanho",
+          "Levantamento na sede ou envio por correio",
+          "As encomendas chegam à consola",
+          "Fatura automática no programa de faturação do clube",
+        ],
+        captura: "site-loja",
+      },
+      {
+        titulo: "A página de cada artigo",
+        texto:
+          "Fotografias grandes, os tamanhos numa grelha com os esgotados riscados, e os botões de comprar sempre à mão. No telemóvel, o preço e o botão ficam numa barra no fundo do ecrã.",
+        itens: [
+          "Galeria com várias fotografias",
+          "Tamanhos esgotados e últimas unidades à vista",
+          "Carrinho com vários artigos",
+          "Entrega e pagamento explicados na própria página",
+        ],
+        captura: "site-produto",
+      },
+      {
+        titulo: "Bilheteira com o mapa do estádio",
+        texto:
+          "O clube desenha o estádio com as bancadas e as portas, e põe os bilhetes de cada jogo à venda. Quem compra escolhe a bancada no mapa, e os sócios com as quotas em dia compram ao preço de sócio.",
+        itens: [
+          "Preços por bancada e por categoria de sócio",
+          "Venda só para sócios, sócios primeiro, ou para todos",
+          "Lotação por bancada e lugares anuais",
+          "Jogos em casa e fora",
+        ],
+        captura: "site-estadio",
+        tel: "site-tel-estadio",
+      },
+      {
+        titulo: "O bilhete com QR, lido à porta",
+        texto:
+          "Pago o bilhete, o código QR chega ao telemóvel e ao email. À porta, o segurança abre o leitor com um link e um PIN, aponta a câmara e o ecrã diz logo se a pessoa entra. Um bilhete só entra uma vez.",
+        itens: [
+          "Bilhete com QR no telemóvel e no email",
+          "Leitor no telemóvel do segurança, sem conta nem app",
+          "Ecrã verde, vermelho ou âmbar, com som e vibração",
+          "Porta certa para cada bancada e contador de entradas",
+        ],
+        captura: "site-tel-bilhete",
+        tel: "porta-ok-tel",
+      },
+      {
+        titulo: "Dois temas, com as cores do clube",
+        texto:
+          "O clube escolhe o tema. O Holofote, no computador, tem o menu ao lado e a notícia em grande. O Tribuna, no telemóvel, tem o menu em cima. Os dois levam o emblema, a cor e as fotografias do clube.",
+        itens: [
+          "Tema Holofote e tema Tribuna, a trocar quando o clube quiser",
+          "Domínio .pt em nome do clube",
+          "Alojamento, SSL e manutenção incluídos",
+          "Páginas legais e livro de reclamações já feitos",
+        ],
+        captura: "site-holofote",
+        tel: "site-tel-inicio",
       },
     ],
     perguntas: [
@@ -485,12 +610,23 @@ export const SOLUCOES: Solucao[] = [
       },
       {
         q: "Em que plano está o site?",
-        a: "No Connect Pro, que inclui tudo do Connect: a app do clube, os pagamentos e os sócios.",
+        a: "No Connect Pro, que inclui tudo do Connect: a app do clube, os pagamentos e os sócios. Nos 30 dias de experiência o site está incluído, num endereço de pré-visualização.",
+      },
+      {
+        q: "Os seguranças precisam de instalar alguma coisa para ler os bilhetes?",
+        a: "Não. O clube envia a cada porta um link e um PIN. O segurança abre o link no telemóvel, escreve o PIN e aponta a câmara aos bilhetes. O link só serve para aquele jogo e aquela porta, e caduca no fim do dia.",
+      },
+      {
+        q: "O dinheiro da loja e dos bilhetes vai para onde?",
+        a: "Para a conta euPago do clube, como as mensalidades. A Academias não toca no dinheiro.",
+      },
+      {
+        q: "Quem escreve as notícias?",
+        a: "Quem o clube quiser. A permissão de mexer no site dá-se a um cargo, e o resto do staff não lhe toca.",
       },
     ],
     relacionadas: ["/gestao-socios", "/app-clube", "/mensalidades-clube", "/gestao-clubes-futebol"],
   },
-
   /* ------------------------------------------------------------------------ */
   {
     path: "/gestao-academias-desportivas",
@@ -502,28 +638,47 @@ export const SOLUCOES: Solucao[] = [
     h1: "A academia de formação, com as famílias por perto",
     lede:
       "Numa academia, a maior parte do trabalho é com os pais: treinos, faltas, avaliações e mensalidades. A consola organiza o clube e a app mantém as famílias a par.",
-    captura: "con-presencas-depois",
+    captura: "con-atleta-avaliacoes",
+    tel: "app-inicio",
     blocos: [
       {
         titulo: "Presenças e assiduidade",
         texto:
-          "O treinador marca as presenças no telemóvel, no campo. A família avisa pela app quando o atleta falta, e a assiduidade de cada atleta fica sempre à vista.",
-        itens: ["Presenças no telemóvel", "Aviso de falta pela família", "Assiduidade por atleta e por equipa", "Estado clínico no dia do treino"],
+          "O treinador marca as presenças no campo, com as faltas avisadas pela família já justificadas e os atletas de baixa assinalados. Na app, a família vê a assiduidade do filho.",
+        itens: [
+          "Folha de presenças de cada treino",
+          "Faltas avisadas pela família, já justificadas",
+          "Atletas de baixa no dia do treino",
+          "Assiduidade do atleta na app",
+        ],
         captura: "con-presencas-depois",
+        tel: "app-atleta",
       },
       {
-        titulo: "Avaliações e relatórios",
+        titulo: "Avaliações por competência",
         texto:
-          "O treinador avalia cada atleta por competência, e a evolução fica guardada época a época. A família recebe os relatórios na app.",
-        itens: ["Avaliações por competência", "Relatórios de atleta", "Evolução ao longo das épocas", "Notas da escola enviadas pelos pais"],
-        captura: "con-atleta-avaliacoes",
+          "O treinador avalia cada atleta por competência e publica. A família recebe a avaliação na app, com a evolução desde a avaliação anterior.",
+        itens: [
+          "Competências definidas pelo clube",
+          "Avaliação por período",
+          "Evolução ao longo da época",
+          "Relatórios de atleta",
+        ],
+        captura: "con-avaliacao",
+        tel: "app-atleta-avaliacoes",
       },
       {
-        titulo: "Mensalidades e comunicação",
+        titulo: "Avisos às famílias",
         texto:
-          "As mensalidades pagam-se por MB WAY, Multibanco ou cartão, e a confirmação é automática. Os avisos chegam ao telemóvel das famílias, por equipa ou escalão.",
-        itens: ["Mensalidades com confirmação automática", "Avisos por equipa ou escalão", "Taxa de leitura dos avisos", "Inscrição das famílias por link, com aprovação do clube"],
+          "Os avisos chegam ao telemóvel das famílias, por equipa ou escalão, e a consola mostra quem já leu. Acabam as mensagens perdidas no grupo dos pais.",
+        itens: [
+          "Avisos por equipa ou escalão",
+          "Notificação no telemóvel",
+          "Taxa de leitura dos avisos",
+          "Inscrição das famílias por link, com aprovação do clube",
+        ],
         captura: "con-comunicacao",
+        tel: "app-aviso",
       },
     ],
     perguntas: [

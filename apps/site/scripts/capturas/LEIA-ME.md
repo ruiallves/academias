@@ -98,3 +98,20 @@ corrigido, apagam-se.
    calculados pela consola.
 
 Com `--sem-remendos` nenhum dos dois é aplicado.
+
+## O site do clube e o leitor da porta
+
+As capturas `site-…` e `site-tel-…` são do site do clube de demonstração (AD
+Monte Verde), tiradas com `site-do-clube.mjs` ao `apps/clube-site` a correr em
+modo de demonstração. Na captura, e só nela, o guião troca a cor do clube para
+verde-floresta, troca as fotografias do picsum pelas de `apps/clube-site/public/padrao/`
+e as dos artigos da loja pelas de `instagram/carrossel-11-connect-pro/capturas/fotos-loja/`
+(Pexels, sem marcas), e troca os adversários reais da demonstração por nomes que
+não existem.
+
+As capturas `porta-ok-tel` e `porta-repetido-tel` são do leitor de bilhetes dos
+seguranças (`/porta/<token>`), tiradas com `consola.mjs --telemovel`. O browser
+das capturas não tem câmara, por isso o código escreve-se à mão, e o ecrã do
+resultado fica parado (o leitor volta sozinho à câmara ao fim de 2 s). As cenas
+`con-futsal` e `con-basquetebol-lancamento` são do editor tático das outras
+modalidades, com o clube de três modalidades.

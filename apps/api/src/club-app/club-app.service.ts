@@ -471,7 +471,9 @@ export class ClubAppService {
           amountCents: fee?.amountCents ?? precoMes,
           status: fee?.status ?? null,
         };
-      });
+      })
+        // Categoria a 0 €: não há meses para pagar adiantado. As que já existem (pagas) ficam.
+        .filter((u) => !(u.amountCents === 0 && !u.feeId));
 
       return {
         academy: {
@@ -531,7 +533,7 @@ export class ClubAppService {
           ? []
           : fees.map((f) => ({
               ...f,
-              overdue: f.status === "OPEN" && Boolean(f.dueOn && f.dueOn < agora),
+              overdue: f.status === "OPEN" && f.amountCents > 0 && Boolean(f.dueOn && f.dueOn < agora),
             })),
         upcoming: socio.pagoPelaFamilia ? [] : upcoming,
       };

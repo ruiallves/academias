@@ -1496,7 +1496,11 @@ export class MembersService {
             },
             data: { status: "EXPIRED" },
           });
-          const r = await db.memberFee.updateMany({ where: { id: { in: abertas } }, data: { amountCents: novoValor } });
+          // A 0 € ficam pagas, como as que nascem a 0 €: ver `nasceIsenta`.
+          const r = await db.memberFee.updateMany({
+            where: { id: { in: abertas } },
+            data: { amountCents: novoValor, ...(novoValor === 0 ? { status: "SETTLED", settledAt: new Date() } : {}) },
+          });
           repriced = r.count;
         }
       }

@@ -13,7 +13,7 @@ import { criarTecnica } from "./tecnica.mjs";
 import { criarDesenvolvimento } from "./desenvolvimento.mjs";
 import { criarOutros } from "./outros.mjs";
 import { criarGestao } from "./gestao.mjs";
-import { EXERCICIOS_BASQUETEBOL, inscricoes, resumoDoExercicio } from "./modalidades.mjs";
+import { EXERCICIOS_EXTRA, inscricoes, resumoDoExercicio } from "./modalidades.mjs";
 import { readFileSync } from "node:fs";
 
 const ok = (json) => ({ status: 200, json });
@@ -73,7 +73,7 @@ export function criarApi(clube, extras = {}) {
     ...tecnica.GET,
     // Com as outras modalidades, a biblioteca de exercícios leva também os de basquetebol.
     ...(clube.multimodalidade
-      ? { "/api/training/exercises": [...tecnica.GET["/api/training/exercises"], ...EXERCICIOS_BASQUETEBOL.map(resumoDoExercicio)] }
+      ? { "/api/training/exercises": [...tecnica.GET["/api/training/exercises"], ...EXERCICIOS_EXTRA.map(resumoDoExercicio)] }
       : {}),
     ...desenvolvimento.GET,
     ...outros.GET,
@@ -84,7 +84,7 @@ export function criarApi(clube, extras = {}) {
   /** As rotas com parâmetros: [expressão, função(match, query)]. */
   const PADROES = [
     ...tecnica.PADROES,
-    [/^\/api\/training\/exercises\/([^/]+)$/, (m) => (clube.multimodalidade ? EXERCICIOS_BASQUETEBOL.find((e) => e.id === m[1]) : undefined)],
+    [/^\/api\/training\/exercises\/([^/]+)$/, (m) => (clube.multimodalidade ? EXERCICIOS_EXTRA.find((e) => e.id === m[1]) : undefined)],
     ...desenvolvimento.PADROES,
     [/^\/api\/matches\/([^/]+)$/, (m) => clube.detalheDoJogo?.(m[1])],
     // Quem pode subir de escalão para este jogo: três sub-11 mais velhos.
@@ -103,7 +103,7 @@ export function criarApi(clube, extras = {}) {
     ...(extras.PADROES ?? []),
   ];
 
-  return function responder(metodo, caminho, query) {
+  return function responder(metodo, caminho, query, corpo) {
     if (metodo === "GET") {
       if (caminho in GET) {
         const v = GET[caminho];
@@ -117,6 +117,16 @@ export function criarApi(clube, extras = {}) {
         }
       }
       return null;
+    }
+    // As escritas que uma cena pede (o leitor da porta, por exemplo): [expressão, função(match, corpo)].
+    if (metodo === "POST") {
+      for (const [re, f] of extras.POST ?? []) {
+        const m = caminho.match(re);
+        if (m) {
+          const v = f(m, corpo ? JSON.parse(corpo) : {});
+          if (v !== undefined) return ok(v);
+        }
+      }
     }
     // Escritas de fundo que a consola faz sozinha.
     if (metodo === "POST" && caminho === "/api/presence") return ok({ ok: true });
