@@ -7,8 +7,9 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { DeleteItemDialog } from "@/components/inventory/DeleteItemDialog";
 import { EditItemDialog } from "@/components/inventory/EditItemDialog";
+import { DeliverDialog } from "@/components/inventory/DeliverDialog";
 import { ItemPhotos } from "@/components/inventory/ItemPhotos";
-import { ArrowLeft, Boxes, ExternalLink, Pencil, Plus, ShoppingBag, Trash2, TriangleAlert } from "@/lib/icons";
+import { ArrowLeft, Boxes, ExternalLink, PackageOpen, Pencil, Plus, ShoppingBag, Trash2, TriangleAlert } from "@/lib/icons";
 import { shortDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -26,6 +27,7 @@ import {
   porAVendaNoSite,
   tirarDoSite,
   updateVariant,
+  textoDoPreco,
   type ItemDetail as Data,
   type Variant,
 } from "@/lib/inventory";
@@ -53,6 +55,7 @@ export default function ItemDetail() {
   const [novoTamanho, setNovoTamanho] = useState(false);
   const [tirar, setTirar] = useState(false);
   const [editar, setEditar] = useState(false);
+  const [entregar, setEntregar] = useState(false);
   const [renomear, setRenomear] = useState<Variant | null>(null);
 
   async function carregar() {
@@ -81,9 +84,24 @@ export default function ItemDetail() {
       <PageHeader
         eyebrow={data.category?.label ?? "Inventário"}
         title={data.name}
-        subtitle={[data.brand, data.sku].filter(Boolean).join(" · ") || undefined}
+        subtitle={
+          [data.brand, data.sku, data.priceCents ? `${textoDoPreco(data.priceCents)} €` : null].filter(Boolean).join(" · ") ||
+          undefined
+        }
       >
         <Pill tone={STATUS_TONE[data.status]}>{STATUS_LABEL[data.status]}</Pill>
+        {podeEscrever && (
+          <button
+            type="button"
+            className="ctl-primary"
+            onClick={() => setEntregar(true)}
+            disabled={data.available <= 0}
+            title={data.available <= 0 ? "Sem stock disponível para entregar" : undefined}
+          >
+            <PackageOpen className="size-3.5" strokeWidth={1.75} />
+            Entregar
+          </button>
+        )}
         {podeEscrever && (
           <button type="button" className="ctl-ghost" onClick={() => setEditar(true)}>
             <Pencil className="size-3.5" strokeWidth={1.75} />
@@ -254,6 +272,17 @@ export default function ItemDetail() {
           onClose={() => setMexer(null)}
           onDone={() => {
             setMexer(null);
+            void carregar();
+          }}
+        />
+      )}
+
+      {entregar && (
+        <DeliverDialog
+          itemId={data.id}
+          onClose={() => setEntregar(false)}
+          onDone={() => {
+            setEntregar(false);
             void carregar();
           }}
         />

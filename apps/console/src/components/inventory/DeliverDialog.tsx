@@ -12,7 +12,7 @@ import {
   type ValorDoPagamento,
 } from "./PagamentoDaEntrega";
 import { useSession } from "@/session";
-import { assignLote, listItems, type Item, type PagamentoPedido } from "@/lib/inventory";
+import { assignLote, listItems, textoDoPreco, type Item, type PagamentoPedido } from "@/lib/inventory";
 
 /**
  * Entregar equipamento.
@@ -81,14 +81,27 @@ const euros = (c: number) => (c / 100).toLocaleString("pt-PT", { style: "currenc
 
 let seq = 0;
 const linhaVazia = (): Linha => ({ key: `l${++seq}`, itemId: "", variantId: "", quantity: 1, valor: "", procura: "" });
+/** Um cartão já com o artigo: o primeiro tamanho com stock e o preço base. */
+const linhaDoArtigo = (item: Item): Linha => ({
+  ...linhaVazia(),
+  itemId: item.id,
+  variantId: item.variants.find((v) => v.available > 0)?.id ?? "",
+  valor: textoDoPreco(item.priceCents),
+});
 
 export function DeliverDialog({
   athleteId: atletaFixo,
+  itemId: artigoInicial,
   onClose,
   onDone,
 }: {
   /** Quando se entrega a partir da ficha de um atleta, ele já está escolhido. */
   athleteId?: string;
+  /**
+   * Quando se entrega a partir da ficha de um artigo, o primeiro cartão já vem
+   * com ele (o primeiro tamanho com stock e o preço base). Muda-se em "Trocar".
+   */
+  itemId?: string;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -114,7 +127,11 @@ export function DeliverDialog({
 
   useEffect(() => {
     listItems()
-      .then(setItens)
+      .then((lista) => {
+        setItens(lista);
+        const inicial = artigoInicial ? lista.find((i) => i.id === artigoInicial) : undefined;
+        if (inicial) setLinhas([linhaDoArtigo(inicial)]);
+      })
       .catch(() => setItens([]));
   }, []);
 
@@ -160,6 +177,29 @@ export function DeliverDialog({
     escolhidas.length > 0 &&
     escolhidas.every(linhaPronta) &&
     (!cobrar || pagamentoSemValorValido(pagamento));
+
+  /*
+   * Porque é que o botão está desligado, escrito ao lado dele. Sem isto, quem
+   * escolhia "Por pagar" e deixava o valor vazio (o "0,00" é só exemplo) ficava
+   * com o botão cinzento sem saber porquê (04/11/2026).
+   */
+  const nomeDe = (l: Linha) => itens?.find((i) => i.id === l.itemId)?.name ?? "o artigo";
+  const motivo = (() => {
+    if (valido || busy) return null;
+    if (!athleteId) return "Escolhe o atleta.";
+    if (escolhidas.length === 0) return "Escolhe o artigo a entregar.";
+    for (const l of escolhidas) {
+      const v = itens?.find((i) => i.id === l.itemId)?.variants.find((x) => x.id === l.variantId);
+      if (!v) return `Escolhe o tamanho de ${nomeDe(l)}.`;
+      if (l.quantity > v.available - levadoPorOutros(l.key, l.variantId)) return `Não há stock para tantas unidades de ${nomeDe(l)}.`;
+    }
+    if (cobrar) {
+      const semValor = escolhidas.find((l) => !(centsDoValor(l.valor) > 0));
+      if (semValor) return `Escreve o valor de ${nomeDe(semValor)}, ou escolhe Sem pagamento.`;
+      if (!pagamentoSemValorValido(pagamento)) return "Escolhe como foi pago.";
+    }
+    return null;
+  })();
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -241,6 +281,7 @@ export function DeliverDialog({
       width={560}
       footer={
         <>
+          {motivo && <span className="mr-auto text-meta text-ink-3">{motivo}</span>}
           <button type="button" onClick={onClose} className="ctl-ghost">
             Fechar
           </button>
@@ -451,7 +492,8 @@ function CartaoDoArtigo({
     const escolhido = itens.find((i) => i.id === id);
     // O primeiro tamanho com stock: é o que se entrega na maior parte das vezes, e muda-se com um toque.
     const primeiro = escolhido?.variants.find((x) => livre(x) > 0);
-    onChange({ itemId: id, variantId: primeiro?.id ?? "", quantity: 1, procura: "" });
+    // O valor vem do preço base do artigo, e muda-se nesta entrega se for preciso.
+    onChange({ itemId: id, variantId: primeiro?.id ?? "", quantity: 1, procura: "", valor: textoDoPreco(escolhido?.priceCents) });
   }
 
   const tirar = onRemove && (
@@ -565,7 +607,12 @@ function CartaoDoArtigo({
                 onChange={(e) => onChange({ valor: e.target.value.replace(/[^\d.,]/g, "") })}
                 placeholder="0,00"
                 aria-label={`Valor de ${item.name}`}
-                className={cx(dialogInputClass, "h-8 pr-6 text-right tabular")}
+                aria-invalid={!(centsDoValor(linha.valor) > 0)}
+                className={cx(
+                  dialogInputClass,
+                  "h-8 pr-6 text-right tabular",
+                  !(centsDoValor(linha.valor) > 0) && "border-risk",
+                )}
               />
               <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-meta text-ink-3">€</span>
             </span>

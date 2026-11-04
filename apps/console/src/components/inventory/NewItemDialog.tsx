@@ -3,7 +3,8 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { SelectField, cx } from "@/components/primitives";
 import { Plus, TriangleAlert, X } from "@/lib/icons";
 import { useActiveCatalog } from "@/lib/catalogs";
-import { createItem } from "@/lib/inventory";
+import { centsDoPreco, createItem } from "@/lib/inventory";
+import { CampoDoPreco } from "./CampoDoPreco";
 
 /**
  * Registar um artigo.
@@ -52,6 +53,7 @@ export function NewItemDialog({ onClose, onDone }: { onClose: () => void; onDone
   const [sku, setSku] = useState("");
   const [brand, setBrand] = useState("");
   const [minimumStock, setMinimumStock] = useState("0");
+  const [preco, setPreco] = useState("");
   const [notes, setNotes] = useState("");
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [busy, setBusy] = useState(false);
@@ -59,7 +61,8 @@ export function NewItemDialog({ onClose, onDone }: { onClose: () => void; onDone
   /** O artigo com o mesmo nome, quando o servidor pergunta o que fazer. */
   const [conflito, setConflito] = useState<{ id: string; name: string; sku: string | null } | null>(null);
 
-  const valido = name.trim().length >= 2 && linhas.every((l) => l.label.trim());
+  const priceCents = centsDoPreco(preco);
+  const valido = name.trim().length >= 2 && linhas.every((l) => l.label.trim()) && priceCents !== undefined;
 
   async function submeter(e: FormEvent, onConflict?: "merge" | "new") {
     e.preventDefault();
@@ -73,6 +76,7 @@ export function NewItemDialog({ onClose, onDone }: { onClose: () => void; onDone
         sku: sku.trim() || undefined,
         brand: brand.trim() || undefined,
         minimumStock: Number(minimumStock) || 0,
+        ...(priceCents ? { priceCents } : {}),
         notes: notes.trim() || undefined,
         variants: linhas
           .filter((l) => l.label.trim())
@@ -174,7 +178,7 @@ export function NewItemDialog({ onClose, onDone }: { onClose: () => void; onDone
           />
         </DialogField>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <DialogField label="Marca" hint="opcional">
             <input value={brand} onChange={(e) => setBrand(e.target.value)} className={dialogInputClass} />
           </DialogField>
@@ -194,6 +198,9 @@ export function NewItemDialog({ onClose, onDone }: { onClose: () => void; onDone
               onChange={(e) => setMinimumStock(e.target.value)}
               className={cx(dialogInputClass, "tabular")}
             />
+          </DialogField>
+          <DialogField label="Preço" hint="com IVA, opcional">
+            <CampoDoPreco value={preco} onChange={setPreco} />
           </DialogField>
         </div>
 

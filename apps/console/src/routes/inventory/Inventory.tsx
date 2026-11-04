@@ -31,8 +31,8 @@ import {
  *
  * O botão de entregar é a acção mais repetida do módulo, muitas vezes feita ao
  * balcão com o atleta à frente. Fica no cabeçalho, à distância de um toque em
- * qualquer ecrã, em vez de dentro da ficha de um artigo — quem entrega começa
- * pela pessoa, não pelo artigo.
+ * qualquer ecrã: quem entrega começa quase sempre pela pessoa. A ficha de um
+ * artigo também tem o seu "Entregar", que abre já com esse artigo.
  */
 export default function Inventory() {
   const { session } = useSession();

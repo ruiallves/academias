@@ -92,6 +92,11 @@ export type Item = {
   brand: string | null;
   description: string | null;
   minimumStock: number;
+  /**
+   * O preço base, em cêntimos, com IVA. Nulo = sem preço. Preenche o valor no
+   * "Entregar equipamento". À parte do preço da loja do site.
+   */
+  priceCents: number | null;
   category: { id: string; label: string } | null;
   variants: Variant[];
   /** A primeira fotografia, assinada — a miniatura da lista. */
@@ -216,6 +221,21 @@ export const getItem = (id: string) => apiGet<ItemDetail>(`/api/inventory/items/
 export type CreateItemResult =
   | { ok: true; id: string; sku?: string; merged: boolean }
   | { ok: false; conflict: { id: string; name: string; sku: string | null } };
+
+/**
+ * O preço como se escreve ("12,50", "12.5", "12") em cêntimos. Vazio = `null`
+ * (sem preço); texto que não é um valor = `undefined`, para o campo o recusar.
+ */
+export function centsDoPreco(texto: string): number | null | undefined {
+  const t = texto.replace(/\s/g, "").replace("€", "").replace(",", ".");
+  if (!t) return null;
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return undefined;
+  const c = Math.round(Number(t) * 100);
+  return c > 0 ? c : null;
+}
+
+/** Cêntimos para o campo de texto: 1250 → "12,50". Nulo → vazio. */
+export const textoDoPreco = (c: number | null | undefined) => (c ? (c / 100).toFixed(2).replace(".", ",") : "");
 
 export const createItem = (body: Record<string, unknown>) =>
   apiPost<CreateItemResult>("/api/inventory/items", body);

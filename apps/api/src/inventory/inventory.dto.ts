@@ -28,6 +28,8 @@ export class CreateItemDto {
   @IsOptional() @IsString() @Length(0, 60) sku?: string;
   @IsOptional() @IsString() @Length(0, 80) brand?: string;
   @IsOptional() @IsInt() @Min(0) @Max(1_000_000) minimumStock?: number;
+  /** O preço base, em cêntimos, com IVA. Ausente ou nulo = sem preço. */
+  @IsOptional() @IsInt() @Min(0) @Max(10_000_000) priceCents?: number | null;
   @IsOptional() @IsString() @Length(0, 2000) notes?: string;
 
   /**
@@ -61,6 +63,8 @@ export class UpdateItemDto {
   @IsOptional() @IsString() @Length(0, 60) sku?: string;
   @IsOptional() @IsString() @Length(0, 80) brand?: string;
   @IsOptional() @IsInt() @Min(0) @Max(1_000_000) minimumStock?: number;
+  /** O preço base, em cêntimos. `null` tira o preço; ausente não mexe. */
+  @IsOptional() @IsInt() @Min(0) @Max(10_000_000) priceCents?: number | null;
   @IsOptional() @IsString() @Length(0, 2000) notes?: string;
 }
 

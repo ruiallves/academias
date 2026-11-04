@@ -5910,6 +5910,12 @@ model InventoryItem {
   /// começam por um número só para o artigo inteiro.
   minimumStock Int @default(0)
 
+  /// O preço base, em cêntimos, com IVA. Nulo = sem preço. Preenche o valor de
+  /// cada artigo no "Entregar equipamento", que se pode mudar nessa entrega.
+  /// À parte do preço da loja do site (`SiteProduct`): o que se cobra a um
+  /// atleta ao balcão nem sempre é o que se cobra a quem compra online.
+  priceCents Int?
+
   notes String?
 
   /// As fotografias do artigo, por chave no armazenamento privado.

@@ -3,7 +3,8 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { SelectField, cx } from "@/components/primitives";
 import { TriangleAlert } from "@/lib/icons";
 import { useActiveCatalog } from "@/lib/catalogs";
-import { updateItem, type ItemDetail } from "@/lib/inventory";
+import { centsDoPreco, textoDoPreco, updateItem, type ItemDetail } from "@/lib/inventory";
+import { CampoDoPreco } from "./CampoDoPreco";
 
 /**
  * Corrigir a ficha de um artigo.
@@ -38,12 +39,14 @@ export function EditItemDialog({
   const [sku, setSku] = useState(item.sku ?? "");
   const [brand, setBrand] = useState(item.brand ?? "");
   const [minimumStock, setMinimumStock] = useState(String(item.minimumStock));
+  const [preco, setPreco] = useState(textoDoPreco(item.priceCents));
   const [description, setDescription] = useState(item.description ?? "");
   const [notes, setNotes] = useState(item.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const valido = name.trim().length >= 2;
+  const priceCents = centsDoPreco(preco);
+  const valido = name.trim().length >= 2 && priceCents !== undefined;
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -57,6 +60,7 @@ export function EditItemDialog({
         sku: sku.trim(),
         brand: brand.trim(),
         minimumStock: Number(minimumStock) || 0,
+        priceCents: priceCents ?? null,
         description: description.trim(),
         notes: notes.trim(),
       });
@@ -100,7 +104,7 @@ export function EditItemDialog({
           />
         </DialogField>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <DialogField label="Marca" hint="opcional">
             <input value={brand} onChange={(e) => setBrand(e.target.value)} className={dialogInputClass} />
           </DialogField>
@@ -116,7 +120,13 @@ export function EditItemDialog({
               className={cx(dialogInputClass, "tabular")}
             />
           </DialogField>
+          <DialogField label="Preço" hint="com IVA, opcional">
+            <CampoDoPreco value={preco} onChange={setPreco} />
+          </DialogField>
         </div>
+        <p className="-mt-2 text-meta leading-relaxed text-ink-3">
+          O preço vem preenchido ao entregar este artigo, e pode mudar-se em cada entrega. A loja do site tem o seu.
+        </p>
 
         <DialogField label="Descrição" hint="opcional">
           <textarea

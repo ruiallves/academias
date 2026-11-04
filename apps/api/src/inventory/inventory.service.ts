@@ -146,7 +146,7 @@ export class InventoryService {
         },
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, sku: true, brand: true, minimumStock: true, description: true,
+          id: true, name: true, sku: true, brand: true, minimumStock: true, priceCents: true, description: true,
           imageKeys: true,
           category: { select: { id: true, label: true } },
           variants: {
@@ -190,7 +190,7 @@ export class InventoryService {
       const row = await db.inventoryItem.findFirst({
         where: { id },
         select: {
-          id: true, name: true, sku: true, brand: true, minimumStock: true, description: true, notes: true,
+          id: true, name: true, sku: true, brand: true, minimumStock: true, priceCents: true, description: true, notes: true,
           archivedAt: true, imageKeys: true,
           category: { select: { id: true, label: true } },
           variants: {
@@ -540,6 +540,7 @@ export class InventoryService {
           sku,
           brand: dto.brand?.trim() || null,
           minimumStock: dto.minimumStock ?? 0,
+          priceCents: dto.priceCents || null,
           notes: dto.notes?.trim() || null,
           variants: {
             create: pedidas.map((v, i) => ({
@@ -727,6 +728,8 @@ export class InventoryService {
           ...(novaRef !== undefined ? { sku: novaRef } : {}),
           ...(dto.brand !== undefined ? { brand: texto(dto.brand) } : {}),
           ...(dto.minimumStock !== undefined ? { minimumStock: dto.minimumStock } : {}),
+          // 0 € é o mesmo que sem preço: a entrega obriga a um valor acima de zero.
+          ...(dto.priceCents !== undefined ? { priceCents: dto.priceCents || null } : {}),
           ...(dto.notes !== undefined ? { notes: texto(dto.notes) } : {}),
         },
       });
@@ -1781,6 +1784,7 @@ export class InventoryService {
     sku: string | null;
     brand: string | null;
     minimumStock: number;
+    priceCents: number | null;
     description: string | null;
     category: { id: string; label: string } | null;
     variants: {
@@ -1816,6 +1820,7 @@ export class InventoryService {
       brand: it.brand,
       description: it.description,
       minimumStock: it.minimumStock,
+      priceCents: it.priceCents,
       category: it.category,
       variants,
       total,
