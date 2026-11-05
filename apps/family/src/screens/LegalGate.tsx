@@ -4,6 +4,7 @@ import { LegalMarkdown } from "@academia/ui/legal-markdown";
 import { ApiError } from "@/lib/http";
 import { onLegalRequired } from "@/lib/legal-signal";
 import { signOut } from "@/lib/session";
+import { apagarArranque, guardarArranque, lerArranque } from "@/lib/arranque";
 import {
   acceptanceLabel,
   dataPT,
@@ -25,12 +26,25 @@ import {
  * marcado. Quem não tem nada por aceitar nunca a vê.
  */
 export function LegalGate({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<LegalStatus | null>(null);
+  /*
+   * Abre-se com a resposta da última vez, quando ela dizia "nada por aceitar".
+   *
+   * É a segunda das três voltas do arranque, e esta deixava o ecrã em branco
+   * enquanto esperava. Quem já tinha tudo aceite ontem quase de certeza tem
+   * hoje; o servidor confirma a seguir, e se entretanto saiu um documento novo
+   * a porta aparece nessa altura (e o próprio servidor recusa o resto até lá,
+   * ver `legal-signal.ts`). Só se guarda o "está tudo em ordem", nunca um
+   * pendente. Ver `lib/arranque.ts`.
+   */
+  const [status, setStatus] = useState<LegalStatus | null>(() => lerArranque<LegalStatus>("termos"));
   const [error, setError] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
-      setStatus(await legalStatus());
+      const s = await legalStatus();
+      if (s.pending.length === 0) guardarArranque("termos", s);
+      else apagarArranque("termos");
+      setStatus(s);
     } catch (e) {
       // Sem vínculo nenhum aqui não há gate — a app explica o resto melhor.
       if (e instanceof ApiError && (e.status === 401 || e.status === 403 || e.status === 404)) {

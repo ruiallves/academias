@@ -390,6 +390,9 @@ model Sport {
   academyId         String
   academy           Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
   name              String
+  /// A ordem no clube, escolhida em Definições → Modalidades (0 primeiro). A
+  /// primeira é a que vem escolhida ao inscrever um atleta.
+  position          Int      @default(0)
   /// A **disciplina** — `football`, `futsal`, `basketball` — ou nulo.
   ///
   /// O nome é o que o clube escreve e continua livre ("Futebol", "Futebol
@@ -1242,6 +1245,10 @@ model Team {
   nextTeams      Team[]  @relation("TeamLineage")
 
   name String
+
+  /// A ordem dentro da modalidade, escolhida em Definições → Modalidades (0
+  /// primeiro). Passa para a equipa nova na viragem de época.
+  position Int @default(0)
 
   /// A idade máxima da equipa: 11 num "Sub-11".
   ///

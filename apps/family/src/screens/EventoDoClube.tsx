@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { CalendarOff, ChevronLeft, Clock, DoorOpen, MapPin, Users } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { dateShort, dayName, time } from "@/ui";
+import { ESTILO_DO_CABECALHO } from "@/lib/partilhado";
 
 /**
  * Um evento do clube que não é treino nem jogo: um torneio, uma reunião de pais,
@@ -50,7 +51,8 @@ export default function EventoDoClube() {
         Voltar
       </button>
 
-      <header className="px-1">
+      {/* A linha tocada na Agenda transforma-se neste cabeçalho. Ver `lib/partilhado.ts`. */}
+      <header className="px-1" style={ESTILO_DO_CABECALHO}>
         <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">{e.typeLabel}</p>
         <h1 className="mt-0.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">{e.title}</h1>
         {e.cancelled && (

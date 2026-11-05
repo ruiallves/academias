@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useChild } from "@/App";
 import { consultaPorResponder, useStore, type CallUpState } from "@/lib/store";
 import { cx, dayName, dayShort, monthShort, time, whenLabel } from "@/ui";
+import { abrirPartilhado, estiloDoCartao } from "@/lib/partilhado";
 
 /**
  * Agenda — uma linha do tempo, não uma grelha.
@@ -219,8 +220,11 @@ function EventRow({ item }: { item: Item }) {
         {!item.semFim && <span className="num text-[12px] text-ink-4">{time(item.end)}</span>}
       </div>
 
+      {/* O cartão transforma-se no cabeçalho do ecrã que abre. Ver `lib/partilhado.ts`. */}
       <Link
         to={item.href}
+        onClick={() => abrirPartilhado(item.href)}
+        style={estiloDoCartao(item.href)}
         className="relative block flex-1 overflow-hidden rounded-[var(--radius-lg)] bg-surface p-4 text-left shadow-[var(--shadow-soft)] active:opacity-80"
       >
         <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} aria-hidden />

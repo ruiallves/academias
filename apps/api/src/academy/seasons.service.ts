@@ -289,7 +289,7 @@ export class SeasonsService {
         const antigas = await db.team.findMany({
           where: { id: { in: dto.equipas.map((e) => e.fromTeamId) } },
           select: {
-            id: true, name: true, maxAge: true, gender: true, sportId: true, schedule: true,
+            id: true, name: true, maxAge: true, gender: true, sportId: true, schedule: true, position: true,
             maxCallUps: true, matchMinutes: true, unlimitedSubs: true, matchParts: true, matchPartMinutes: true, seasonId: true, billingMonths: true, billingNextMonths: true,
           },
         });
@@ -324,6 +324,8 @@ export class SeasonsService {
               seasonId: season.id,
               sportId: antiga.sportId,
               name: (pedido.name ?? antiga.name).trim() || antiga.name,
+              // A ordem nas Definições passa tal e qual.
+              position: antiga.position,
               maxAge: antiga.maxAge,
               gender: antiga.gender,
               schedule: antiga.schedule as object,

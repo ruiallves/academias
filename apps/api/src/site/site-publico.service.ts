@@ -115,7 +115,7 @@ export class SitePublicoService {
   async clubePorSlug(slug: string) {
     return this.comClube(slug, async (db, a) => {
       const [sports, sponsors] = await Promise.all([
-        db.sport.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
+        db.sport.findMany({ select: { name: true }, orderBy: [{ position: "asc" }, { name: "asc" }] }),
         db.siteSponsor.findMany({ orderBy: [{ position: "asc" }, { createdAt: "asc" }] }),
       ]);
       const id = a.identidade;

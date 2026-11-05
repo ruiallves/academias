@@ -36,12 +36,19 @@ type Slot = { weekday: number; start: string; end: string; venue: string };
  * erro nenhum: ficava com duas épocas e com as equipas do ano repartidas entre
  * elas. Nada disto é uma coisa que se redija; é uma escolha entre poucas.
  */
-export function NewTeamDialog({ onClose }: { onClose: () => void }) {
+export function NewTeamDialog({
+  onClose,
+  sportIdInicial,
+}: {
+  onClose: () => void;
+  /** Já com esta modalidade escolhida (o "Nova equipa" de uma modalidade nas Definições). */
+  sportIdInicial?: string;
+}) {
   const coaches = listCoachCandidates();
   const venues = useActiveCatalog("venues");
   const seasonChoices = seasonOptions(knownSeasons);
 
-  const [sportId, setSportId] = useState(academy.sports[0]?.id ?? "");
+  const [sportId, setSportId] = useState(sportIdInicial ?? academy.sports[0]?.id ?? "");
   const [competitionIds, setCompetitionIds] = useState<string[]>([]);
   /*
    * A idade em texto, e não em número.

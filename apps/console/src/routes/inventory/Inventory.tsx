@@ -666,7 +666,8 @@ function VistaAtletas({
 
   const estado = params.get("estado") ?? "ACTIVE";
   const equipa = params.get("equipa") ?? "";
-  const pagamento = params.get("pagamento") ?? "";
+  // "Por pagar" junta o que se cobra só no equipamento e o que se cobra na app.
+  const pagamento = params.get("pagamento") === "app" ? "porPagar" : (params.get("pagamento") ?? "");
   const tipo = params.get("categoria") ?? "";
   const artigo = params.get("artigo") ?? "";
   const [q, setQ] = useState("");
@@ -772,7 +773,6 @@ function VistaAtletas({
           options={[
             { value: "", label: "Qualquer pagamento" },
             { value: "porPagar", label: "Por pagar" },
-            { value: "app", label: "Por pagar · na app" },
             { value: "pago", label: "Pago" },
             { value: "nenhum", label: "Sem pagamento" },
           ]}

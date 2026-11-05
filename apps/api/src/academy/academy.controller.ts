@@ -22,6 +22,16 @@ import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type Me
  */
 /** O que a ficha de staff deixa mudar. Tudo opcional: grava-se o que mudou. */
 /** Os atletas que entram numa equipa sem sair das outras. Ver `trazerParaEquipa`. */
+/** Uma ordem nova: os ids pela ordem que ficam. */
+class OrdemDto {
+  @IsArray() @ArrayMaxSize(500) @IsString({ each: true }) @Length(1, 40, { each: true })
+  ids!: string[];
+}
+
+class OrdemDasEquipasDto extends OrdemDto {
+  @IsString() @Length(1, 40) sportId!: string;
+}
+
 class TrazerAtletasDto {
   @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) @Length(1, 40, { each: true })
   athleteIds!: string[];
@@ -685,6 +695,18 @@ export class AcademyController {
   }
 
   /* --- Desportos ---------------------------------------------------------- */
+
+  /** A ordem das modalidades (Definições → Modalidades). `settings:write`, no serviço. */
+  @Put("sports/ordem")
+  ordenarModalidades(@Req() req: AuthedRequest, @Body() body: OrdemDto) {
+    return this.academy.ordenarModalidades(req.ctx, body.ids);
+  }
+
+  /** A ordem das equipas de uma modalidade. `team:write` ou `settings:write`, no serviço. */
+  @Put("teams/ordem")
+  ordenarEquipas(@Req() req: AuthedRequest, @Body() body: OrdemDasEquipasDto) {
+    return this.academy.ordenarEquipas(req.ctx, body.sportId, body.ids);
+  }
 
   @Post("sports")
   createSport(@Req() req: AuthedRequest, @Body() body: SportDto) {

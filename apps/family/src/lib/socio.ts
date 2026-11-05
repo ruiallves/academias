@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { reduzirFotografia } from "@academia/ui/imagem";
 import { apiDelete, apiGet, apiPost } from "@/lib/http";
 import { applyBrand } from "@/lib/brand";
+import { guardarArranque, lerArranque } from "@/lib/arranque";
 import { limparBilhetes } from "@/lib/bilhetes";
 
 /**
@@ -152,9 +153,17 @@ type State = {
   data: SocioInicio | null;
   error: string | null;
   loading: boolean;
+  /**
+   * `data` veio do guardado da última abertura, e o servidor ainda não
+   * respondeu — e por isso `fees` e `upcoming` estão vazios de propósito. O
+   * dinheiro nunca se mostra de memória: a quota paga ontem aparecia por pagar
+   * um segundo, e o sócio ia à secretaria por causa dela. O Início e as Quotas
+   * não dizem nada sobre quotas enquanto isto for verdade. Ver `lib/arranque.ts`.
+   */
+  porConfirmar: boolean;
 };
 
-let state: State = { data: null, error: null, loading: false };
+let state: State = { data: null, error: null, loading: false, porConfirmar: false };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const subscribe = (l: () => void) => {
@@ -168,10 +177,20 @@ export function useSocio(): State {
 }
 
 export async function loadSocio(): Promise<void> {
+  /*
+   * A área de sócio abre já com o que havia da última vez, e pede o novo por
+   * trás — a mesma regra do arranque da família. Ver `lib/arranque.ts`.
+   */
+  if (!state.data) {
+    const guardado = lerArranque<SocioInicio>("socio");
+    // Sem quotas: o estado de um pagamento é o que não pode estar velho nem um segundo.
+    if (guardado) state = { data: { ...guardado, fees: [], upcoming: [] }, error: null, loading: true, porConfirmar: true };
+  }
   state = { ...state, loading: true };
   emit();
   try {
     const data = await apiGet<SocioInicio>("/api/socio/inicio");
+    guardarArranque("socio", { ...data, fees: [], upcoming: [] });
     // A marca guardada é a que a app veste ao abrir, antes de haver dados. Só o
     // bootstrap da família a actualizava: um sócio sem família abria sempre com
     // o símbolo do primeiro dia, por mais que o clube o trocasse.
@@ -180,7 +199,7 @@ export async function loadSocio(): Promise<void> {
       shortName: data.academy.shortName,
       logoUrl: data.academy.logoUrl,
     });
-    state = { data, error: null, loading: false };
+    state = { data, error: null, loading: false, porConfirmar: false };
   } catch (e) {
     state = {
       ...state,
@@ -193,7 +212,7 @@ export async function loadSocio(): Promise<void> {
 
 /** Sai daqui quando se troca de contexto — o próximo sócio não vê o anterior. */
 export function resetSocio(): void {
-  state = { data: null, error: null, loading: false };
+  state = { data: null, error: null, loading: false, porConfirmar: false };
   emit();
   limparBilhetes();
 }

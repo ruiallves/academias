@@ -275,8 +275,9 @@ export class AcademyService {
       });
 
       const [sports, seasons, me, fundador] = await Promise.all([
+        // Pela ordem do clube (Definições → Modalidades): a primeira é a de omissão.
         db.sport.findMany({
-          orderBy: { name: "asc" },
+          orderBy: [{ position: "asc" }, { name: "asc" }],
           select: SPORT_SELECT,
         }),
         /*
@@ -861,10 +862,14 @@ export class AcademyService {
       if (taken) throw new BadRequestException(`"${name}" já existe`);
       await checkDisciplinaLivre(db, code);
 
+      // Entra no fim da lista do clube.
+      const ultima = await db.sport.findFirst({ orderBy: { position: "desc" }, select: { position: true } });
+
       const sport = await db.sport.create({
         data: {
           academyId: ctx.academyId,
           name,
+          position: (ultima?.position ?? -1) + 1,
           code,
           positions: clean(dto.positions),
           skills: clean(dto.skills),
@@ -979,6 +984,35 @@ export class AcademyService {
       await db.sport.delete({ where: { id } });
       return { ok: true };
     });
+  }
+
+  /**
+   * A ordem das modalidades, a primeira primeiro. É a ordem da consola toda, e
+   * a primeira é a que vem escolhida ao inscrever um atleta. Ids de outro clube
+   * não mexem em nada (RLS).
+   */
+  async ordenarModalidades(ctx: RequestContext, ids: string[]) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      for (const [position, id] of ids.entries()) await db.sport.updateMany({ where: { id }, data: { position } });
+    });
+    return { ok: true as const };
+  }
+
+  /**
+   * A ordem das equipas de uma modalidade, a primeira primeiro. Só mexe nas
+   * equipas dessa modalidade: um id de outra fica como está.
+   */
+  async ordenarEquipas(ctx: RequestContext, sportId: string, ids: string[]) {
+    if (!can(ctx, "team:write") && !can(ctx, "settings:write")) {
+      throw new ForbiddenException("Sem permissão para mudar a ordem das equipas");
+    }
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      for (const [position, id] of ids.entries()) {
+        await db.team.updateMany({ where: { id, sportId }, data: { position } });
+      }
+    });
+    return { ok: true as const };
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1332,7 +1366,9 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await db.team.findMany({
         where: scope ? { id: scope } : {},
-        orderBy: { name: "asc" },
+        // A ordem do clube: modalidade a modalidade, e dentro de cada uma a das
+        // Definições. É a que a consola mostra e a que escolhe por omissão.
+        orderBy: [{ sport: { position: "asc" } }, { sport: { name: "asc" } }, { position: "asc" }, { name: "asc" }],
         select: {
           id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true, unlimitedSubs: true, matchParts: true, matchPartMinutes: true,
           sport: { select: { matchMinutes: true } },
@@ -1535,6 +1571,7 @@ export class AcademyService {
               academyId: ctx.academyId,
               name,
               sportId,
+              position: await proximaPosicaoDaEquipa(db, sportId),
               maxAge,
               // A folha não tem coluna de género: vale o que o nome disser.
               gender: generoPeloNome(name),
@@ -1657,6 +1694,8 @@ export class AcademyService {
           sportId: dto.sportId,
           seasonId: season.id,
           name: dto.name.trim(),
+          // No fim das equipas da modalidade.
+          position: await proximaPosicaoDaEquipa(db, dto.sportId),
           maxAge: dto.maxAge,
           // O que a pessoa escolheu; sem escolha, o que o nome disser.
           gender: dto.gender ?? generoPeloNome(dto.name),
@@ -5089,6 +5128,12 @@ function resolveSportCode(name: string, escolhido: string | undefined): SportCod
  * que grava o exercício. O que distingue o Sub-15 do feminino é a **equipa**,
  * não a modalidade — e as equipas já sabem distinguir-se.
  */
+/** A posição de uma equipa nova: depois da última da modalidade. Ver `Team.position`. */
+async function proximaPosicaoDaEquipa(db: ScopedClient, sportId: string) {
+  const ultima = await db.team.findFirst({ where: { sportId }, orderBy: { position: "desc" }, select: { position: true } });
+  return (ultima?.position ?? -1) + 1;
+}
+
 async function checkDisciplinaLivre(db: ScopedClient, code: SportCode | null, exceptId?: string) {
   if (!code) return;
   const taken = await db.sport.findFirst({

@@ -1,17 +1,59 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Pill } from "@/components/primitives";
 import { Erro, Lista } from "@/components/definicoes/ui";
-import { Pencil, Plus, Trash2 } from "@/lib/icons";
-import { apiDelete, apiPatch, apiPost } from "@/lib/http";
-import { reloadAcademy, useStore } from "@/lib/store";
+import { ChevronUp, Pencil, Plus, Trash2 } from "@/lib/icons";
+import { apiDelete, apiPatch, apiPost, apiPut } from "@/lib/http";
+import { aplicarOrdemDasEquipas, aplicarOrdemDasModalidades, reloadAcademy, useStore } from "@/lib/store";
+import { listTeams } from "@/lib/api";
+import { can } from "@/lib/permissions";
+import { useSession } from "@/session";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { CatalogPanel } from "./CatalogPanel";
+import { NewTeamDialog } from "./NewTeamDialog";
 import { CATALOG_KEYS, type CatalogKey } from "@/lib/catalogs";
 import { ChevronDown } from "@/lib/icons";
 import { cx } from "@/components/primitives";
 import { SPORT_PROFILES, inferSportCode, profileOf, type SportCode } from "@/lib/sports";
 import { Segmented } from "@/components/filters";
-import type { Sport } from "@/data/types";
+import type { Sport, Team } from "@/data/types";
+
+/** Troca o elemento `i` com o vizinho (`passo` -1 sobe, 1 desce). Nulo quando não há vizinho. */
+function trocar(ids: string[], i: number, passo: -1 | 1): string[] | null {
+  const j = i + passo;
+  if (i < 0 || j < 0 || j >= ids.length) return null;
+  const nova = [...ids];
+  [nova[i], nova[j]] = [nova[j], nova[i]];
+  return nova;
+}
+
+/** Os dois botões de subir e descer de uma linha. */
+function Setas({ nome, primeiro, ultimo, onMover }: { nome: string; primeiro: boolean; ultimo: boolean; onMover: (passo: -1 | 1) => void }) {
+  return (
+    <>
+      <button
+        type="button"
+        className="ctl-ghost size-8 justify-center px-0 text-ink-3 hover:text-ink disabled:opacity-30"
+        aria-label={`Subir ${nome}`}
+        title="Subir"
+        disabled={primeiro}
+        onClick={() => onMover(-1)}
+      >
+        <ChevronUp className="size-4" strokeWidth={1.9} />
+      </button>
+      <button
+        type="button"
+        className="ctl-ghost size-8 justify-center px-0 text-ink-3 hover:text-ink disabled:opacity-30"
+        aria-label={`Descer ${nome}`}
+        title="Descer"
+        disabled={ultimo}
+        onClick={() => onMover(1)}
+      >
+        <ChevronDown className="size-4" strokeWidth={1.9} />
+      </button>
+    </>
+  );
+}
 
 /**
  * As modalidades do clube.
@@ -67,13 +109,24 @@ export function SportsPanel({
     }
   }
 
+  /* Muda já no ecrã; se o servidor recusar, volta ao que lá está. */
+  async function mover(i: number, passo: -1 | 1) {
+    const ids = trocar(academy.sports.map((s) => s.id), i, passo);
+    if (!ids) return;
+    aplicarOrdemDasModalidades(ids);
+    await apiPut("/api/sports/ordem", { ids }).catch(() => reloadAcademy());
+  }
+
   return (
     <>
       <div className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <p className="max-w-[62ch] text-meta leading-relaxed text-ink-3">
             Cada caixa é uma <strong className="font-medium text-ink-2">modalidade</strong>. Abre-a para ver o que é
-            dela: os escalões, as competições, os locais e os balneários.
+            dela: as equipas, os escalões, as competições, os locais e os balneários.
+            {academy.sports.length > 1 && (
+              <> A ordem conta: a primeira modalidade, e a primeira equipa dela, vêm escolhidas ao inscrever um atleta.</>
+            )}
           </p>
           {mayWrite && (
             <button type="button" className="ctl-primary shrink-0" onClick={() => setCreating(true)}>
@@ -94,7 +147,7 @@ export function SportsPanel({
             </p>
           </Lista>
         ) : (
-          academy.sports.map((sport) => (
+          academy.sports.map((sport, i) => (
             <SportRow
               key={sport.id}
               deepLinked={deepLinked}
@@ -102,6 +155,16 @@ export function SportsPanel({
               mayWrite={mayWrite}
               onEdit={() => setEditing(sport)}
               onRemove={() => void remove(sport)}
+              setas={
+                mayWrite && academy.sports.length > 1 ? (
+                  <Setas
+                    nome={sport.name}
+                    primeiro={i === 0}
+                    ultimo={i === academy.sports.length - 1}
+                    onMover={(passo) => void mover(i, passo)}
+                  />
+                ) : null
+              }
             />
           ))
         )}
@@ -134,12 +197,15 @@ function SportRow({
   onEdit,
   onRemove,
   deepLinked,
+  setas,
 }: {
   sport: Sport;
   mayWrite: boolean;
   deepLinked?: CatalogKey | null;
   onEdit: () => void;
   onRemove: () => void;
+  /** Subir e descer a modalidade; nulo com uma só ou sem permissão. */
+  setas: ReactNode;
 }) {
   const [open, setOpen] = useState(() => !!deepLinked && CATALOG_KEYS.includes(deepLinked));
 
@@ -198,6 +264,7 @@ function SportRow({
 
         {mayWrite && (
           <span className="flex shrink-0 items-center gap-0.5">
+            {setas}
             <button
               type="button"
               className="ctl-ghost size-8 justify-center px-0 text-ink-3 hover:text-ink"
@@ -223,6 +290,7 @@ function SportRow({
       {open && (
         <div className="border-t border-line bg-sunken/30">
           {fed && <FederacaoDaModalidade sport={sport} mayWrite={mayWrite} />}
+          <EquipasDaModalidade sport={sport} mayWrite={mayWrite} />
           {CATALOG_KEYS.map((key) => (
             <CatalogPanel
               key={key}
@@ -248,6 +316,114 @@ function SportRow({
         </div>
       )}
     </Lista>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * As equipas da modalidade, na época atual, pela ordem do clube.
+ *
+ * Só o nome, que abre a ficha da equipa. As setas mudam a ordem: a primeira é
+ * a que vem escolhida ao inscrever um atleta nesta modalidade, e é por esta
+ * ordem que as equipas aparecem nas listas da consola. "Nova equipa" abre o
+ * diálogo de sempre, já com esta modalidade.
+ */
+function EquipasDaModalidade({ sport, mayWrite }: { sport: Sport; mayWrite: boolean }) {
+  const { session } = useSession();
+  useStore();
+  const equipas: Team[] = listTeams(session).filter((t) => t.sportId === sport.id);
+  const podeOrdenar = mayWrite || can(session, "team:write");
+  const podeCriar = can(session, "team:write");
+  const [open, setOpen] = useState(false);
+  const [criando, setCriando] = useState(false);
+
+  async function mover(i: number, passo: -1 | 1) {
+    const ids = trocar(equipas.map((t) => t.id), i, passo);
+    if (!ids) return;
+    aplicarOrdemDasEquipas(ids);
+    await apiPut("/api/teams/ordem", { sportId: sport.id, ids }).catch(() => reloadAcademy());
+  }
+
+  // A mesma forma dos locais, balneários e competições (`CatalogPanel`).
+  return (
+    <div className="border-b border-line last:border-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-5 py-3.5 text-left"
+        aria-expanded={open}
+      >
+        <ChevronDown
+          className={cx("size-4 shrink-0 text-ink-3 transition-transform duration-[120ms]", !open && "-rotate-90")}
+          strokeWidth={1.75}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block text-body font-medium text-ink">Equipas</span>
+          <span className="block text-meta text-ink-3">da época atual; a primeira vem escolhida ao inscrever</span>
+        </span>
+        <span className="shrink-0 text-meta text-ink-3 tabular">{equipas.length}</span>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-4">
+          {equipas.length > 0 && (
+            <ul className="mb-2 space-y-1">
+              {equipas.map((t, i) => (
+                <li key={t.id} className="group flex items-center gap-1.5 rounded-[var(--radius-control)] px-1.5 py-1 hover:bg-sunken/60">
+                  {podeOrdenar && (
+                    <div className="flex shrink-0 flex-col opacity-0 group-hover:opacity-100 max-sm:opacity-100">
+                      <button
+                        type="button"
+                        disabled={i === 0}
+                        onClick={() => void mover(i, -1)}
+                        className="flex h-3 w-4 items-center justify-center text-ink-3 hover:text-ink disabled:opacity-0"
+                        aria-label={`Subir ${t.name}`}
+                      >
+                        <ChevronDown className="size-3 rotate-180" strokeWidth={2} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={i === equipas.length - 1}
+                        onClick={() => void mover(i, 1)}
+                        className="flex h-3 w-4 items-center justify-center text-ink-3 hover:text-ink disabled:opacity-0"
+                        aria-label={`Descer ${t.name}`}
+                      >
+                        <ChevronDown className="size-3" strokeWidth={2} />
+                      </button>
+                    </div>
+                  )}
+
+                  <span className="min-w-0 flex-1 truncate text-body text-ink">{t.name}</span>
+
+                  <Link
+                    to={`/equipas/${t.id}`}
+                    className="ctl-ghost h-7 shrink-0 text-meta opacity-0 group-hover:opacity-100 max-sm:opacity-100"
+                  >
+                    Abrir
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {podeCriar ? (
+            <button
+              type="button"
+              onClick={() => setCriando(true)}
+              className="ctl-ghost h-8 w-full justify-start gap-1.5 border border-dashed border-line text-ink-3 hover:border-line-strong hover:text-ink"
+            >
+              <Plus className="size-3.5" strokeWidth={2} />
+              Adicionar equipa
+            </button>
+          ) : (
+            equipas.length === 0 && <p className="text-meta text-ink-3">Ainda não há equipas em {sport.name}.</p>
+          )}
+        </div>
+      )}
+
+      {criando && <NewTeamDialog sportIdInicial={sport.id} onClose={() => setCriando(false)} />}
+    </div>
   );
 }
 

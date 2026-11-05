@@ -4,9 +4,10 @@ import {
   NavLink,
   Navigate,
   Route,
-  Routes,
   useNavigate,
 } from "react-router-dom";
+import { Ecras } from "@/Ecras";
+import { SaidaDoSplash, Splash } from "@/Splash";
 import QRCode from "qrcode";
 import {
   BarChart3,
@@ -124,24 +125,13 @@ export default function SocioApp() {
     );
   }
 
-  if (!data) {
-    return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8">
-        <span
-          className="size-12 animate-pulse rounded-[16px]"
-          style={{ background: "var(--color-signal)" }}
-          aria-hidden
-        />
-        <p className="text-meta text-ink-3">A carregar…</p>
-      </div>
-    );
-  }
+  if (!data) return <Splash />;
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col">
       <SocioHeader />
-      <main className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
-        <Routes>
+      {/* A troca de ecrã animada — a mesma da família. Ver `Ecras.tsx`. */}
+      <Ecras className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
           <Route path="/socio" element={<Inicio />} />
           {/* O sócio-atleta menor não tem quotas aqui: pagam-nas os encarregados. */}
           <Route
@@ -162,9 +152,9 @@ export default function SocioApp() {
           <Route path="/socio/cartao" element={<Navigate to="/socio" replace />} />
           <Route path="/socio/clube" element={<Navigate to="/socio/novidades" replace />} />
           <Route path="*" element={<Navigate to="/socio" replace />} />
-        </Routes>
-      </main>
+      </Ecras>
       <SocioTabBar />
+      <SaidaDoSplash />
     </div>
   );
 }
@@ -193,7 +183,11 @@ function SocioHeader() {
    * O filtro **fica**: é dele que depende o portal do `AreaSwitch`.
    */
   return (
-    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-md">
+    <header
+      className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-md"
+      /* Fica parado enquanto o ecrã desliza por baixo. Ver `Ecras.tsx`. */
+      style={{ viewTransitionName: "cabecalho" }}
+    >
       <div className="flex items-center gap-3">
         <ClubMark
           logoUrl={data.academy.logoUrl}
@@ -268,7 +262,10 @@ function SocioTabBar() {
   );
 
   return (
-    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
+    <nav
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]"
+      style={{ viewTransitionName: "barra" }}
+    >
       {/* Sem desfoque, como na barra da família — ver a nota em `App.tsx`. */}
       <ul
         className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5"
@@ -702,7 +699,7 @@ type Alvo = {
 };
 
 function Quotas() {
-  const { data } = useSocio();
+  const { data, porConfirmar } = useSocio();
   const [aPagar, setAPagar] = useState<Alvo | null>(null);
   /*
    * Até que mês o sócio quer ir. `null` = só o que está em dívida.
@@ -714,6 +711,24 @@ function Quotas() {
    */
   const [ate, setAte] = useState<string | null>(null);
   if (!data) return null;
+
+  /*
+   * A app abriu com o guardado, que não traz quotas de propósito (ver
+   * `porConfirmar` em `lib/socio.ts`). Nem "em dia" nem "em atraso" nem
+   * "ainda não há quotas": um espaço neutro até o servidor responder.
+   */
+  if (porConfirmar) {
+    return (
+      <div className="space-y-5 pt-3">
+        <Label>Quotas</Label>
+        <div className="animate-pulse space-y-3" aria-busy>
+          <div className="h-[92px] rounded-[20px] bg-sunken" />
+          <div className="h-[68px] rounded-[16px] bg-sunken/70" />
+          <div className="h-[68px] rounded-[16px] bg-sunken/40" />
+        </div>
+      </div>
+    );
+  }
 
   const abertas = data.fees.filter((f) => f.status === "OPEN");
   const historico = data.fees.filter((f) => f.status !== "OPEN");

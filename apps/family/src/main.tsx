@@ -60,6 +60,21 @@ vigiarVersao({ atual: __BUILD_ID__, base: import.meta.env.BASE_URL });
  */
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/*
+ * O scroll é a app que o gere, não o browser.
+ *
+ * Entrar num ecrã começa no topo e voltar atrás volta ao sítio onde se estava
+ * — ver `Ecras.tsx`. Sem isto o browser tentava repor o scroll por conta dele
+ * ao voltar, antes de o ecrã estar desenhado, e os dois desencontravam-se.
+ */
+if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+
+/*
+ * O iOS só pinta o estado `:active` (o cartão a encolher ao toque) se a página
+ * tiver um ouvinte de toque. Vazio e passivo: não faz nada, só liga o estado.
+ */
+document.addEventListener("touchstart", () => {}, { passive: true });
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StandaloneGate>

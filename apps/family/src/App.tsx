@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, useNavigate } from "react-router-dom";
+import { Ecras } from "@/Ecras";
+import { SaidaDoSplash, Splash as SplashDoClube } from "@/Splash";
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
 import { load, quandoSePaga, reload, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
@@ -55,34 +57,9 @@ export function useChild() {
   return ctx;
 }
 
-/**
- * Já se esteve neste ecrã desde que a app abriu?
- *
- * A resposta decide se a entrada em cascata toca. Módulo e não estado: quer-se
- * exactamente que sobreviva à navegação e morra quando a app fecha — voltar a
- * "Hoje" pela quinta vez não é uma estreia, mas abrir a app amanhã é.
- *
- * A resposta é lembrada para o caminho actual em vez de recalculada: o React
- * volta a desenhar este componente sempre que o store muda (e duas vezes por
- * render em desenvolvimento), e sem isto a segunda passagem já dizia "não é a
- * primeira" — cortando a animação a meio da primeira vez que ela devia tocar.
- */
-const visitados = new Set<string>();
-let ultimoCaminho = "";
-let ultimaResposta = false;
-
-function primeiraVisita(pathname: string): boolean {
-  if (pathname === ultimoCaminho) return ultimaResposta;
-  ultimoCaminho = pathname;
-  ultimaResposta = !visitados.has(pathname);
-  visitados.add(pathname);
-  return ultimaResposta;
-}
-
 export default function App() {
   const store = useStore();
   const session = useSession();
-  const { pathname } = useLocation();
   const [childId, setChild] = useState<string | null>(null);
   const [onboarded, setOnboarded] = useState(hasOnboarded);
 
@@ -167,7 +144,6 @@ export default function App() {
         value={value}
         onboarded={onboarded}
         setOnboarded={setOnboarded}
-        pathname={pathname}
         familiaPendente={familiaPendente}
       />
     </LegalGate>
@@ -191,7 +167,6 @@ function Dentro({
   value,
   onboarded,
   setOnboarded,
-  pathname,
   familiaPendente,
 }: {
   areaActiva: "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF" | null;
@@ -202,7 +177,6 @@ function Dentro({
   value: { child: Child; setChild: (id: string | null) => void } | null;
   onboarded: boolean;
   setOnboarded: (v: boolean) => void;
-  pathname: string;
 }) {
   /*
    * O arranque da família só depois da porta legal: com termos por aceitar o
@@ -300,14 +274,10 @@ function Dentro({
         <Header />
 
         {/*
-          `data-anima` desliga a entrada em cascata nos ecrãs já visitados —
-          ver `primeiraVisita` e a regra em styles.css.
+          A troca de ecrã animada, e a cascata de entrada só na primeira visita
+          a cada ecrã — ver `Ecras.tsx` e a regra `[data-anima]` em styles.css.
         */}
-        <main
-          data-anima={primeiraVisita(pathname) ? "on" : "off"}
-          className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]"
-        >
-          <Routes>
+        <Ecras className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
             <Route path="/" element={<Today />} />
             <Route path="/agenda" element={<Agenda />} />
             {/* O treino ou o jogo, por dentro — ver `screens/Evento`. */}
@@ -329,10 +299,10 @@ function Dentro({
             {/* Os dados para a fatura de quem paga pela app. Como os pagamentos, não existe na área de atleta. */}
             <Route path="/dados-de-faturacao" element={store.atleta ? <Navigate to="/" replace /> : <DadosDeFaturacao />} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+        </Ecras>
 
         <TabBar />
+        <SaidaDoSplash />
       </div>
     </ChildContext.Provider>
   );
@@ -556,31 +526,16 @@ function PerguntarPushDoStaff({ temOutras, onFeito }: { temOutras: boolean; onFe
   );
 }
 
+/** O símbolo do clube a respirar — ver `Splash.tsx`. Ao fim de 8 s, a saída. */
 function Splash() {
-  const [demora, setDemora] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDemora(true), 8000);
-    return () => clearTimeout(t);
-  }, []);
-
-  if (demora) {
-    return (
-      <Gate title="Está a demorar mais do que devia" action={<Retry />}>
-        Pode ser a ligação. Se insistir, entra outra vez — a sessão pode ter caducado.
-      </Gate>
-    );
-  }
-
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8">
-      <span
-        className="size-12 animate-pulse rounded-[16px]"
-        style={{ background: "var(--color-signal)" }}
-        aria-hidden
-      />
-      <p className="text-meta text-ink-3">A carregar…</p>
-    </div>
+    <SplashDoClube
+      demora={
+        <Gate title="Está a demorar mais do que devia" action={<Retry />}>
+          Pode ser a ligação. Se insistir, entra outra vez — a sessão pode ter caducado.
+        </Gate>
+      }
+    />
   );
 }
 
@@ -713,8 +668,16 @@ function Header() {
    *
    * O filtro **fica**: é dele que depende o portal do `AreaSwitch`.
    */
+  /*
+   * `view-transition-name`: na troca de ecrã o cabeçalho fica parado enquanto
+   * o conteúdo desliza por baixo dele — como numa app nativa. Sem o nome, ia
+   * na fotografia do ecrã e deslizava com ele. Ver `Ecras.tsx`.
+   */
   return (
-    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-md">
+    <header
+      className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-md"
+      style={{ viewTransitionName: "cabecalho" }}
+    >
       <div className="flex items-center gap-3">
         <ClubMark
           logoUrl={store.academy.logoUrl}
@@ -856,7 +819,11 @@ function TabBar() {
     : TABS;
 
   return (
-    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
+    <nav
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]"
+      /* Fica parada enquanto o ecrã desliza — como o cabeçalho. Ver `Ecras.tsx`. */
+      style={{ viewTransitionName: "barra" }}
+    >
       {/*
  * Sem `backdrop-blur` nesta barra — e não é um esquecimento.
  *

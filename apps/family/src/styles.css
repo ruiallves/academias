@@ -50,6 +50,27 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /*
+     O toque responde no instante.
+
+     `touch-action: manipulation` tira ao browser a espera pelo duplo toque
+     (o zoom) antes de entregar o clique. E o estado `:active` que os cartões
+     já tinham (encolher a 0.99, escurecer) saltava de um valor para o outro:
+     com uma transição curta o cartão *cede* ao dedo em vez de piscar. Só
+     transform, opacidade e cor de fundo — nunca medidas, que isso é layout a
+     cada fotograma. As classes `transition-*` do Tailwind e os `.cta`
+     continuam a mandar onde existem (vêm depois nesta folha).
+  */
+  a,
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+    transition:
+      transform 120ms var(--ease-out),
+      opacity 120ms var(--ease-out),
+      background-color 120ms var(--ease-out);
+  }
+
   /* Números com carácter: tabulares e um pouco apertados, para grandes valores
      não dançarem nem ocuparem uma linha inteira. */
   .num {
@@ -176,21 +197,23 @@
     to { opacity: 1; transform: none; }
   }
   .rise {
-    animation: rise 520ms var(--ease-out) both;
-    animation-delay: calc(var(--i, 0) * 60ms);
+    animation: rise 360ms var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 40ms);
   }
 
   /*
      A entrada é uma apresentação, não um pedágio.
 
-     Cada ecrã entra em cascata — 520ms por bloco, mais 60ms de atraso por cada
-     um — e isso é bonito **da primeira vez**. Ao terceiro toque no menu passa a
-     ser meio segundo de espera para ver uma coisa que já se viu, e é exactamente
-     isso que se sente como falta de fluidez: o conteúdo já lá está, e o ecrã
-     ainda está a decidir mostrá-lo.
+     Cada ecrã entra em cascata — 360ms por bloco, mais 40ms de atraso por cada
+     um (era 520 e 60: o sexto bloco demorava quase um segundo a assentar, e
+     isso lia-se como lentidão) — e isso é bonito **da primeira vez**. Ao
+     terceiro toque no menu passa a ser espera para ver uma coisa que já se
+     viu, e é exactamente isso que se sente como falta de fluidez: o conteúdo
+     já lá está, e o ecrã ainda está a decidir mostrá-lo.
 
-     Quem já cá esteve nesta sessão entra sem animação nenhuma. Ver
-     `primeiraVisita` em App.tsx. */
+     Quem já cá esteve nesta sessão entra sem animação nenhuma, e quem entra
+     com o ecrã a deslizar (a transição abaixo) também não — duas animações ao
+     mesmo tempo é o contrário de fluidez. Ver `Ecras.tsx`. */
   [data-anima="off"] .rise,
   [data-anima="off"] .pop {
     animation: none;
@@ -221,6 +244,172 @@
     .rise, .pop, .entra-direita, .entra-esquerda { animation: none; }
   }
 
+  /* ---- O arranque ---------------------------------------------------------- */
+
+  /* O símbolo do clube a respirar no splash, devagar — não é um "a carregar"
+     nervoso, é a app a abrir. Ver `Splash.tsx`. */
+  @keyframes respira {
+    0%, 100% { transform: scale(1); opacity: 0.92; }
+    50% { transform: scale(1.06); opacity: 1; }
+  }
+  .respira {
+    display: block;
+    animation: respira 1800ms ease-in-out infinite;
+  }
+
+  /* A saída do splash: o véu com o símbolo desvanece por cima da app já
+     desenhada, e o símbolo encolhe um nada enquanto some. */
+  @keyframes splash-sai {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes splash-encolhe {
+    from { transform: scale(1); }
+    to { transform: scale(0.9); }
+  }
+  .splash-sai {
+    animation: splash-sai 320ms var(--ease-out) 60ms both;
+  }
+  .splash-sai > * {
+    animation: splash-encolhe 380ms var(--ease-out) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .respira { animation: none; }
+    .splash-sai { animation-duration: 1ms; animation-delay: 0ms; }
+    .splash-sai > * { animation: none; }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   A troca de ecrã (View Transitions API) — ver `Ecras.tsx`.
+
+   O browser fotografa o ecrã antigo, deixa o React desenhar o novo e anima um
+   sobre o outro com o que está aqui. `data-nav` no <html> diz a direcção:
+
+     entrar  — o detalhe desliza da direita; o ecrã de trás afasta-se um quarto
+               para a esquerda, como no iOS.
+     voltar  — o inverso: o detalhe sai pela direita, o ecrã de trás volta.
+     trocar  — de separador para separador: um fundido curto, sem deslizar.
+
+   O cabeçalho e a barra têm nome próprio (`cabecalho`, `barra`) e por isso não
+   vão na fotografia do ecrã: ficam parados enquanto o conteúdo desliza por
+   baixo. O cartão tocado e o cabeçalho do detalhe partilham o nome
+   `partilhado` e o browser transforma um no outro (ver `lib/partilhado.ts`);
+   quando só um dos lados o tem (`:only-child`), move-se com o fundo.
+
+   As distâncias são em `vw` e não em `%`: para o fundo e para um cartão
+   sozinho a mesma regra tem de dar a mesma distância, e `%` é relativo à
+   largura de cada um.
+
+   Só `transform` e `opacity` — o telemóvel compõe isto na GPU, sem layout.
+   --------------------------------------------------------------------------- */
+
+@keyframes ecra-entra-da-direita {
+  from { transform: translateX(100vw); }
+  to { transform: translateX(0); }
+}
+@keyframes ecra-afasta-se {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-25vw); opacity: 0.6; }
+}
+@keyframes ecra-volta {
+  from { transform: translateX(-25vw); opacity: 0.6; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes ecra-sai-pela-direita {
+  from { transform: translateX(0); }
+  to { transform: translateX(100vw); }
+}
+@keyframes ecra-funde-entra {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ecra-funde-sai {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* O fundo não anima de tamanho nem de posição — só o que está lá dentro. */
+::view-transition-group(root) {
+  animation-duration: 0s;
+}
+/* O cabeçalho e a barra não mudam entre ecrãs: sem fundido, para não piscarem. */
+::view-transition-old(cabecalho),
+::view-transition-old(barra) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(cabecalho),
+::view-transition-new(barra) {
+  animation: none;
+}
+::view-transition-group(cabecalho),
+::view-transition-group(barra) {
+  animation-duration: 0s;
+}
+
+/* Entrar num detalhe. O novo leva uma sombra na borda, como uma folha por cima. */
+html[data-nav="entrar"]::view-transition-old(root),
+html[data-nav="entrar"]::view-transition-old(partilhado):only-child {
+  animation: ecra-afasta-se 320ms var(--ease-out) both;
+}
+html[data-nav="entrar"]::view-transition-new(root),
+html[data-nav="entrar"]::view-transition-new(partilhado):only-child {
+  animation: ecra-entra-da-direita 320ms var(--ease-out) both;
+}
+html[data-nav="entrar"]::view-transition-new(root) {
+  box-shadow: -12px 0 32px rgb(20 18 15 / 0.14);
+}
+
+/* Voltar. O antigo (o detalhe) sai por cima do novo, por isso fica em cima. */
+html[data-nav="voltar"]::view-transition-old(root),
+html[data-nav="voltar"]::view-transition-old(partilhado):only-child {
+  animation: ecra-sai-pela-direita 300ms var(--ease-out) both;
+  z-index: 1;
+}
+html[data-nav="voltar"]::view-transition-old(root) {
+  box-shadow: -12px 0 32px rgb(20 18 15 / 0.14);
+}
+html[data-nav="voltar"]::view-transition-new(root),
+html[data-nav="voltar"]::view-transition-new(partilhado):only-child {
+  animation: ecra-volta 300ms var(--ease-out) both;
+}
+
+/* Trocar de separador: um fundido curto. */
+html[data-nav="trocar"]::view-transition-old(root),
+html[data-nav="trocar"]::view-transition-old(partilhado):only-child {
+  animation: ecra-funde-sai 160ms ease-out both;
+}
+html[data-nav="trocar"]::view-transition-new(root),
+html[data-nav="trocar"]::view-transition-new(partilhado):only-child {
+  animation: ecra-funde-entra 200ms ease-out both;
+}
+
+/* O cartão a transformar-se no cabeçalho (e o contrário): a posição e o
+   tamanho animam-se com a curva da app, e as duas imagens fundem-se. */
+::view-transition-group(partilhado) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-out);
+  z-index: 2;
+}
+::view-transition-old(partilhado):not(:only-child),
+::view-transition-new(partilhado):not(:only-child) {
+  animation-duration: 240ms;
+  height: 100%;
+  object-fit: cover;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+@layer utilities {
   /* Uma faixa que desliza para o lado (as parcerias no Início): encaixa cartão
      a cartão, sem barra de deslocamento, e sangra até à borda do ecrã. */
   .faixa {

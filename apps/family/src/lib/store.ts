@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import { ApiError, apiGet, soft } from "@/lib/http";
 import { LEGAL_REQUIRED_CODE } from "@/lib/legal-signal";
 import { applyBrand } from "@/lib/brand";
+import { appHeader } from "@/lib/area";
+import { apagarArranque, guardarArranque, lerArranque } from "@/lib/arranque";
 
 /**
  * O estado da app da família, vindo da API.
@@ -583,6 +585,15 @@ type State = {
   pendente: boolean;
   /** O servidor respondeu `ACADEMY_SUSPENDED`: o clube está fechado por falta de pagamento à plataforma. */
   suspenso: boolean;
+  /**
+   * O que está no ecrã veio do guardado da última abertura, e o servidor ainda
+   * não respondeu — e por isso **não há mensalidades**: `payments` está vazio
+   * de propósito. O dinheiro nunca se mostra de memória: uma mensalidade paga
+   * ontem à noite aparecia por pagar durante um segundo, e um pai ia à
+   * secretaria por causa dela. Os Pagamentos mostram um espaço neutro
+   * enquanto isto for verdade. Ver `lib/arranque.ts`.
+   */
+  pagamentosPorConfirmar: boolean;
   academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
   /**
    * Quem entrou. O email vem junto porque há um ecrã que precisa dele: quando a
@@ -628,6 +639,7 @@ const EMPTY: State = {
   denied: null,
   pendente: false,
   suspenso: false,
+  pagamentosPorConfirmar: false,
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "", email: "" },
   role: "",
@@ -660,11 +672,82 @@ export function useStore(): State {
 
 let loading: Promise<void> | null = null;
 
-/** Carrega tudo. Chamadas concorrentes partilham o mesmo pedido. */
+/**
+ * As respostas cruas do arranque, tal como se guardam para a abertura seguinte.
+ * Ver `lib/arranque.ts` e o cabeçalho de `load`.
+ *
+ * **Sem mensalidades.** As cobranças (`/api/charges`, `/billing/quotas`) não
+ * entram no guardado: o estado de um pagamento é a única coisa aqui que não
+ * pode estar velha nem um segundo. Chegam só do servidor, e até lá a app diz
+ * que está por confirmar (`pagamentosPorConfirmar`).
+ */
+type Arranque = {
+  boot: ApiBootstrap;
+  athletes: ApiAthlete[];
+  teams: ApiTeam[];
+  sessions: ApiSession[];
+  matches: ApiMatch[];
+  announcements: ApiAnnouncement[];
+  notifications: ApiNotification[];
+  fees: (readonly [string, number | null])[];
+  evaluations: ApiEvaluation[];
+  reports: ApiReport[];
+  nutrition: ApiNutritionPlan[];
+  events: ApiEvent[];
+};
+
+/** O nome do guardado: a área de atleta e a de família são arranques diferentes. */
+const nomeDoArranque = () => `dados:${appHeader()}`;
+
+/** `charges` nulo = veio do guardado: sem mensalidades, e marcado como tal. */
+function traduzir(a: Arranque, charges: ApiCharge[] | null): State {
+  const estado = build(
+    a.boot,
+    a.athletes,
+    a.teams,
+    a.sessions,
+    a.matches,
+    charges ?? [],
+    a.announcements,
+    a.notifications,
+    new Map(a.fees),
+    a.evaluations,
+    a.reports,
+    a.nutrition,
+    a.events,
+  );
+  return { ...estado, pagamentosPorConfirmar: charges === null };
+}
+
+/**
+ * Carrega tudo. Chamadas concorrentes partilham o mesmo pedido.
+ *
+ * ## Abre já com o que havia
+ *
+ * No primeiro arranque da sessão, se há respostas guardadas da última vez,
+ * a app desenha-se com elas antes de pedir ao servidor — sem splash. As novas
+ * chegam por trás e substituem-nas sem piscar; se a rede falhar, ficam as
+ * guardadas, e a releitura seguinte corrige (é a mesma regra que já valia
+ * para as releituras com dados no ecrã, mais abaixo). As recusas do servidor
+ * (conta errada, pedido pendente, clube suspenso, termos por aceitar) passam
+ * por cima do guardado, como sempre passaram por cima do que estava carregado.
+ */
 export function load(): Promise<void> {
   if (loading) return loading;
 
   loading = (async () => {
+    if (!state.ready) {
+      const guardado = lerArranque<Arranque>(nomeDoArranque());
+      if (guardado) {
+        try {
+          apply(traduzir(guardado, null));
+        } catch {
+          // Um guardado que já não se traduz (a forma mudou) não vale nada: espera-se pela rede.
+          apagarArranque(nomeDoArranque());
+        }
+      }
+    }
+
     try {
       const boot = await apiGet<ApiBootstrap>("/api/bootstrap");
       // A identidade da academia assim que se sabe qual é — e guardada para o
@@ -736,9 +819,22 @@ export function load(): Promise<void> {
         ),
       );
 
-      apply(
-        build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports, nutrition, events),
-      );
+      const arranque: Arranque = {
+        boot,
+        athletes,
+        teams,
+        sessions,
+        matches,
+        announcements,
+        notifications,
+        fees,
+        evaluations,
+        reports,
+        nutrition,
+        events,
+      };
+      apply(traduzir(arranque, charges));
+      guardarArranque(nomeDoArranque(), arranque);
     } catch (error) {
       /*
        * Um 403 no arranque não é uma avaria: é esta conta a não ter lugar nesta
@@ -757,20 +853,24 @@ export function load(): Promise<void> {
        * basta não fingir que o problema é outro. Ver `legal-signal.ts`.
        */
       if (error instanceof ApiError && error.code === LEGAL_REQUIRED_CODE) {
+        apagarArranque(nomeDoArranque());
         apply({ ...EMPTY, ready: false });
         return;
       }
       // Registado e à espera do clube: tem ecrã próprio, não é conta errada.
       if (error instanceof ApiError && error.code === "FAMILY_APPROVAL_PENDING") {
+        apagarArranque(nomeDoArranque());
         apply({ ...EMPTY, ready: true, pendente: true });
         return;
       }
       // O clube está fechado por falta de pagamento à plataforma: tem ecrã próprio.
       if (error instanceof ApiError && error.code === "ACADEMY_SUSPENDED") {
+        apagarArranque(nomeDoArranque());
         apply({ ...EMPTY, ready: true, suspenso: true });
         return;
       }
       if (error instanceof ApiError && error.status === 403) {
+        apagarArranque(nomeDoArranque());
         apply({ ...EMPTY, ready: true, denied: error.message });
         return;
       }
@@ -1074,6 +1174,7 @@ function build(
     denied: null,
     pendente: false,
     suspenso: false,
+    pagamentosPorConfirmar: false,
     evaluations: evaluationsOut,
     reports: reportsOut,
     nutrition: nutritionOut,

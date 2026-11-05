@@ -181,7 +181,9 @@ export default function Payments() {
         </div>
       )}
 
-      {paraJa.length === 0 && chosen.length === 0 ? (
+      {store.pagamentosPorConfirmar ? (
+        <PorConfirmar />
+      ) : paraJa.length === 0 && chosen.length === 0 ? (
         <AllSettled emDia={proximas.length > 0} />
       ) : (
         <>
@@ -1023,6 +1025,24 @@ function MbRef({
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * O servidor ainda não disse o que está pago.
+ *
+ * A app abriu com o guardado da última vez, e o guardado não traz
+ * mensalidades de propósito (ver `pagamentosPorConfirmar` na store). Nem
+ * "tudo pago" nem "em dívida": um espaço neutro com a forma do painel, até a
+ * resposta chegar — que é questão de um segundo.
+ */
+function PorConfirmar() {
+  return (
+    <div className="mt-4 animate-pulse space-y-3" aria-busy>
+      <div className="h-[92px] rounded-[var(--radius-xl)] bg-sunken" />
+      <div className="h-[68px] rounded-[var(--radius-lg)] bg-sunken/70" />
+      <div className="h-[68px] rounded-[var(--radius-lg)] bg-sunken/40" />
+    </div>
+  );
+}
 
 /** `emDia`: nada por pagar agora, mas há meses lançados que ainda não chegaram. */
 function AllSettled({ emDia = false }: { emDia?: boolean }) {

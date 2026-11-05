@@ -3,6 +3,7 @@ import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Stethoscope, Trophy, Use
 import { useChild } from "@/App";
 import { consultaPorResponder, quandoSePaga, useStore, type Match, type Training } from "@/lib/store";
 import { cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
+import { abrirPartilhado, estiloDoCartao } from "@/lib/partilhado";
 
 /**
  * "O que preciso de saber hoje sobre o meu filho?"
@@ -127,6 +128,8 @@ export default function Today() {
         <div className="rise" style={{ ["--i" as string]: i++ }}>
           <Link
             to={`/consulta/${child.appointments[0].id}`}
+            onClick={() => abrirPartilhado(`/consulta/${child.appointments[0].id}`)}
+            style={estiloDoCartao(`/consulta/${child.appointments[0].id}`)}
             className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
           >
             <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
@@ -156,6 +159,8 @@ export default function Today() {
         <div className="rise" style={{ ["--i" as string]: i++ }}>
           <Link
             to={`/evento/jogo/${calledUp.matchId}`}
+            onClick={() => abrirPartilhado(`/evento/jogo/${calledUp.matchId}`)}
+            style={estiloDoCartao(`/evento/jogo/${calledUp.matchId}`)}
             className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
           >
             <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
@@ -335,11 +340,13 @@ function NextUp({
 }) {
   const isMatch = item.opponent !== undefined;
 
+  /* O cartão transforma-se no cabeçalho do ecrã do jogo ou do treino. Ver `lib/partilhado.ts`. */
   return (
     <Link
       to={href}
+      onClick={() => abrirPartilhado(href)}
       className="brandlit block overflow-hidden rounded-[var(--radius-xl)] p-4 active:scale-[0.99]"
-      style={{ boxShadow: "var(--shadow-float)" }}
+      style={{ boxShadow: "var(--shadow-float)", ...estiloDoCartao(href) }}
     >
       <div className="flex items-center justify-between gap-3">
         <span className="on-2 text-[11px] font-semibold tracking-[0.06em] uppercase">

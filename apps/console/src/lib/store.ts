@@ -601,6 +601,27 @@ export function aplicarLogistica(
   apply({ ...state, matches });
 }
 
+/**
+ * A ordem nova das modalidades, já na lista, antes de o servidor responder.
+ * As equipas seguem-nas: a lista é modalidade a modalidade.
+ */
+export function aplicarOrdemDasModalidades(ids: string[]): void {
+  const lugar = new Map(ids.map((id, i) => [id, i]));
+  const ordem = (sportId: string) => lugar.get(sportId) ?? ids.length;
+  const sports = [...state.academy.sports].sort((a, b) => ordem(a.id) - ordem(b.id));
+  const teams = [...state.teams].sort((a, b) => ordem(a.sportId) - ordem(b.sportId));
+  apply({ ...state, academy: { ...state.academy, sports }, teams });
+}
+
+/** A ordem nova das equipas `ids` (de uma modalidade): trocam entre si, o resto fica onde está. */
+export function aplicarOrdemDasEquipas(ids: string[]): void {
+  const mexem = new Set(ids);
+  const porId = new Map(state.teams.map((t) => [t.id, t]));
+  const fila = ids.map((id) => porId.get(id)).filter((t): t is Team => Boolean(t));
+  const teams = state.teams.map((t) => (mexem.has(t.id) ? fila.shift() ?? t : t));
+  apply({ ...state, teams });
+}
+
 /** A ficha como o servidor a devolve depois de a gravar — ver `updateStaffProfile`. */
 export type FichaDeStaff = {
   name: string;

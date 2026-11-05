@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { apiGet } from "@/lib/http";
 import { academySlug, saveSlug } from "@/lib/invite";
 import { setActiveArea } from "@/lib/area";
+import { guardarArranque, lerArranque } from "@/lib/arranque";
 
 /**
  * Os contextos desta conta neste clube — e qual está vestido.
@@ -103,21 +104,46 @@ export function contextosActuais(): AppContext[] | null {
  * (`state.active`) mantém-se entre recargas de dados — não entre arranques.
  */
 export async function loadContexts(): Promise<void> {
+  /*
+   * Os contextos da última abertura, enquanto o servidor não responde.
+   *
+   * É a primeira das três voltas do arranque, e sem isto a app ficava no splash
+   * à espera dela. Com os guardados a app escolhe já a vista (ou faz já a
+   * pergunta "como queres continuar?"); a resposta do servidor substitui-os a
+   * seguir, pela mesma regra. Só no primeiro arranque desta sessão: a seguir
+   * é o servidor que manda. Ver `lib/arranque.ts`.
+   */
+  if (state.contexts === null) {
+    const guardados = lerArranque<AppContext[]>("contextos");
+    if (guardados) {
+      state = { contexts: guardados, active: resolverActivo(guardados), error: null };
+      setActiveArea(state.active);
+      emit();
+    }
+  }
+
   if (import.meta.env.DEV) await resolverClubeDaConta();
   try {
     const r = await apiGet<{ contexts: AppContext[] }>("/api/app/contexts");
-    const tipos = r.contexts.map((c) => c.type);
-
-    let active = state.active ?? consumirEntrega();
-    if (active && !tipos.includes(active)) active = null;
-    if (!active && tipos.length === 1) active = tipos[0];
-
+    guardarArranque("contextos", r.contexts);
+    const active = resolverActivo(r.contexts);
     state = { contexts: r.contexts, active, error: null };
     setActiveArea(active);
   } catch (e) {
+    // Com os guardados à vista, uma falha de rede no arranque é silêncio: a próxima volta corrige.
+    if (state.contexts !== null) return;
     state = { ...state, error: e instanceof Error ? e.message : "Não foi possível carregar." };
   }
   emit();
+}
+
+/** Que contexto fica vestido, dada a lista — ver o cabeçalho de `loadContexts`. */
+function resolverActivo(contexts: AppContext[]): ContextType | null {
+  const tipos = contexts.map((c) => c.type);
+  let active = state.active ?? consumirEntrega();
+  if (active && !tipos.includes(active)) active = null;
+  if (!active && tipos.length === 1) active = tipos[0];
+  return active;
 }
 
 /**

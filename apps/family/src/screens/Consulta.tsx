@@ -4,6 +4,7 @@ import { CalendarOff, Check, ChevronLeft, Clock, Hourglass, MapPin, StickyNote, 
 import { reload, useStore, type Appointment } from "@/lib/store";
 import { responderConsulta } from "@/lib/consulta";
 import { cx, dateShort, dayName, time } from "@/ui";
+import { ESTILO_DO_CABECALHO } from "@/lib/partilhado";
 
 /**
  * Uma consulta marcada.
@@ -51,7 +52,8 @@ export default function Consulta() {
         Voltar
       </button>
 
-      <header className="px-1">
+      {/* O cartão tocado no Início ou na Agenda transforma-se neste cabeçalho. Ver `lib/partilhado.ts`. */}
+      <header className="px-1" style={ESTILO_DO_CABECALHO}>
         <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Consulta</p>
         <h1 className="mt-0.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">{a.title}</h1>
         <p className="mt-1 text-[14px] text-ink-2">

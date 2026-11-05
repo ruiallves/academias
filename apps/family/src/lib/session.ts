@@ -189,6 +189,18 @@ export function readToken(): string | null {
 }
 
 /**
+ * De quem é a sessão (o `sub` do token), ou `null` sem sessão.
+ *
+ * Serve para assinar o que se guarda no telemóvel para o arranque seguinte
+ * (ver `lib/arranque.ts`): o que foi carregado por uma conta nunca se mostra a
+ * outra, mesmo no mesmo aparelho.
+ */
+export function sessionUserId(): string | null {
+  const token = readToken();
+  return token ? (claims(token)?.sub ?? null) : null;
+}
+
+/**
  * A sessão inteira, para a entregar a outra app.
  *
  * Só a `lib/handoff.ts` precisa disto: a consola quer o par completo (acesso e
@@ -313,7 +325,7 @@ function terminarPorRecusa(motivo: string): void {
   try {
     localStorage.removeItem(KEY);
     for (const k of Object.keys(localStorage)) {
-      if (k.startsWith("academia.app.contexto")) localStorage.removeItem(k);
+      if (k.startsWith("academia.app.contexto") || k.startsWith("academia.arranque.")) localStorage.removeItem(k);
     }
     const daConsola = lerDaConsola();
     if (acabada && daConsola && mesmaConta(acabada.accessToken, daConsola.accessToken)) {
@@ -495,9 +507,12 @@ export function signOut(): void {
      * A escolha de contexto sai com a sessão — pelo prefixo, e não pelo módulo:
      * importar `lib/contexts` daqui fechava um ciclo (contexts → http → session).
      * A conta seguinte não tem de herdar a área em que a anterior ficou.
+     *
+     * E o que estava guardado para o arranque seguinte (ver `lib/arranque.ts`)
+     * sai também: são dados desta conta, e a próxima não os pode ver.
      */
     for (const k of Object.keys(localStorage)) {
-      if (k.startsWith("academia.app.contexto")) localStorage.removeItem(k);
+      if (k.startsWith("academia.app.contexto") || k.startsWith("academia.arranque.")) localStorage.removeItem(k);
     }
     /*
      * E a sessão da consola, que vive na mesma origem. Quem é treinador e pai

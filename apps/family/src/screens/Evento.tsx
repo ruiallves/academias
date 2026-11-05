@@ -20,6 +20,7 @@ import { reload, useStore, type CallUpState, type Match, type Training } from "@
 import { responderConvocatoria } from "@/lib/convocatoria";
 import { avisarAusencia, retirarAviso } from "@/lib/ausencia";
 import { cx, dayName, dateShort, time } from "@/ui";
+import { ESTILO_DO_CABECALHO } from "@/lib/partilhado";
 
 /**
  * A página de um evento — o treino ou o jogo, por dentro.
@@ -72,7 +73,8 @@ export default function Evento() {
         Voltar
       </button>
 
-      <header className="px-1">
+      {/* O cartão tocado no Início ou na Agenda transforma-se neste cabeçalho. Ver `lib/partilhado.ts`. */}
+      <header className="px-1" style={ESTILO_DO_CABECALHO}>
         <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
           {jogo ? "Jogo" : "Treino"}
           {/* Com duas equipas, de qual é. */}
