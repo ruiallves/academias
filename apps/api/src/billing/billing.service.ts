@@ -1837,13 +1837,136 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /*
-   * O ajuste para vários atletas de uma vez (`PUT /api/athletes/fee`) deixou de
-   * existir. Com o preço por modalidade, um valor não quer dizer nada sem se
-   * saber de que modalidade é — e três atletas escolhidos juntos podem praticar
-   * modalidades diferentes. O preço individual define-se atleta a atleta, uma
-   * linha por modalidade.
+  /**
+   * O preço de todos os atletas do clube, por modalidade, num pedido.
+   *
+   * É o que o "Preço por atleta" das Mensalidades mostra: o preço de cada um na
+   * lista de escolher, e o detalhe por modalidade no passo de ajustar. A mesma
+   * forma de `getAthleteFee`, lida em bloco por `lerPrecosDetalhados`.
+   *
+   * Pede `billing:write` e não só `billing:read`: é uma ferramenta de quem
+   * configura preços, e um encarregado (que tem `billing:read` do seu educando)
+   * não tem nada que ver o preço dos outros.
    */
+  async getAthleteFees(ctx: RequestContext) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const ids = (await db.athlete.findMany({ select: { id: true } })).map((a) => a.id);
+      const detalhe = await lerPrecosDetalhados(db, ids);
+      return {
+        atletas: ids.map((id) => {
+          const preco = detalhe(id);
+          return {
+            athleteId: id,
+            effectiveAmountCents: preco.amountCents,
+            modalidades: preco.modalidades.map((m) => ({
+              sportId: m.sportId,
+              sportName: m.sportName,
+              teamName: m.teamName,
+              teamAmountCents: m.teamAmountCents,
+              individualAmountCents: m.individualAmountCents,
+              amountCents: m.amountCents,
+            })),
+            valorUnicoCents: preco.valorUnico?.amountCents ?? null,
+          };
+        }),
+      };
+    });
+  }
+
+  /**
+   * Vários ajustes individuais de uma vez: cada um diz o atleta, a modalidade e
+   * o valor (nulo = volta ao preço da equipa).
+   *
+   * Substitui o ajuste em lote antigo (`PUT /api/athletes/fee`), que aplicava
+   * um valor a vários atletas sem dizer de que modalidade era. Aqui cada valor
+   * traz a modalidade, por isso a regra do preço por modalidade mantém-se.
+   *
+   * Tudo numa transação: ou gravam todos, ou nenhum. Um lote meio gravado
+   * deixava o clube sem saber quais dos vinte ficaram com o preço novo.
+   */
+  async setAthleteFees(
+    ctx: RequestContext,
+    itens: { athleteId: string; sportId?: string; amountCents?: number | null }[],
+    aplicarEm?: AplicarEm,
+  ) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
+    if (itens.length === 0) throw new BadRequestException("Não há preços para guardar.");
+
+    const vistos = new Set<string>();
+    for (const i of itens) {
+      const chave = `${i.athleteId}|${i.sportId ?? ""}`;
+      if (vistos.has(chave)) throw new BadRequestException("O mesmo atleta aparece duas vezes na mesma modalidade.");
+      vistos.add(chave);
+      if (i.amountCents != null) assertValidAmount(i.amountCents, true);
+    }
+
+    return this.prisma.runAs(
+      ctx.academyId,
+      async (db) => {
+        const ids = [...new Set(itens.map((i) => i.athleteId))];
+        const atletas = new Map(
+          (await db.athlete.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((a) => [a.id, a]),
+        );
+        if (atletas.size !== ids.length) throw new NotFoundException("Um dos atletas já não existe.");
+
+        // As modalidades de todos, de uma vez (o mesmo que `modalidadesDoAtleta`).
+        const modalidades = new Map<string, Map<string, string>>();
+        for (const m of await db.teamMembership.findMany({
+          where: { athleteId: { in: ids }, leftAt: null },
+          select: { athleteId: true, team: { select: { sportId: true, sport: { select: { name: true } } } } },
+        })) {
+          const mapa = modalidades.get(m.athleteId) ?? new Map<string, string>();
+          mapa.set(m.team.sportId, m.team.sport.name);
+          modalidades.set(m.athleteId, mapa);
+        }
+
+        const comValorTirado = new Set<string>();
+        for (const i of itens) {
+          const atleta = atletas.get(i.athleteId)!;
+          const dele = modalidades.get(i.athleteId) ?? new Map<string, string>();
+          let sport: { id: string; name: string } | null = null;
+          if (i.sportId) {
+            const nome = dele.get(i.sportId);
+            if (!nome) throw new BadRequestException(`${atleta.name} não tem equipa nessa modalidade.`);
+            sport = { id: i.sportId, name: nome };
+          } else if (dele.size > 0) {
+            throw new BadRequestException(`Falta a modalidade do valor de ${atleta.name}.`);
+          }
+
+          if (i.amountCents == null) {
+            await endIndividualEnrollments(db, atleta.id, sport?.id ?? null);
+            comValorTirado.add(atleta.id);
+          } else {
+            await applyIndividualFee(db, ctx.academyId, atleta, i.amountCents, sport);
+          }
+        }
+
+        const periodo = periodoActual();
+        const gera = this.geraAgora(aplicarEm);
+        const cobrancas = gera ? await gerarCobrancas(db, ctx.academyId, periodo, ids) : null;
+
+        /*
+         * As mensalidades já emitidas passam ao preço novo — as mesmas regras de
+         * `setAthleteFee` e `clearAthleteFee`: o valor gravado só mexe no mês
+         * corrente se se escolheu "já este mês"; tirar um ajuste mexe sempre.
+         */
+        const reprecificar = gera ? ids : ids.filter((id) => comValorTirado.has(id));
+        const reprecadas = reprecificar.length
+          ? await reprecificarPelaRegra(db, ctx.academyId, periodo, reprecificar)
+          : { actualizadas: 0, intocadas: 0 };
+
+        return {
+          guardados: itens.length,
+          atletas: ids.length,
+          criadas: cobrancas?.criadas ?? 0,
+          reprecadas,
+        };
+      },
+      { timeoutMs: 60_000 },
+    );
+  }
 
   /**
    * Remove o ajuste individual de uma modalidade — nessa modalidade, o atleta
@@ -3439,7 +3562,12 @@ async function endIndividualEnrollments(db: ScopedClient, athleteId: string, spo
   const today = new Date();
   const activeIds = rows.filter((e) => isActiveEnrollment(e, today)).map((e) => e.id);
   if (activeIds.length === 0) return;
-  await db.enrollment.updateMany({ where: { id: { in: activeIds } }, data: { endsOn: today } });
+  /*
+   * Um milissegundo antes de agora. Activa é `endsOn >= agora`: fechada em
+   * "agora", uma leitura no mesmo milissegundo (a reprecificação logo a seguir,
+   * na mesma transação) ainda a via activa e cobrava o ajuste acabado de tirar.
+   */
+  await db.enrollment.updateMany({ where: { id: { in: activeIds } }, data: { endsOn: new Date(today.getTime() - 1) } });
 }
 
 /** As modalidades em que o atleta tem equipa agora, com o nome. */

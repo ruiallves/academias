@@ -35,7 +35,8 @@ import { Noticias } from "./Noticias";
 import { Loja } from "./Loja";
 import { Bilheteira } from "./Bilheteira";
 import { Estadio } from "./Estadio";
-import { Equipas, Patrocinadores, Mensagens } from "./Conteudo";
+import { Equipas, Mensagens } from "./Conteudo";
+import { EditorDePatrocinadores } from "@/routes/director/Patrocinadores";
 
 /**
  * Website — o site do clube, gerido daqui. Só para clubes com o site no plano
@@ -79,7 +80,7 @@ const SECOES: Secao[] = [
   },
   { key: "noticias", label: "Notícias", grupo: "Conteúdo", icone: Newspaper, descricao: "O que se escreve sobre o clube. As três em destaque abrem a página de início." },
   { key: "equipas", label: "Equipas", grupo: "Conteúdo", icone: Users, descricao: "Que equipas aparecem no site. O plantel só com o consentimento das famílias." },
-  { key: "patrocinadores", label: "Patrocinadores", grupo: "Conteúdo", icone: Handshake, descricao: "Quem apoia o clube. Aparecem no fundo de todas as páginas." },
+  { key: "patrocinadores", label: "Patrocinadores", grupo: "Conteúdo", icone: Handshake, descricao: "Quem apoia o clube. Aparecem no fundo de todas as páginas e na app dos sócios, com a vantagem de cada um. A mesma lista de Gestão → Patrocinadores." },
   { key: "estadio", label: "Estádio", grupo: "Vendas", icone: Recinto, descricao: "O recinto visto de cima, com as bancadas. Quem compra um bilhete vê no mapa onde vai ficar." },
   { key: "bilheteira", label: "Bilheteira", grupo: "Vendas", icone: Ticket, descricao: "Bilhetes para os jogos, em casa e fora: preços por bancada e público, quem compra e quando, as vendas e o leitor dos seguranças à porta. O bilhete chega com um código QR." },
   { key: "loja", label: "Loja", grupo: "Vendas", icone: ShoppingBag, descricao: "Os produtos à venda no site, com tamanhos, stock e preço; as encomendas para preparar e entregar; e como o clube entrega (levantamento ou envio)." },
@@ -186,7 +187,7 @@ function WebsiteDoClube() {
             {carregado && ativa === "legal" && <InformacaoLegal />}
             {carregado && ativa === "noticias" && <Noticias />}
             {carregado && ativa === "equipas" && <Equipas />}
-            {carregado && ativa === "patrocinadores" && <Patrocinadores />}
+            {carregado && ativa === "patrocinadores" && <EditorDePatrocinadores />}
             {carregado && ativa === "estadio" && <Estadio />}
             {carregado && ativa === "bilheteira" && <Bilheteira onIrParaEstadio={() => ir("estadio")} />}
             {carregado && ativa === "loja" && <Loja />}

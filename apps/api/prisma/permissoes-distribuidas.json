@@ -70,5 +70,7 @@
   "conduct:read": "20261020100000_canal_de_denuncia",
   "conduct:write": "20261020100000_canal_de_denuncia",
   "website:read": "20261020150000_site_fase_1",
-  "website:write": "20261020150000_site_fase_1"
+  "website:write": "20261020150000_site_fase_1",
+  "sponsor:read": "20261104160000_parcerias",
+  "sponsor:write": "20261104160000_parcerias"
 }

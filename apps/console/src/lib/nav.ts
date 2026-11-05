@@ -31,6 +31,7 @@ import {
   FileSignature,
   Globe,
   ShieldAlert,
+  Handshake,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
@@ -344,6 +345,11 @@ export const NAV_CATALOG: NavGroup[] = [
         maior do que é, e quem entra na consola não vem para aqui todos os dias.
       */
       { key: "inventory", label: "Inventário", to: "/inventario", icon: Boxes, requires: "inventory:read" },
+      /*
+        Os patrocinadores e parceiros do clube. Uma lista só: a do site
+        (Connect Pro) e a do separador Parcerias da app do sócio.
+      */
+      { key: "sponsors", label: "Patrocinadores", to: "/patrocinadores", icon: Handshake, requires: "sponsor:read" },
     ],
   },
   {

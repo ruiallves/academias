@@ -59,6 +59,7 @@ import Inscricoes from "@/routes/inscricoes/Inscricoes";
 import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import Soon from "@/routes/Soon";
 import Website from "@/routes/website/Website";
+import Patrocinadores from "@/routes/director/Patrocinadores";
 
 /**
  * A mesma árvore de rotas serve os dois perfis.
@@ -101,6 +102,8 @@ export default function App() {
         <Route path="inventario/artigos" element={<Allow p="inventory:read"><InventoryItems /></Allow>} />
         <Route path="inventario/artigos/:id" element={<Allow p="inventory:read"><InventoryItemDetail /></Allow>} />
         <Route path="inventario/entregas" element={<Allow p="inventory:read"><InventoryDeliveries /></Allow>} />
+        {/* Os patrocinadores: a lista do site e das parcerias da app do sócio. */}
+        <Route path="patrocinadores" element={<Allow p="sponsor:read"><Patrocinadores /></Allow>} />
         {/* O menu chamava-se "Treinadores" até a academia passar a ter também
             departamento clínico e direção. Links antigos continuam a funcionar. */}
         <Route path="treinadores" element={<Navigate to="/staff" replace />} />

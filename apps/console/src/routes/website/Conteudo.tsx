@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Handshake, ImagePlus, Inbox, Loader2, Mail, Plus, Trash2, Users } from "@/lib/icons";
+import { ImagePlus, Inbox, Loader2, Mail, Trash2, Users } from "@/lib/icons";
 import { Empty, Loading, cx } from "@/components/primitives";
-import { Dialog, dialogInputClass } from "@/components/Dialog";
+import { Dialog } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { useStore } from "@/lib/store";
@@ -9,16 +9,12 @@ import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import {
   apagarMensagem,
-  apagarPatrocinador,
-  editarPatrocinadorAdiado,
   enviarImagem,
   guardarConfig,
-  guardarPatrocinador,
   listarMensagens,
   mudarMensagem,
   useSite,
   type MensagemDoSite,
-  type Patrocinador,
 } from "@/lib/website";
 import { mostrarErro, mostrarOk, textoDoErro } from "@/lib/avisos";
 
@@ -177,149 +173,6 @@ function FotoDaEquipa({ id, nome }: { id: string; nome: string }) {
         </button>
       )}
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Patrocinadores                                                               */
-/* -------------------------------------------------------------------------- */
-
-export function Patrocinadores() {
-  const store = useStore();
-  const slug = store.academy.slug;
-  const site = useSite(slug);
-  const [nome, setNome] = useState("");
-  const [url, setUrl] = useState("");
-
-  const juntar = async () => {
-    const n = nome.trim();
-    if (!n) return;
-    await guardarPatrocinador({ id: "", nome: n, url: url.trim(), logo: "" });
-    setNome("");
-    setUrl("");
-    mostrarOk(`${n} acrescentado.`);
-  };
-
-  return (
-    <div className="space-y-4">
-      <form
-        className="grid gap-2 rounded-[12px] border border-line bg-surface p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void juntar().catch(() => undefined);
-        }}
-      >
-        <input className={dialogInputClass} aria-label="Nome do patrocinador" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-        <input className={dialogInputClass} aria-label="Site do patrocinador" type="url" placeholder="Site (opcional)" value={url} onChange={(e) => setUrl(e.target.value)} />
-        <button type="submit" className="ctl-primary" disabled={!nome.trim()}>
-          <Plus className="size-4" strokeWidth={2} />
-          Acrescentar
-        </button>
-      </form>
-
-      {site.patrocinadores.length === 0 ? (
-        <Empty icon={Handshake} title="Sem patrocinadores" detail="Aparecem no fundo de todas as páginas do site, com ligação ao site de cada um." compact />
-      ) : (
-        <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
-          {site.patrocinadores.map((p) => (
-            <LinhaPatrocinador key={p.id} p={p} />
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/**
- * Um patrocinador: o logótipo (ou um espaço para o pôr), o nome, o site.
- *
- * O botão abre o seletor de ficheiros escondido; não há `<label>` à volta de
- * nada tocável (ver `check:toque`). O logótipo é reduzido a 320 px antes de
- * carregar, ver `enviarImagem`.
- */
-function LinhaPatrocinador({ p }: { p: Patrocinador }) {
-  const ficheiro = useRef<HTMLInputElement | null>(null);
-  const [aCarregar, setACarregar] = useState(false);
-
-  // Escrever no nome ou no site: o ecrã muda já, o servidor ao fim de meio segundo.
-  const mudar = (f: (x: Patrocinador) => Patrocinador) => editarPatrocinadorAdiado(f(p));
-
-  const escolher = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = "";
-    if (!f) return;
-    setACarregar(true);
-    try {
-      const logo = await enviarImagem(f, 320);
-      await guardarPatrocinador({ ...p, logo });
-      mostrarOk(`Logótipo de ${p.nome} guardado.`);
-    } catch (err) {
-      mostrarErro(textoDoErro(err, "Não foi possível usar esta imagem."));
-    } finally {
-      setACarregar(false);
-    }
-  };
-
-  return (
-    <li className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
-      <input ref={ficheiro} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={escolher} />
-      <button
-        type="button"
-        onClick={() => ficheiro.current?.click()}
-        disabled={aCarregar}
-        aria-label={p.logo ? `Trocar o logótipo de ${p.nome}` : `Pôr o logótipo de ${p.nome}`}
-        title={p.logo ? "Trocar o logótipo" : "Pôr o logótipo"}
-        className={cx(
-          "grid h-14 w-24 shrink-0 place-items-center overflow-hidden rounded-[8px] border transition-colors",
-          p.logo ? "border-line bg-white hover:border-line-strong" : "border-dashed border-line-strong bg-sunken/40 text-ink-3 hover:border-ink-3 hover:text-ink",
-        )}
-      >
-        {aCarregar ? (
-          <Loader2 className="size-4 animate-spin" strokeWidth={1.75} />
-        ) : p.logo ? (
-          <img src={p.logo} alt="" className="max-h-11 max-w-20 object-contain" />
-        ) : (
-          <span className="flex flex-col items-center gap-0.5 text-[11px] font-medium">
-            <ImagePlus className="size-4" strokeWidth={1.75} />
-            Logótipo
-          </span>
-        )}
-      </button>
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <input
-          className={cx(dialogInputClass, "font-medium")}
-          aria-label="Nome do patrocinador"
-          value={p.nome}
-          onChange={(e) => mudar((x) => ({ ...x, nome: e.target.value }))}
-        />
-        <input
-          className={dialogInputClass}
-          aria-label={`Site de ${p.nome}`}
-          type="url"
-          placeholder="Site (opcional)"
-          value={p.url}
-          onChange={(e) => mudar((x) => ({ ...x, url: e.target.value }))}
-        />
-      </div>
-      <div className="flex items-center gap-1">
-        {p.logo && (
-          <button type="button" className="ctl-ghost" onClick={() => void guardarPatrocinador({ ...p, logo: "" }).catch(() => undefined)}>
-            Tirar logótipo
-          </button>
-        )}
-        <button
-          type="button"
-          aria-label={`Tirar ${p.nome}`}
-          className="ctl-ghost size-9 justify-center px-0 text-risk"
-          onClick={async () => {
-            await apagarPatrocinador(p.id).catch(() => undefined);
-            mostrarOk(`${p.nome} tirado.`);
-          }}
-        >
-          <Trash2 className="size-4" strokeWidth={1.75} />
-        </button>
-      </div>
-    </li>
   );
 }
 

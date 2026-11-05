@@ -32,7 +32,7 @@
     "test:bilheteira-base": "node scripts/test-bilheteira-base.mjs",
     "test:bilheteira": "esbuild scripts/test-bilheteira.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-bilheteira.mjs --log-level=warning && node node_modules/.cache/test-bilheteira.mjs",
     "test:dia-do-pagamento": "esbuild scripts/test-dia-do-pagamento.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-dia-do-pagamento.mjs --log-level=warning && node node_modules/.cache/test-dia-do-pagamento.mjs",
-    "test:mes-da-receita":"esbuild scripts/test-mes-da-receita.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-mes-da-receita.mjs --log-level=warning && node node_modules/.cache/test-mes-da-receita.mjs",
+    "test:mes-da-receita": "esbuild scripts/test-mes-da-receita.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-mes-da-receita.mjs --log-level=warning && node node_modules/.cache/test-mes-da-receita.mjs",
     "test:loja": "esbuild scripts/test-loja.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-loja.mjs --log-level=warning && node node_modules/.cache/test-loja.mjs",
     "test:site-tipos": "esbuild scripts/test-site-tipos.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-site-tipos.mjs --log-level=warning && node node_modules/.cache/test-site-tipos.mjs",
     "test:cobranca": "esbuild scripts/test-cobranca.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-cobranca.mjs --log-level=warning && node node_modules/.cache/test-cobranca.mjs",
@@ -117,7 +117,8 @@
     "test:family-app": "node scripts/test-family-app.mjs",
     "test:ficha-de-socio-da-conta": "esbuild scripts/test-ficha-de-socio-da-conta.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-ficha-de-socio-da-conta.mjs --log-level=warning && node node_modules/.cache/test-ficha-de-socio-da-conta.mjs",
     "test:ficha-unica": "esbuild scripts/test-ficha-unica.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-ficha-unica.mjs --log-level=warning --packages=external && node node_modules/.cache/test-ficha-unica.mjs",
-    "test:aviso-ao-treinador": "esbuild scripts/test-aviso-ao-treinador.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-aviso-ao-treinador.mjs --log-level=warning && node node_modules/.cache/test-aviso-ao-treinador.mjs"
+    "test:aviso-ao-treinador": "esbuild scripts/test-aviso-ao-treinador.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-aviso-ao-treinador.mjs --log-level=warning && node node_modules/.cache/test-aviso-ao-treinador.mjs",
+    "test:precos-em-lote": "esbuild scripts/test-precos-em-lote.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-precos-em-lote.mjs --log-level=warning && node node_modules/.cache/test-precos-em-lote.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

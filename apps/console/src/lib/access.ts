@@ -259,6 +259,8 @@ export const AREAS: Area[] = [
    * as Definições. Só aparece a quem tem o site no plano (Connect Pro).
    */
   { label: "Website", hint: "o site do clube: notícias, loja, bilheteira e as mensagens de contacto", read: "website:read", write: "website:write" },
+  // Os patrocinadores entram no catálogo no dia em que nascem: a lista que o site e a app dos sócios mostram.
+  { label: "Patrocinadores", hint: "patrocinadores e parceiros do clube, e a vantagem de cada um para os sócios", read: "sponsor:read", write: "sponsor:write" },
 ];
 
 /**

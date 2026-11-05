@@ -129,6 +129,23 @@ export type SocioInicio = {
   matches: SocioMatch[];
   news: { id: string; title: string; body: string; publishedAt: string }[];
   polls: SocioPoll[];
+  /**
+   * Os patrocinadores e parceiros do clube (Gestão → Patrocinadores na
+   * consola), pela ordem que o clube escolheu. Vazio, o separador Parcerias
+   * não existe. Ausente num servidor antigo: lê-se como vazio.
+   */
+  partners?: SocioPartner[];
+};
+
+export type SocioPartner = {
+  id: string;
+  name: string;
+  /** O site do parceiro (sempre http/https). Nulo sem site. */
+  url: string | null;
+  /** O logótipo, no bucket público do site. Nulo sem logótipo. */
+  logoUrl: string | null;
+  /** A vantagem para os sócios. Vazio = só patrocinador. */
+  benefit: string;
 };
 
 type State = {

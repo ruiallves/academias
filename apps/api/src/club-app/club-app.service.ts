@@ -544,7 +544,7 @@ export class ClubAppService {
     /* ---- 2. O clube, e a fotografia em paralelo -------------------------- */
     const [clube, photoUrl] = await Promise.all([
       this.prisma.runAs(academyId, async (db) => {
-        const [jogosMarcados, noticias, sondagens, votos, vendas] = await Promise.all([
+        const [jogosMarcados, noticias, sondagens, votos, vendas, parceiros] = await Promise.all([
           /*
            * Todos os jogos por disputar, de todos os escalões — o sócio segue o
            * clube inteiro, não só a equipa do filho (essa é a app da família).
@@ -580,6 +580,16 @@ export class ClubAppService {
           }),
           db.pollVote.findMany({ where: { memberId: member.id }, select: { pollId: true, optionId: true } }),
           db.academy.findFirst({ where: { id: academyId }, select: SELECT_VENDAS }),
+          /*
+           * Os patrocinadores e parceiros do clube (Gestão → Patrocinadores),
+           * a mesma lista do site. A app mostra-os no separador Parcerias, que
+           * só existe quando há algum, e alguns no Início.
+           */
+          db.siteSponsor.findMany({
+            orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+            take: 200,
+            select: { id: true, name: true, url: true, logoUrl: true, benefit: true },
+          }),
         ]);
 
         /*
@@ -639,6 +649,7 @@ export class ClubAppService {
             myOptionId: meusVotos.get(p.id) ?? null,
             options: p.options.map((o) => ({ id: o.id, label: o.label, votes: o._count.votes })),
           })),
+          partners: parceiros.map((p) => ({ id: p.id, name: p.name, url: p.url, logoUrl: p.logoUrl, benefit: p.benefit })),
         };
       }),
       /*

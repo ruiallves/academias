@@ -220,6 +220,19 @@
   @media (prefers-reduced-motion: reduce) {
     .rise, .pop, .entra-direita, .entra-esquerda { animation: none; }
   }
+
+  /* Uma faixa que desliza para o lado (as parcerias no Início): encaixa cartão
+     a cartão, sem barra de deslocamento, e sangra até à borda do ecrã. */
+  .faixa {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .faixa::-webkit-scrollbar { display: none; }
+  .faixa > * { scroll-snap-align: start; }
 }
 
 /* ---------------------------------------------------------------------------

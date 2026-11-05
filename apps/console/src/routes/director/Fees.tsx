@@ -5,13 +5,13 @@ import { PageHeader } from "@/components/Shell";
 import { AvisoDePagamentos } from "@/components/finance/AvisoDePagamentos";
 import { euros } from "@/lib/finance";
 import { Dialog, DialogField } from "@/components/Dialog";
-import { type Column, cx, DataTable, Empty, ListaDeEscolha, Metric, MetricRow, Monogram, Panel, Pill, SelectField } from "@/components/primitives";
+import { type Column, cx, DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, SelectField } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
 import { FeeStatusControl, STATUS_LABEL, STATUS_TONE } from "@/components/finance/FeeStatusControl";
-import { PrecoDoAtleta } from "@/components/finance/PrecoDoAtleta";
+import { PrecoPorAtletaDialog } from "@/components/finance/PrecoPorAtletaDialog";
 import { BillingCalendarDialog } from "@/components/finance/BillingCalendarDialog";
-import { CalendarDays, ChevronRight, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
+import { CalendarDays, CircleCheck, Download, Loader2, Plus, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   academy,
   arrears,
@@ -23,7 +23,6 @@ import {
   escaloesQuePagam,
   proximoPeriodoCobrado,
   listAllFees,
-  listAthletes,
   listFees,
   listTeams,
   teamById,
@@ -318,7 +317,6 @@ export default function Fees() {
       <PageHeader
         eyebrow={capitalize(label)}
         title="Mensalidades"
-        subtitle="O estado de cada mensalidade é confirmado pelo webhook da euPago, nunca pelo navegador."
       >
         {/*
           Exportar. Desactivado enquanto não houver mensalidade nenhuma — um
@@ -515,7 +513,12 @@ export default function Fees() {
         <TeamFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setPricesOpen(false)} />
       )}
       {athletePricesOpen && (
-        <AthleteFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setAthletePricesOpen(false)} />
+        <PrecoPorAtletaDialog
+          session={session}
+          onSaved={onFeeSaved}
+          onClose={() => setAthletePricesOpen(false)}
+          escolhaDoMes={(valor, mudar) => <ApplyFromChoice value={valor} onChange={mudar} />}
+        />
       )}
     </>
   );
@@ -1083,113 +1086,6 @@ function TeamFeeInput({
 function paraCentimosDoPreco(v: string): number | null {
   const n = Number(v.trim().replace(/\s/g, "").replace("€", "").replace(",", "."));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-}
-
-/**
- * Preço por atleta: escolhe-se um atleta e define-se o valor em cada modalidade
- * que ele pratica.
- *
- * ## Um atleta de cada vez
- *
- * Aplicava o mesmo valor a vários atletas escolhidos juntos (irmãos, um grupo
- * com o mesmo acordo). Com o preço por modalidade isso deixou de fazer sentido:
- * um valor não quer dizer nada sem se saber de que modalidade é, e três atletas
- * escolhidos juntos podem praticar modalidades diferentes. O servidor também já
- * não o aceita.
- *
- * Escolhido o atleta, o que aparece é o mesmo que a ficha dele mostra, no
- * separador Mensalidades (`PrecoDoAtleta`): uma linha por modalidade, e a soma.
- */
-function AthleteFeesDialog({
-  session,
-  onSaved,
-  onClose,
-}: {
-  session: ReturnType<typeof useSession>["session"];
-  /** Gravou: a página lá fora relê as mensalidades em falta. */
-  onSaved: () => void;
-  onClose: () => void;
-}) {
-  const athletes = listAthletes(session);
-  const [aplicarEm, setAplicarEm] = useState<AplicarEm>(mesCobrado(currentPeriod) ? "atual" : "proximo");
-  const [query, setQuery] = useState("");
-  const [escolhido, setEscolhido] = useState<string | null>(null);
-
-  const q = query.trim().toLowerCase();
-  const visible = q ? athletes.filter((a) => a.name.toLowerCase().includes(q)) : athletes;
-  const atleta = escolhido ? athleteById(escolhido) : undefined;
-
-  return (
-    <Dialog
-      labelledBy="preco-por-atleta"
-      title="Preço por atleta"
-      subtitle={
-        atleta
-          ? atleta.name
-          : "Escolhe o atleta. O valor define-se em cada modalidade que ele pratica e sobrepõe-se ao preço da equipa."
-      }
-      onClose={onClose}
-      width={480}
-      footer={
-        <>
-          {atleta && (
-            <button type="button" onClick={() => setEscolhido(null)} className="ctl-ghost mr-auto">
-              Escolher outro atleta
-            </button>
-          )}
-          <button type="button" onClick={onClose} className="ctl-primary">
-            Concluído
-          </button>
-        </>
-      }
-    >
-      <ApplyFromChoice value={aplicarEm} onChange={setAplicarEm} />
-
-      {atleta ? (
-        <div className="px-5 py-5">
-          <PrecoDoAtleta athleteId={atleta.id} mayConfigure aplicarEm={aplicarEm} onSaved={onSaved} />
-        </div>
-      ) : (
-        <>
-          <div className="border-b border-line p-4">
-            <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Procurar atleta…"
-                autoFocus
-                className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface pr-3 pl-8 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <ListaDeEscolha className="max-h-[340px] overflow-y-auto">
-            {visible.length === 0 ? (
-              <li className="px-5 py-8 text-center text-meta text-ink-4">Ninguém com esse nome.</li>
-            ) : (
-              visible.map((a) => (
-                <li key={a.id}>
-                  <button
-                    type="button"
-                    onClick={() => setEscolhido(a.id)}
-                    className="flex w-full items-center gap-2.5 border-b border-line px-4 py-2.5 text-left transition-colors duration-[120ms] last:border-0 hover:bg-sunken"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-body font-medium text-ink">{a.name}</span>
-                      <span className="block truncate text-meta text-ink-3">{teamById(a.teamId)?.name ?? "Sem equipa"}</span>
-                    </span>
-                    <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
-                  </button>
-                </li>
-              ))
-            )}
-          </ListaDeEscolha>
-        </>
-      )}
-    </Dialog>
-  );
 }
 
 /**

@@ -169,6 +169,8 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
   // O site do clube: é a razão de ter permissão própria — dá-se a quem trata
   // da comunicação sem lhe dar as Definições.
   "website:read", "website:write",
+  // Os patrocinadores: a direção pode confiá-los a quem trata dos parceiros.
+  "sponsor:read", "sponsor:write",
   /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não

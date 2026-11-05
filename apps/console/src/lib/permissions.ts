@@ -189,6 +189,8 @@ export type Permission =
    * comunicação sem lhe dar as Definições. Por omissão, presidência e direção.
    */
   | "website:read" | "website:write"
+  /** Os patrocinadores e as parcerias dos sócios (Gestão → Patrocinadores). Gémea do servidor. */
+  | "sponsor:read" | "sponsor:write"
   | "clinical:write";
 
 export type Role =
@@ -231,6 +233,8 @@ const READ_ALL: Permission[] = [
   "conduct:read",
   // O site do clube: o mesmo. Gémea do servidor.
   "website:read",
+  // Os patrocinadores: o mesmo. Gémea do servidor.
+  "sponsor:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -267,6 +271,8 @@ const WRITE_ALL: Permission[] = [
   "conduct:write",
   // Publicar no site do clube. Gémea do servidor.
   "website:write",
+  // Os patrocinadores e as parcerias dos sócios. Gémea do servidor.
+  "sponsor:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -300,7 +306,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
         // As denúncias são da direção. Gémeo do servidor.
         p !== "conduct:read" &&
         // O site é da direção, como as Definições eram. Gémeo do servidor.
-        p !== "website:read",
+        p !== "website:read" &&
+        // Os patrocinadores são acordos do clube: da direção. Gémeo do servidor.
+        p !== "sponsor:read",
     ),
     "athlete:write",
     "team:write",

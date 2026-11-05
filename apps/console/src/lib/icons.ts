@@ -14,6 +14,8 @@ export {
   Hash,
   CalendarCheck,
   LayoutGrid,
+  /* O Inventário entre grelha e lista. */
+  List,
   Users,
   Home,
   Shield,

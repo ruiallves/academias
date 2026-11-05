@@ -220,6 +220,16 @@ export type Permission =
    * (presidência e direção), e só conta em clubes com o site no plano.
    */
   | "website:read" | "website:write"
+  /**
+   * Os patrocinadores e parceiros do clube (menu Gestão → Patrocinadores).
+   *
+   * Uma lista só: a mesma que o site mostra (Connect Pro) e a que os sócios
+   * veem no separador Parcerias da app, com a vantagem de cada um. Não vive
+   * em `website:*` porque um clube sem site também tem parceiros, e não vive
+   * em `member:*` porque tratar dos parceiros não é ver a lista de sócios.
+   * Por omissão: presidência e direção.
+   */
+  | "sponsor:read" | "sponsor:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -239,6 +249,8 @@ const READ_ALL: Permission[] = [
   "conduct:read",
   // O site do clube: o mesmo — presidência e direção, o coordenador filtra-o.
   "website:read",
+  // Os patrocinadores: o mesmo, o coordenador filtra-os.
+  "sponsor:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -269,6 +281,8 @@ const WRITE_ALL: Permission[] = [
   "conduct:write",
   // Publicar no site do clube: presidência e direção, onde `settings:write` estava.
   "website:write",
+  // Os patrocinadores e as parcerias dos sócios: presidência e direção.
+  "sponsor:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -303,7 +317,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
         // As denúncias são da direção: um caso pode ser sobre quem coordena.
         p !== "conduct:read" &&
         // O site é a cara pública do clube: da direção, como as Definições eram.
-        p !== "website:read",
+        p !== "website:read" &&
+        // Os patrocinadores são acordos do clube: da direção.
+        p !== "sponsor:read",
     ),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",

@@ -124,6 +124,8 @@ import { LegalAdminController } from "./legal/legal-admin.controller";
 import { LegalAdminService } from "./legal/legal-admin.service";
 import { SiteController } from "./site/site.controller";
 import { SiteService } from "./site/site.service";
+import { PatrocinadoresController } from "./patrocinadores/patrocinadores.controller";
+import { PatrocinadoresService } from "./patrocinadores/patrocinadores.service";
 import { SitePublicoController } from "./site/site-publico.controller";
 import { SiteContactoController } from "./site/site-contacto.controller";
 import { BilheteiraAppController, BilheteiraConsolaController, BilheteiraPublicaController } from "./bilheteira/bilheteira.controller";
@@ -238,6 +240,8 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     LegalAdminController,
     // O site do clube: o menu Website da consola, o site público (sem sessão) e o domínio no painel.
     SiteController,
+    // Gestão → Patrocinadores: a mesma lista do site e das parcerias da app do sócio.
+    PatrocinadoresController,
     SitePublicoController,
     SiteContactoController,
     BilheteiraPublicaController,
@@ -314,6 +318,7 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     PhotosService,
     ClubLogoService,
     SiteService,
+    PatrocinadoresService,
     SitePublicoService,
     BilheteiraService,
     BilheteiraEmissao,

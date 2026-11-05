@@ -7363,6 +7363,8 @@ model SiteNews {
   @@index([academyId, publishedAt])
 }
 
+/// Os patrocinadores e parceiros do clube. Uma lista só: Gestão → Patrocinadores
+/// na consola, o site (Connect Pro) e o separador Parcerias da app do sócio.
 model SiteSponsor {
   id        String  @id @default(cuid())
   academyId String
@@ -7370,6 +7372,8 @@ model SiteSponsor {
   name      String
   url       String?
   logoUrl   String?
+  /// A vantagem para os sócios ("15 % em consultas"). Vazio = só patrocinador.
+  benefit   String  @default("")
   position  Int     @default(0)
 
   createdAt DateTime @default(now())

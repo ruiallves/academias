@@ -282,6 +282,38 @@ class SetAthleteFeeDto extends SetFeeDto {
   sportId?: string;
 }
 
+/**
+ * Um preço do "Preço por atleta" em lote: este atleta, nesta modalidade.
+ *
+ * `amountCents` nulo volta ao preço da equipa (tira o ajuste). `sportId` só
+ * falta a um atleta sem equipa, e aí é o valor único.
+ */
+class PrecoDoAtletaItemDto {
+  @IsString() @Length(1, 40)
+  athleteId!: string;
+
+  @IsOptional() @IsString() @Length(1, 40)
+  sportId?: string;
+
+  @IsOptional()
+  @IsInt({ message: "O valor tem de ser em euros e cêntimos, sem outros caracteres" })
+  @Min(0, { message: "O valor não pode ser negativo" })
+  @Max(100_000, { message: "A mensalidade mais alta que se pode registar é 1000 € — confirma o valor que escreveste" })
+  amountCents?: number | null;
+}
+
+class SetAthleteFeesDto {
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @ValidateNested({ each: true })
+  @Type(() => PrecoDoAtletaItemDto)
+  itens!: PrecoDoAtletaItemDto[];
+
+  @IsOptional()
+  @IsIn(["atual", "proximo"])
+  aplicarEm?: AplicarEm;
+}
+
 /** As excepções de acesso a gravar para uma pessoa. Validadas — ver `invites.dto.ts`. */
 /**
  * O que o clube escreve na página de adesão.
@@ -1107,6 +1139,18 @@ export class AcademyController {
   @Post("charges/mensalidade")
   createManualFees(@Req() req: AuthedRequest, @Body() body: CreateManualFeesDto) {
     return this.billing.createManualFees(req.ctx, body);
+  }
+
+  /** O preço de todos os atletas, por modalidade — o "Preço por atleta" das Mensalidades. */
+  @Get("athletes/precos")
+  getAthleteFees(@Req() req: AuthedRequest) {
+    return this.billing.getAthleteFees(req.ctx);
+  }
+
+  /** Vários preços individuais de uma vez, numa transação. */
+  @Put("athletes/precos")
+  setAthleteFees(@Req() req: AuthedRequest, @Body() body: SetAthleteFeesDto) {
+    return this.billing.setAthleteFees(req.ctx, body.itens, body.aplicarEm);
   }
 
   /** O que este atleta paga hoje — individual, da equipa, ou nenhum dos dois. */

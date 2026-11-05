@@ -89,7 +89,7 @@ export class SiteService {
         inicio: inicioValido(config?.home),
         noticias: noticias.map(noticiaParaConsola),
         produtos: produtos.map(produtoParaConsola),
-        patrocinadores: patrocinadores.map((p) => ({ id: p.id, nome: p.name, url: p.url ?? "", logo: p.logoUrl ?? "" })),
+        patrocinadores: patrocinadores.map((p) => ({ id: p.id, nome: p.name, url: p.url ?? "", logo: p.logoUrl ?? "", vantagem: p.benefit })),
         bilheteira: Object.fromEntries(bilhetes.map((b) => [b.matchId, bilheteiraParaConsola(b)])),
         /** Quantas mensagens do formulário de contactos ninguém abriu ainda. */
         mensagensPorLer: porLer,

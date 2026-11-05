@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Handshake,
   Home,
   MapPin,
   Megaphone,
@@ -67,6 +68,7 @@ import { BotaoBilhetes, LugarAnualDoSocio, OsTeusBilhetes } from "@/screens/soci
 import { carregarBilhetes, useBilhetes } from "@/lib/bilhetes";
 import Notifications from "@/screens/Notifications";
 import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
+import { Parcerias, ParceriasNoInicio } from "@/screens/socio/Parcerias";
 
 /**
  * A Member View — a área de sócio da app do clube.
@@ -147,6 +149,11 @@ export default function SocioApp() {
             element={data.member.quotasPelaFamilia ? <Navigate to="/socio" replace /> : <Quotas />}
           />
           <Route path="/socio/jogos" element={<Jogos />} />
+          {/* As parcerias só existem com parceiros: sem nenhum, o endereço volta ao Início. */}
+          <Route
+            path="/socio/parcerias"
+            element={(data.partners ?? []).length > 0 ? <Parcerias /> : <Navigate to="/socio" replace />}
+          />
           <Route path="/socio/novidades" element={<Novidades />} />
           {/* As mesmas notificações da família — são da pessoa, não da área. Ver `lib/notificacoes`. */}
           <Route path="/socio/notificacoes" element={<Notifications />} />
@@ -239,6 +246,8 @@ const TABS = [
   { to: "/socio", label: "Início", icon: Home },
   { to: "/socio/quotas", label: "Quotas", icon: Wallet },
   { to: "/socio/jogos", label: "Jogos", icon: CalendarDays },
+  /* Só quando o clube tem parceiros (Gestão → Patrocinadores). Ver `SocioTabBar`. */
+  { to: "/socio/parcerias", label: "Parcerias", icon: Handshake },
   { to: "/socio/novidades", label: "Novidades", icon: Megaphone },
 ];
 
@@ -250,7 +259,13 @@ function SocioTabBar() {
    * Sócio-atleta menor: sem o separador das quotas. Quem as paga são os
    * encarregados, na área da família, em Pagamentos, junto das mensalidades.
    */
-  const tabs = data?.member.quotasPelaFamilia ? TABS.filter((t) => t.to !== "/socio/quotas") : TABS;
+  const semParceiros = (data?.partners ?? []).length === 0;
+  const tabs = TABS.filter(
+    (t) =>
+      !(t.to === "/socio/quotas" && data?.member.quotasPelaFamilia) &&
+      // Sem parceiros não há separador vazio: a barra fica como estava.
+      !(t.to === "/socio/parcerias" && semParceiros),
+  );
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
@@ -473,6 +488,9 @@ function Inicio() {
           )}
         </section>
       )}
+
+      {/* Algumas parcerias, numa faixa que desliza. As outras no separador. */}
+      <ParceriasNoInicio style={{ ["--i" as string]: i++ }} />
 
       {/* Por último, a sondagem por responder e os comunicados mais recentes. */}
       {(sondagem || data.news.length > 0) && (

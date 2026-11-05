@@ -118,7 +118,8 @@ export type BilheteiraDoJogo = {
 /** Uma categoria de sócio, para as colunas dos preços de sócio. */
 export type CategoriaDeSocio = { id: string; nome: string };
 
-export type Patrocinador = { id: string; nome: string; url: string; logo: string };
+/** Um patrocinador. A lista é a de Gestão → Patrocinadores (`lib/patrocinadores.ts`); a vantagem é para os sócios. */
+export type Patrocinador = { id: string; nome: string; url: string; logo: string; vantagem?: string };
 
 /** Um membro da direção, como aparece na página "O clube". */
 export type Dirigente = { nome: string; cargo: string };
@@ -447,6 +448,15 @@ export function useCarregamentoDoSite(slug: string): { carregado: boolean; erro:
   return { carregado, erro };
 }
 
+/**
+ * Os patrocinadores mudaram em Gestão → Patrocinadores: a cópia do site
+ * (contagens da Visão geral, pré-visualização do início) acompanha. Sem site
+ * carregado não há nada a acompanhar.
+ */
+export function patrocinadoresMudaram(lista: Patrocinador[]) {
+  if (estado.carregado) mudarLocal((s) => ({ ...s, patrocinadores: lista }));
+}
+
 /** O servidor recusou: volta a ler o que ficou gravado, para o ecrã não mentir. */
 function repor() {
   if (estado.slug) void carregarSite(estado.slug, true);
@@ -534,41 +544,6 @@ export async function apagarProduto(id: string) {
   mudarLocal((s) => ({ ...s, produtos: s.produtos.filter((x) => x.id !== id) }));
 }
 
-export async function guardarPatrocinador(p: Patrocinador): Promise<Patrocinador> {
-  const corpo = { nome: p.nome, url: p.url, logo: p.logo };
-  const gravado = p.id ? await apiPatch<Patrocinador>(`/api/site/patrocinadores/${p.id}`, corpo) : await apiPost<Patrocinador>("/api/site/patrocinadores", corpo);
-  mudarLocal((s) => ({
-    ...s,
-    patrocinadores: s.patrocinadores.some((x) => x.id === gravado.id)
-      ? s.patrocinadores.map((x) => (x.id === gravado.id ? gravado : x))
-      : [...s.patrocinadores, gravado],
-  }));
-  return gravado;
-}
-
-const patrocinadoresPendentes = new Map<string, ReturnType<typeof setTimeout>>();
-
-/** Escrever no nome ou no site de um patrocinador: o ecrã muda já, o servidor ao fim de meio segundo. */
-export function editarPatrocinadorAdiado(p: Patrocinador) {
-  mudarLocal((s) => ({ ...s, patrocinadores: s.patrocinadores.map((x) => (x.id === p.id ? p : x)) }));
-  const antes = patrocinadoresPendentes.get(p.id);
-  if (antes) clearTimeout(antes);
-  patrocinadoresPendentes.set(
-    p.id,
-    setTimeout(() => {
-      patrocinadoresPendentes.delete(p.id);
-      const atual = estado.site.patrocinadores.find((x) => x.id === p.id);
-      // Um nome vazio não se grava (o servidor recusava); fica à espera de ser escrito.
-      if (atual && atual.nome.trim()) void guardarPatrocinador(atual).catch(repor);
-    }, 500),
-  );
-}
-
-export async function apagarPatrocinador(id: string) {
-  await apiDelete(`/api/site/patrocinadores/${id}`);
-  mudarLocal((s) => ({ ...s, patrocinadores: s.patrocinadores.filter((x) => x.id !== id) }));
-}
-
 /**
  * Grava a bilheteira de um jogo. Com `tipos: []` num jogo que ainda não os
  * tem, o servidor copia os preços por omissão do recinto; volta a forma como
@@ -647,9 +622,9 @@ export const novoId = () =>
  * a transparência dos logótipos. Vai do browser para o armazenamento sem
  * passar pela API, como o símbolo do clube: a API só autoriza.
  */
-export async function enviarImagem(ficheiro: File, max = 1600): Promise<string> {
+export async function enviarImagem(ficheiro: File, max = 1600, rota = "/api/site/imagens"): Promise<string> {
   const reduzida = await imagemReduzida(ficheiro, max);
-  const { url, token, publicUrl } = await apiPost<{ url: string; token: string; publicUrl: string }>("/api/site/imagens", {
+  const { url, token, publicUrl } = await apiPost<{ url: string; token: string; publicUrl: string }>(rota, {
     contentType: reduzida.type,
   });
   const res = await fetch(url, { method: "PUT", headers: { "Content-Type": reduzida.type, Authorization: `Bearer ${token}` }, body: reduzida });
