@@ -226,7 +226,9 @@ function StaffHeader({
         }}
       />
 
-      <div className="min-w-0 flex-1">
+      {/* Um mínimo de largura, para no telemóvel serem os botões a descer e não o
+          nome a ser espremido. Ver a nota igual em `director/MemberDetail.tsx`. */}
+      <div className="min-w-[min(100%,13rem)] flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-1.5">
           <Pill tone={eDoClinico(member) ? "signal" : "neutral"}>{departamentoDe(member)}</Pill>
           {/* O cargo, e não o papel-base: este dizia quase sempre o mesmo que a

@@ -77,8 +77,10 @@ export class MembersController {
     @Query("tierId") tierId?: string,
     @Query("q") q?: string,
     @Query("athleteId") athleteId?: string,
+    /** `atraso`: só quem tem quotas por pagar com o prazo já passado. */
+    @Query("quotas") quotas?: string,
   ) {
-    return this.members.list(req.ctx, { status, tierId, q, athleteId });
+    return this.members.list(req.ctx, { status, tierId, q, athleteId, emAtraso: quotas === "atraso" });
   }
 
   /** Um sócio inscrito na secretaria, com a pessoa à frente. */

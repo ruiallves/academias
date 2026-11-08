@@ -195,12 +195,35 @@ export class MembersService {
   /* Consola — a direção                                                    */
   /* ---------------------------------------------------------------------- */
 
-  async list(ctx: RequestContext, filters: { status?: string; tierId?: string; q?: string; athleteId?: string }) {
+  async list(
+    ctx: RequestContext,
+    filters: { status?: string; tierId?: string; q?: string; athleteId?: string; emAtraso?: boolean },
+  ) {
     this.mustRead(ctx);
 
     const lista = await this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * Quem tem quotas em atraso: por pagar, com o prazo já passado.
+       *
+       * A mesma regra do `overdueCount` da ficha (`situacaoDeQuotas`), e não a
+       * cor da coluna "Última quota": essa lê só o mês da última paga e pinta
+       * de vermelho um sócio anual que está em dia. Uma quota de 0 € nunca é
+       * dívida. Para o clube todo, para o contador do filtro não mudar com a
+       * pesquisa nem com o estado escolhido, como os outros.
+       */
+      const atrasadas = await db.memberFee.groupBy({
+        by: ["memberId"],
+        where: { status: "OPEN", amountCents: { gt: 0 }, dueOn: { lt: new Date() } },
+        _count: { _all: true },
+        _sum: { amountCents: true },
+      });
+      const emAtraso = new Map(
+        atrasadas.map((a) => [a.memberId, { count: a._count._all, cents: a._sum.amountCents ?? 0 }]),
+      );
+
       const rows = await db.member.findMany({
         where: {
+          ...(filters.emAtraso ? { id: { in: [...emAtraso.keys()] } } : {}),
           ...(filters.status ? { status: filters.status as MemberStatus } : {}),
           ...(filters.tierId ? { tierId: filters.tierId } : {}),
           /* A ficha de sócio de um atleta: o painel "Sócio" no perfil dele, sem trazer o livro todo. */
@@ -303,8 +326,12 @@ export class MembersService {
           annualStart: `${String(annualStartMonth ?? clube.mes).padStart(2, "0")}-${String(annualStartDay ?? clube.dia).padStart(2, "0")}`,
           /** O período (`AAAA-MM`) da última quota liquidada. Nulo = nunca pagou nenhuma. */
           lastPaidPeriod: ultimaPaga.get(m.id) ?? null,
+          /** Quotas por pagar com o prazo passado: quantas e quanto. Nulo = nenhuma. */
+          overdue: emAtraso.get(m.id) ?? null,
         })),
         counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])),
+        /** Quantos sócios têm quotas em atraso, no clube todo. */
+        overdueMembers: emAtraso.size,
       };
     });
 

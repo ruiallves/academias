@@ -161,7 +161,16 @@ export default function MemberDetail() {
           }}
         />
 
-        <div className="min-w-0 flex-1">
+        {/*
+          `min-w-[min(100%,13rem)]` e não `min-w-0`.
+
+          Numa linha com `flex-wrap`, um `flex-1` começa com largura zero e por
+          isso nunca obriga nada a passar para a linha de baixo: no telemóvel os
+          botões ao lado (`shrink-0`) ficavam na mesma linha e o nome era
+          espremido até uma letra por linha. Com um mínimo, o nome guarda o seu
+          espaço e são os botões que descem. No computador cabe tudo, e nada muda.
+        */}
+        <div className="min-w-[min(100%,13rem)] flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
             <StatusPill status={m.status} />
             {/* `break-words`: um nome de categoria escrito sem espaços não tem onde

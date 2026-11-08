@@ -117,6 +117,11 @@ export type MemberRow = {
   inviteSentAt: string | null;
   /** O período (`AAAA-MM`) da última quota liquidada. Nulo = nunca pagou nenhuma. */
   lastPaidPeriod: string | null;
+  /**
+   * Quotas por pagar com o prazo já passado: quantas e quanto somam. Nulo =
+   * nenhuma. A mesma regra do `overdueCount` da ficha.
+   */
+  overdue?: { count: number; cents: number } | null;
 };
 
 export type MemberDetail = MemberRow & {
@@ -436,8 +441,15 @@ export const removePoll = (id: string) => apiDelete<{ ok: true }>(`/api/polls/${
 export const setMemberCard = (body: { cardEnabled?: boolean; qrEnabled?: boolean }) =>
   apiPatch<{ cardEnabled: boolean; qrEnabled: boolean }>("/api/member-card", body);
 
-export const listMembers = (filters: { status?: string; tierId?: string; q?: string; athleteId?: string } = {}) =>
-  apiGet<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> }>("/api/members", filters);
+export const listMembers = (
+  filters: { status?: string; tierId?: string; q?: string; athleteId?: string; quotas?: "atraso" } = {},
+) =>
+  apiGet<{
+    members: MemberRow[];
+    counts: Partial<Record<MemberStatus, number>>;
+    /** Quantos sócios têm quotas em atraso, no clube todo. Ausente numa API antiga. */
+    overdueMembers?: number;
+  }>("/api/members", filters);
 
 /** Categoria de sócio menor: idade máxima até 18 (a regra de `socio-menor.ts` na API). */
 export const categoriaDeMenores = (t: { maxAge?: number | null } | null | undefined) => t?.maxAge != null && t.maxAge <= 18;

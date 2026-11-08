@@ -77,7 +77,13 @@ export default function Members() {
   const { session } = useSession();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<MemberStatus | null>(null);
-  const [data, setData] = useState<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> } | null>(null);
+  /** Só quem tem quotas em atraso. Junta-se ao estado escolhido, não o substitui. */
+  const [emAtraso, setEmAtraso] = useState(false);
+  const [data, setData] = useState<{
+    members: MemberRow[];
+    counts: Partial<Record<MemberStatus, number>>;
+    overdueMembers?: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageOpen, setPageOpen] = useState(false);
   const [tiersOpen, setTiersOpen] = useState(false);
@@ -101,10 +107,14 @@ export default function Members() {
 
   const load = useCallback(() => {
     setError(null);
-    listMembers({ ...(status ? { status } : {}), ...(q.trim() ? { q: q.trim() } : {}) })
+    listMembers({
+      ...(status ? { status } : {}),
+      ...(q.trim() ? { q: q.trim() } : {}),
+      ...(emAtraso ? { quotas: "atraso" as const } : {}),
+    })
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Não foi possível carregar."));
-  }, [status, q]);
+  }, [status, q, emAtraso]);
 
   useEffect(() => {
     const t = setTimeout(load, q ? 250 : 0);
@@ -190,19 +200,33 @@ export default function Members() {
       hideBelow: "md",
       render: (m) => {
         const estado = feeStanding(m.lastPaidPeriod);
+        /* O que está em atraso de facto, por baixo: quantas e quanto. */
+        const atraso = m.overdue ? (
+          <div className="mt-0.5 text-meta text-risk tabular">
+            {m.overdue.count} em atraso · {money(m.overdue.cents)}
+          </div>
+        ) : null;
         if (!m.lastPaidPeriod) {
           /* Nunca pagou nenhuma não é o mesmo que estar atrasado numa: um sócio
              acabado de aprovar cai aqui, e dizer-lhe "vermelho" sem número
              seria acusá-lo de uma dívida que ainda não existe. A cor é a
              mesma; a palavra é outra. */
-          return <Pill tone="risk">Sem registo</Pill>;
+          return (
+            <div>
+              <Pill tone="risk">Sem registo</Pill>
+              {atraso}
+            </div>
+          );
         }
         return (
-          <span title={`Última quota liquidada: ${periodLabel(m.lastPaidPeriod)}`}>
-            <Pill tone={estado === "ok" ? "ok" : estado === "warn" ? "warn" : "risk"}>
-              {periodShort(m.lastPaidPeriod)}
-            </Pill>
-          </span>
+          <div>
+            <span title={`Última quota liquidada: ${periodLabel(m.lastPaidPeriod)}`}>
+              <Pill tone={estado === "ok" ? "ok" : estado === "warn" ? "warn" : "risk"}>
+                {periodShort(m.lastPaidPeriod)}
+              </Pill>
+            </span>
+            {atraso}
+          </div>
         );
       },
     },
@@ -316,6 +340,11 @@ export default function Members() {
             {STATUS_LABEL[s]}
           </Chip>
         ))}
+        {/* À parte dos estados: junta-se ao que estiver escolhido (ex.: activos com quotas em atraso). */}
+        <span aria-hidden className="mx-1 h-4 w-px bg-line" />
+        <Chip active={emAtraso} onClick={() => setEmAtraso((v) => !v)} count={data?.overdueMembers} urgent>
+          Quotas em atraso
+        </Chip>
       </div>
 
       <Panel>
@@ -329,9 +358,17 @@ export default function Members() {
           <div>
             <Empty
               icon={Home}
-              title={q || status ? "Nenhum sócio com esse filtro" : "Ainda não há sócios"}
+              title={
+                emAtraso && !q && !status
+                  ? "Ninguém com quotas em atraso"
+                  : q || status || emAtraso
+                    ? "Nenhum sócio com esse filtro"
+                    : "Ainda não há sócios"
+              }
               detail={
-                q || status
+                emAtraso && !q && !status
+                  ? "Todas as quotas com o prazo passado estão pagas."
+                  : q || status || emAtraso
                   ? "Limpa a pesquisa ou muda de estado."
                   : "Partilha a página de inscrição — quem se inscrever aparece aqui por aprovar."
               }
