@@ -23,6 +23,22 @@ import {
 import { Dialog } from "./Dialog";
 import { ConfirmarSobrescrita, EnviarConvites } from "./ConfirmarSobrescrita";
 import type { RespostaComExistentes } from "@/lib/importacao";
+import type { EncarregadoDeFora, TelefoneASubstituir } from "@/lib/import";
+
+/** O que o servidor pergunta antes de escrever: fichas que mudam e telemóveis de encarregados que são substituídos. */
+type PerguntaDaImportacao = RespostaComExistentes & { telefones: TelefoneASubstituir[]; telefonesTotal: number };
+
+type ResultadoNoFim = {
+  created: number;
+  updated: number;
+  equipasJuntadas?: number;
+  errors: RowError[];
+  semPosicao: number;
+  encarregadosLigados: number;
+  telefonesAtualizados: number;
+  encarregadosDeFora: EncarregadoDeFora[];
+  encarregadosDeForaTotal: number;
+};
 import { cx, SelectField } from "./primitives";
 
 /**
@@ -73,7 +89,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{ created: number; updated: number; equipasJuntadas?: number; errors: RowError[]; semPosicao: number } | null>(null);
+  const [result, setResult] = useState<ResultadoNoFim | null>(null);
   const [error, setError] = useState<string | null>(null);
   /*
    * Os convites saem só se alguém os pedir.
@@ -83,7 +99,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
    */
   const [convidar, setConvidar] = useState(false);
   /** Quem o NIF reconheceu, quando o servidor parou para perguntar. */
-  const [existentes, setExistentes] = useState<RespostaComExistentes | null>(null);
+  const [existentes, setExistentes] = useState<PerguntaDaImportacao | null>(null);
   /*
    * O que a primeira tentativa já resolveu — e que a segunda não pode refazer.
    *
@@ -257,8 +273,13 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
        * fichas. Fica-se na revisão com o painel aberto — o ecrã "concluído"
        * seria mentira, porque ainda não se importou nada.
        */
-      if (res.existingTotal > 0) {
-        setExistentes({ existing: res.existing, existingTotal: res.existingTotal });
+      if (res.existingTotal > 0 || (res.telefonesTotal ?? 0) > 0) {
+        setExistentes({
+          existing: res.existing,
+          existingTotal: res.existingTotal,
+          telefones: res.telefones ?? [],
+          telefonesTotal: res.telefonesTotal ?? 0,
+        });
         return;
       }
       setExistentes(null);
@@ -288,6 +309,10 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
         // o atleta está lá — mas é uma coisa que a pessoa quer saber, senão
         // descobre-a atleta a atleta daqui a um mês.
         semPosicao: semPosicaoN,
+        encarregadosLigados: res.encarregadosLigados ?? 0,
+        telefonesAtualizados: res.telefonesAtualizados ?? 0,
+        encarregadosDeFora: res.encarregadosDeFora ?? [],
+        encarregadosDeForaTotal: res.encarregadosDeForaTotal ?? 0,
       });
       setPhase("done");
       await reloadAcademy();
@@ -319,6 +344,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
           onClose={onClose}
           onConfirm={() => void confirm()}
           porSubstituir={existentes?.existingTotal ?? 0}
+          telefonesPorSubstituir={existentes?.telefonesTotal ?? 0}
         />
       }
     >
@@ -485,7 +511,7 @@ function Review({
   convidar: boolean;
   setConvidar: (v: boolean) => void;
   /** Quem o NIF reconheceu. Enquanto existir, o botão actualiza em vez de criar. */
-  existentes: RespostaComExistentes | null;
+  existentes: PerguntaDaImportacao | null;
 }) {
   if (parsed.missingColumns.length) {
     return (
@@ -707,13 +733,17 @@ function Review({
         </div>
       )}
 
-      {existentes && (
+      {existentes && existentes.existingTotal > 0 && (
         <ConfirmarSobrescrita
           linhas={existentes.existing}
           total={existentes.existingTotal}
           substantivo="atleta"
           nota="A equipa da folha junta-se às que o atleta já tem, em vez de as substituir."
         />
+      )}
+
+      {existentes && existentes.telefonesTotal > 0 && (
+        <TelefonesASubstituir linhas={existentes.telefones} total={existentes.telefonesTotal} />
       )}
 
       {valid.length > 0 && (
@@ -736,7 +766,7 @@ function Review({
 
 /* -------------------------------------------------------------------------- */
 
-function Done({ result }: { result: { created: number; updated: number; equipasJuntadas?: number; errors: RowError[]; semPosicao: number } }) {
+function Done({ result }: { result: ResultadoNoFim }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 rounded-[var(--radius-panel)] border border-line bg-[#e6f2e9]/40 p-4">
@@ -764,6 +794,46 @@ function Done({ result }: { result: { created: number; updated: number; equipasJ
             : `${result.semPosicao} atletas entraram sem a posição que vinha no ficheiro`}{" "}
           — a modalidade não a conhece. Podes acrescentá-la em Definições e depois escolhê-la na ficha de cada um.
         </p>
+      )}
+
+      {(result.encarregadosLigados > 0 || result.telefonesAtualizados > 0) && (
+        <p className="text-meta leading-relaxed text-ink-2">
+          {[
+            result.encarregadosLigados > 0 &&
+              `${result.encarregadosLigados} ${result.encarregadosLigados === 1 ? "encarregado ligado ao atleta" : "encarregados ligados aos atletas"}`,
+            result.telefonesAtualizados > 0 &&
+              `${result.telefonesAtualizados} ${result.telefonesAtualizados === 1 ? "telemóvel actualizado" : "telemóveis actualizados"}`,
+          ]
+            .filter(Boolean)
+            .join(", ")}
+          . Ninguém foi avisado por email.
+        </p>
+      )}
+
+      {result.encarregadosDeForaTotal > 0 && (
+        <div className="overflow-hidden rounded-[var(--radius-panel)] border border-line">
+          <div className="border-b border-line bg-sunken/50 px-3 py-2 text-meta leading-relaxed text-ink-2">
+            <span className="font-medium">
+              {result.encarregadosDeForaTotal === 1
+                ? "Um encarregado ficou por ligar"
+                : `${result.encarregadosDeForaTotal} encarregados ficaram por ligar`}
+            </span>
+            <span className="text-ink-3">. Os atletas entraram na mesma. Quem não tem conta entra pelo link de famílias.</span>
+          </div>
+          <ul className="max-h-40 overflow-y-auto">
+            {result.encarregadosDeFora.map((e, i) => (
+              <li key={i} className="flex items-baseline gap-3 border-b border-line px-3 py-2 text-meta last:border-b-0">
+                <span className="w-32 shrink-0 truncate font-medium text-ink">{e.nome || e.email || "(sem nome)"}</span>
+                <span className="min-w-0 text-ink-3">
+                  de {e.atleta}: {e.motivo}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {result.encarregadosDeForaTotal > result.encarregadosDeFora.length && (
+            <p className="px-3 py-2 text-meta text-ink-4">e mais {result.encarregadosDeForaTotal - result.encarregadosDeFora.length}.</p>
+          )}
+        </div>
       )}
 
       {result.errors.length > 0 && (
@@ -795,6 +865,7 @@ function Footer({
   onClose,
   onConfirm,
   porSubstituir,
+  telefonesPorSubstituir,
 }: {
   phase: Phase;
   parsed: ParseResult | null;
@@ -804,6 +875,8 @@ function Footer({
   onConfirm: () => void;
   /** Quantos atletas da folha já cá estão. Muda o que o botão promete fazer. */
   porSubstituir: number;
+  /** Telemóveis de encarregados que vão ser substituídos. */
+  telefonesPorSubstituir: number;
 }) {
   if (phase === "done") {
     return (
@@ -826,10 +899,42 @@ function Footer({
             ? "A importar…"
             : porSubstituir > 0
               ? `Actualizar ${porSubstituir === 1 ? "1 ficha" : `${porSubstituir} fichas`} e importar`
-              : `Importar ${importable}`}
+              : telefonesPorSubstituir > 0
+                ? `Substituir ${telefonesPorSubstituir === 1 ? "o telemóvel" : `${telefonesPorSubstituir} telemóveis`} e importar`
+                : `Importar ${importable}`}
         </button>
       )}
     </>
+  );
+}
+
+/** Os telemóveis de encarregados que a folha vai substituir: perguntados como as fichas. */
+function TelefonesASubstituir({ linhas, total }: { linhas: TelefoneASubstituir[]; total: number }) {
+  return (
+    <div className="rounded-[var(--radius-control)] border border-warn/30 bg-warn-soft p-4">
+      <p className="flex items-start gap-2 text-body font-medium text-ink">
+        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" strokeWidth={2} />
+        {total === 1
+          ? "O telemóvel de um encarregado vai ser substituído."
+          : `Os telemóveis de ${total} encarregados vão ser substituídos.`}
+      </p>
+      <p className="mt-1.5 pl-6 text-meta leading-relaxed text-ink-3">
+        A folha traz um número diferente do que está na conta. Se continuares, fica o da folha.
+      </p>
+      <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto pl-6">
+        {linhas.map((t, i) => (
+          <li key={i} className="text-meta leading-relaxed">
+            <span className="tabular text-ink-4">L{t.line}</span> <span className="font-medium text-ink">{t.encarregado}</span>
+            <span className="text-ink-3">
+              {" "}
+              (de {t.atleta}) · {t.de ? <span className="tabular">{t.de}</span> : "o número da conta"} passa a{" "}
+              <span className="tabular font-medium text-ink-2">{t.para}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {total > linhas.length && <p className="mt-2 pl-6 text-meta text-ink-4">e mais {total - linhas.length}.</p>}
+    </div>
   );
 }
 

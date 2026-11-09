@@ -32,6 +32,15 @@ import {
   type Equipa,
 } from "./equipas-do-atleta";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
+import {
+  aplicarEncarregados,
+  contasDoClube,
+  emailsDaFolha,
+  planearEncarregados,
+  type EncarregadoDeFora,
+  type EncarregadoPorLigar,
+  type TelefoneASubstituir,
+} from "./encarregados-da-folha";
 import { gravarLicencasDasEquipas, moradaDoPedido, normalizarLicenca } from "./licencas";
 
 /**
@@ -716,8 +725,15 @@ export class AthletesService {
      */
     const tectoMs = Math.min(Math.max(30_000, rows.length * 1_000), 420_000);
 
-    const resultado = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const resultado = await this.prisma.runAs<ResultadoDaImportacao>(ctx.academyId, async (db) => {
       const teams = await this.teamsInScope(ctx, db);
+
+      /* Os encarregados da folha: só quem já tem conta no clube. Ver `encarregados-da-folha.ts`. */
+      const podeLigar = can(ctx, "family:write");
+      const contas = podeLigar ? await contasDoClube(db, ctx.academyId, emailsDaFolha(rows)) : new Map();
+      const encarregados = { porLigar: [] as EncarregadoPorLigar[], telefones: [] as TelefoneASubstituir[], deFora: [] as EncarregadoDeFora[] };
+      const encarregadosDaLinha = (line: number, athleteId: string, dto: AthleteInputDto) =>
+        planearEncarregados({ line, athleteId, atleta: dto.name.trim(), encarregados: dto.encarregados }, contas, podeLigar, encarregados);
 
       /*
        * Quem já cá está, pelas duas chaves que importam.
@@ -773,13 +789,7 @@ export class AthletesService {
 
       const created: { id: string; name: string }[] = [];
       const updated: { id: string; name: string }[] = [];
-      const existing: {
-        line: number;
-        name: string;
-        matchedName: string;
-        taxId: string;
-        changes: string[];
-      }[] = [];
+      const existing: ExistenteNaFolha[] = [];
       const errors: { row: number; name: string; error: string }[] = [];
       // Números de camisola já usados por equipa, para apanhar choques **dentro do
       // próprio ficheiro** — dois atletas com o 7 na mesma equipa, na mesma folha.
@@ -865,6 +875,7 @@ export class AthletesService {
           }
           await gravarLicencasDasEquipas(db, ctx.academyId, jaLaEsta.id, licencasDaLinha(dto));
           equipasJuntadas += novas.length;
+          encarregadosDaLinha(line, jaLaEsta.id, dto);
           continue;
         }
 
@@ -877,6 +888,7 @@ export class AthletesService {
          * tirava-lhe a outra sem ninguém pedir.
          */
         if (jaLaEsta) {
+          encarregadosDaLinha(line, jaLaEsta.id, dto);
           const mudam = mudancasDoAtleta(jaLaEsta, dto, equipasDaLinha, teams, (teamId) => licencaActual(jaLaEsta, teamId));
 
           if (!opts.sobrescrever) {
@@ -904,6 +916,7 @@ export class AthletesService {
         } else {
           created.push({ id: result.athlete.id, name: result.athlete.name });
           nascidosNaFolha.add(result.athlete.id);
+          encarregadosDaLinha(line, result.athlete.id, dto);
           /*
            * Entra nos índices, para a própria folha não se duplicar.
            *
@@ -945,12 +958,22 @@ export class AthletesService {
       /*
        * A pergunta, antes de escrever seja o que for.
        *
-       * `athletes` vazio para que nenhum convite saia por engano no caminho em
-       * que nada foi criado. Ver o fim do método.
+       * Lançada e não devolvida: a transação desfaz-se, e os atletas novos
+       * desta passagem não ficam gravados. Antes ficavam, sem mensalidades, e a
+       * segunda passagem já não os contava como inscritos. `athletes` vazio
+       * para que nenhum convite saia. Ver o fim do método.
        */
-      if (existing.length > 0 && !opts.sobrescrever) {
-        return { created: 0, updated: 0, equipasJuntadas: 0, errors: [], athletes: [], existing: existing.slice(0, 200), existingTotal: existing.length };
+      if ((existing.length > 0 || encarregados.telefones.length > 0) && !opts.sobrescrever) {
+        throw new PerguntaAntesDeEscrever({
+          ...semNada(),
+          existing: existing.slice(0, 200),
+          existingTotal: existing.length,
+          telefones: encarregados.telefones.slice(0, 200),
+          telefonesTotal: encarregados.telefones.length,
+        });
       }
+
+      const ligacao = await aplicarEncarregados(db, ctx, encarregados.porLigar);
 
       /*
        * As mensalidades de todos os que entraram, de uma vez.
@@ -970,16 +993,22 @@ export class AthletesService {
       }
 
       return {
+        ...semNada(),
         created: created.length,
         updated: updated.length,
         /** Equipas a mais de atletas que entraram nesta folha (várias linhas, o mesmo NIF). */
         equipasJuntadas,
         errors,
         athletes: created,
-        existing: [] as typeof existing,
-        existingTotal: 0,
+        encarregadosLigados: ligacao.ligados,
+        telefonesAtualizados: ligacao.telefones,
+        encarregadosDeFora: encarregados.deFora.slice(0, 200),
+        encarregadosDeForaTotal: encarregados.deFora.length,
       };
-    }, { timeoutMs: tectoMs });
+    }, { timeoutMs: tectoMs }).catch((e: unknown) => {
+      if (e instanceof PerguntaAntesDeEscrever) return e.resposta;
+      throw e;
+    });
 
     /*
      * Os convites dos importados — depois da transação, em série, sem esperar.
@@ -1392,6 +1421,43 @@ function listar(itens: { n: number; um: string; muitos: string }[]): string {
 /* -------------------------------------------------------------------------- */
 
 /** A ficha como a importação a lê, para comparar com a linha da folha. */
+/** Uma linha da folha que reconheceu alguém que já cá está, com o que ia mudar. */
+type ExistenteNaFolha = { line: number; name: string; matchedName: string; taxId: string; changes: string[] };
+
+/** O que `importMany` devolve, na pergunta e no fim. */
+type ResultadoDaImportacao = {
+  created: number;
+  updated: number;
+  equipasJuntadas: number;
+  errors: { row: number; name: string; error: string }[];
+  athletes: { id: string; name: string }[];
+  existing: ExistenteNaFolha[];
+  existingTotal: number;
+  /** Telemóveis de encarregados que a folha vai substituir: também perguntam antes. */
+  telefones: TelefoneASubstituir[];
+  telefonesTotal: number;
+  encarregadosLigados: number;
+  telefonesAtualizados: number;
+  /** Encarregados da folha que não deu para ligar (sem conta, sem email, à espera de aprovação). */
+  encarregadosDeFora: EncarregadoDeFora[];
+  encarregadosDeForaTotal: number;
+};
+
+function semNada(): ResultadoDaImportacao {
+  return {
+    created: 0, updated: 0, equipasJuntadas: 0, errors: [], athletes: [],
+    existing: [], existingTotal: 0, telefones: [], telefonesTotal: 0,
+    encarregadosLigados: 0, telefonesAtualizados: 0, encarregadosDeFora: [], encarregadosDeForaTotal: 0,
+  };
+}
+
+/** Lançada para desfazer a transação quando a importação tem de perguntar antes. */
+class PerguntaAntesDeEscrever extends Error {
+  constructor(readonly resposta: ResultadoDaImportacao) {
+    super("A importação pergunta antes de escrever");
+  }
+}
+
 type AtletaNoPlantel = {
   id: string;
   name: string;

@@ -63,7 +63,21 @@ export const COLUMNS = [
   { key: "address", header: "Morada", required: false, example: "Rua do Estádio, 10" },
   { key: "postalCode", header: "Código postal", required: false, example: "4700-000" },
   { key: "city", header: "Localidade", required: false, example: "Braga" },
+  /*
+   * Até dois encarregados. Só se ligam os que já têm conta no clube,
+   * reconhecidos pelo email; o telemóvel acerta o da conta (e pergunta antes
+   * de substituir um que já lá esteja). Quem não tem conta não trava o atleta.
+   */
+  { key: "guardian1Name", header: "Encarregado 1", required: false, example: "Ana Bragança" },
+  { key: "guardian1Email", header: "Email do encarregado 1", required: false, example: "ana.braganca@mail.pt" },
+  { key: "guardian1Phone", header: "Telemóvel do encarregado 1", required: false, example: "912345678" },
+  { key: "guardian2Name", header: "Encarregado 2", required: false, example: "" },
+  { key: "guardian2Email", header: "Email do encarregado 2", required: false, example: "" },
+  { key: "guardian2Phone", header: "Telemóvel do encarregado 2", required: false, example: "" },
 ] as const;
+
+/** Um encarregado da linha, como vai para o servidor. */
+export type EncarregadoDaLinha = { nome?: string; email?: string; telefone?: string };
 
 /** Uma linha depois de validada no cliente, pronta para o servidor. */
 export type ParsedRow = {
@@ -97,6 +111,7 @@ export type ParsedRow = {
   address?: string;
   postalCode?: string;
   city?: string;
+  encarregados?: EncarregadoDaLinha[];
 };
 
 export type RowError = { line: number; name: string; error: string };
@@ -175,6 +190,11 @@ export async function buildTemplate(): Promise<Blob> {
     [""],
     ["O mesmo vale para a coluna Posição: escreve a que o clube usa."],
     ["Se a modalidade ainda não a tiver, perguntamos se a queres acrescentar."],
+    [""],
+    ["Encarregados: até dois por atleta, cada um com nome, email e telemóvel."],
+    ["Só se ligam ao atleta os que já têm conta no clube, reconhecidos pelo email."],
+    ["Os outros não impedem a importação: aparecem no fim, para os convidares pelo link de famílias."],
+    ["Se o telemóvel da folha for diferente do que a conta tem, perguntamos antes de o substituir."],
   ]);
 
   const wb = XLSX.utils.book_new();
@@ -354,6 +374,19 @@ export async function parseFile(file: File): Promise<ParseResult> {
     if (codigo) row.postalCode = codigo.slice(0, 20);
     const localidade = get("Localidade").trim();
     if (localidade) row.city = localidade.slice(0, 80);
+
+    /*
+     * Os encarregados nunca derrubam a linha: o atleta entra na mesma, e quem
+     * não der para ligar (sem email, sem conta) vem no fim, dito pelo servidor.
+     */
+    const encarregados: EncarregadoDaLinha[] = [];
+    for (const n of [1, 2]) {
+      const nome = get(`Encarregado ${n}`).slice(0, 120);
+      const email = get(`Email do encarregado ${n}`).toLowerCase().slice(0, 254);
+      const telefone = get(`Telemóvel do encarregado ${n}`).slice(0, 40);
+      if (nome || email || telefone) encarregados.push({ ...(nome ? { nome } : {}), ...(email ? { email } : {}), ...(telefone ? { telefone } : {}) });
+    }
+    if (encarregados.length) row.encarregados = encarregados;
 
     valid.push(row);
   });
@@ -564,7 +597,19 @@ function normalizeDate(value: string): string {
  * conhece ids. Uma linha sem `teamId` a esta altura é uma linha cuja equipa
  * ficou por criar, e não é enviada — o diálogo já a contou como recusada.
  */
+/** Um telemóvel de encarregado que a folha vai substituir. */
+export type TelefoneASubstituir = { line: number; atleta: string; encarregado: string; de: string | null; para: string };
+/** Um encarregado da folha que não deu para ligar. */
+export type EncarregadoDeFora = { line: number; atleta: string; nome: string; email: string; motivo: string };
+
 export type AthleteImportResult = RespostaComExistentes & {
+  /** Ausentes num servidor antigo. */
+  telefones?: TelefoneASubstituir[];
+  telefonesTotal?: number;
+  encarregadosLigados?: number;
+  telefonesAtualizados?: number;
+  encarregadosDeFora?: EncarregadoDeFora[];
+  encarregadosDeForaTotal?: number;
   created: number;
   /** Quantas fichas foram actualizadas com os dados da folha. */
   updated: number;

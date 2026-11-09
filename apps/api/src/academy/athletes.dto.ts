@@ -66,10 +66,29 @@ export class EquipaDoAtletaDto {
   licenseNumber?: string | null;
 }
 
+/**
+ * Um encarregado numa linha da importação. Só serve para reconhecer quem já
+ * tem conta no clube (pelo email) e o ligar ao atleta. Ninguém é criado a
+ * partir de uma folha: ver `planearEncarregados` em `athletes.service.ts`.
+ */
+export class EncarregadoDaFolhaDto {
+  @IsOptional() @IsString() @Length(0, 120) nome?: string;
+  @IsOptional() @IsString() @Length(0, 254) email?: string;
+  @IsOptional() @IsString() @Length(0, 40) telefone?: string;
+}
+
 export class AthleteInputDto {
   @IsString()
   @Length(2, 120)
   name!: string;
+
+  /** Só na importação: até dois encarregados por linha. A inscrição à mão ignora-os. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => EncarregadoDaFolhaDto)
+  encarregados?: EncarregadoDaFolhaDto[];
 
   /** ISO `YYYY-MM-DD`. O serviço rejeita datas fora de um intervalo plausível. */
   @IsISO8601()

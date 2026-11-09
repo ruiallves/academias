@@ -7,7 +7,7 @@ import { licencaDaEquipa } from "@/lib/licencas";
 import { ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { STATUS_LABEL, type MemberRow } from "@/lib/members";
 import type { Athlete, Guardian, StaffMember, Team } from "@/data/types";
-import { athleteById, sportById, teamById } from "@/lib/api";
+import { athleteById, guardianById, sportById, teamById } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
 import { STAGE_LABEL, ageOf as idadeDe, type ProspectRow } from "@/lib/scouting";
 
@@ -109,6 +109,13 @@ export const COLUNAS_EXPORT_ATLETAS: ColunaExport<Athlete>[] = [
   { header: "Morada", valor: (a) => a.address, largura: 30 },
   { header: "Código postal", valor: (a) => a.postalCode, largura: 14 },
   { header: "Localidade", valor: (a) => a.city, largura: 18 },
+  // Os encarregados, pela ordem da ficha. Qualquer um deles pode pagar: o 1 não quer dizer nada além da ordem.
+  ...[0, 1].flatMap((i): ColunaExport<Athlete>[] => [
+    { header: `Encarregado ${i + 1}`, valor: (a) => encarregadoDe(a, i)?.name, largura: 24 },
+    { header: `Email do encarregado ${i + 1}`, valor: (a) => encarregadoDe(a, i)?.email, largura: 26 },
+    // Como está na conta: a importação compara só os algarismos.
+    { header: `Telemóvel do encarregado ${i + 1}`, valor: (a) => encarregadoDe(a, i)?.phone, largura: 16 },
+  ]),
   /*
    * O estado fica no fim, fora das colunas da importação — que não o lê. Uma
    * folha exportada com os que saíram serve para conferir; reimportá-la não os
@@ -132,6 +139,11 @@ export function umaLinhaPorEquipa(atletas: Athlete[]): Athlete[] {
       ? [a]
       : a.equipas.map((e) => ({ ...a, teamId: e.teamId, squadNumber: e.squadNumber, position: e.position })),
   );
+}
+
+function encarregadoDe(a: Athlete, i: number): Guardian | undefined {
+  const id = a.guardianIds?.[i];
+  return id ? guardianById(id) : undefined;
 }
 
 const ESTADO_ATLETA: Record<Athlete["status"], string> = {

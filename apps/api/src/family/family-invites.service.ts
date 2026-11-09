@@ -9,6 +9,7 @@ import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
 import { familyApprovedEmail, familyInviteEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
+import { telefoneValido } from "../common/telefone";
 import { DOCUMENTO_VALIDO, NIF_VALIDO, normalizarDocumento, normalizarNif } from "../academy/identificacao";
 
 /**
@@ -321,6 +322,8 @@ export class FamilyInvitesService {
     }
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("Falta o teu nome");
+    // Obrigatório desde 09/11/2026: o formulário já o pedia, a API não.
+    if (!telefoneValido(dto.phone)) throw new BadRequestException("Falta o telemóvel: é por aqui que o clube te liga");
 
     const athleteId = await this.matchAthlete(academyId, dto, dto.birthdate);
 

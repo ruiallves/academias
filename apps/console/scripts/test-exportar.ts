@@ -254,6 +254,40 @@ if (linhaAtleta) {
 }
 
 /*
+ * Os encarregados: saem nas colunas que a importação lê, e o leitor junta-os
+ * na linha. A folha escreve-se com as mesmas colunas da exportação, com os
+ * valores postos à mão (sem clube carregado não há encarregados no store).
+ */
+console.log("\n=== Atletas: os encarregados vão e voltam ===");
+const comEncarregados = { ...atleta } as Athlete;
+const valoresDosEncarregados: Record<string, string> = {
+  "Encarregado 1": "Paula Azevedo",
+  "Email do encarregado 1": "Paula.Azevedo@Mail.pt",
+  "Telemóvel do encarregado 1": "912 345 678",
+  "Encarregado 2": "",
+  "Email do encarregado 2": "",
+  "Telemóvel do encarregado 2": "",
+};
+check(
+  "a exportação tem as seis colunas dos encarregados",
+  Object.keys(valoresDosEncarregados).every((h) => cabecalhosExportados.includes(h)),
+  cabecalhosExportados.join("|"),
+);
+const colunasComValores = COLUNAS_EXPORT_ATLETAS.map((c) =>
+  c.header in valoresDosEncarregados ? { ...c, valor: () => valoresDosEncarregados[c.header] } : c,
+);
+const lidoComEncarregados = await parseFile(comoFicheiro(folhaDe([comEncarregados], colunasComValores), "atletas.xlsx"));
+const linhaComEncarregados = lidoComEncarregados.valid[0];
+if (linhaComEncarregados) {
+  const enc = linhaComEncarregados.encarregados ?? [];
+  check("só o encarregado preenchido entra", enc.length === 1, JSON.stringify(enc));
+  check("o email vem em minúsculas", enc[0]?.email === "paula.azevedo@mail.pt", String(enc[0]?.email));
+  check("o telemóvel vem como está escrito", enc[0]?.telefone === "912 345 678", String(enc[0]?.telefone));
+} else {
+  check("a linha só falha pela equipa", /equipa/i.test(lidoComEncarregados.errors[0]?.error ?? ""), lidoComEncarregados.errors[0]?.error ?? "");
+}
+
+/*
  * Um atleta em duas equipas sai em duas linhas, que é como a importação o lê:
  * a mesma identificação, e o número e a posição de cada equipa.
  */

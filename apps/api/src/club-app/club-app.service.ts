@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { PaymentMethod } from "@prisma/client";
+import { telefoneValido } from "../common/telefone";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { SupabaseJwtService } from "../auth/supabase-jwt.service";
@@ -268,8 +269,33 @@ export class ClubAppService {
       }
       if (staff) contexts.push({ type: "STAFF", role: staff.role });
 
-      return { contexts };
+      /*
+       * Encarregado sem telemóvel: a app pede-o uma vez, antes da área de
+       * família (obrigatório desde 09/11/2026). Só a quem já está aprovado; com
+       * a RLS a esconder a conta, não se pergunta.
+       */
+      const eu2 = familia && eu.userId ? await db.user.findUnique({ where: { id: eu.userId }, select: { phone: true } }) : null;
+      const telefoneEmFalta = Boolean(eu2) && !telefoneValido(eu2!.phone);
+
+      return { contexts, ...(telefoneEmFalta ? { telefoneEmFalta: true } : {}) };
     });
+  }
+
+  /** O encarregado grava o próprio telemóvel: é o que a app pede a quem não o tem. */
+  async gravarTelefone(authorization: string | undefined, slug: string, telefone: string) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+    if (!eu.userId) throw new UnauthorizedException("Conta sem perfil neste clube");
+    const valor = telefone.trim();
+    if (!telefoneValido(valor)) throw new BadRequestException("Escreve um telemóvel com 9 algarismos");
+
+    const memberships = await this.auth.membershipsOf(eu.authId);
+    if (!memberships.some((m) => m.academy_id === academyId && m.role === "GUARDIAN")) {
+      throw new ForbiddenException("Só os encarregados gravam o telemóvel por aqui");
+    }
+    const userId = eu.userId;
+    await this.prisma.runAs(academyId, (db) => db.user.update({ where: { id: userId }, data: { phone: valor } }));
+    return { ok: true as const };
   }
 
   /* ------------------------------------------------------------------------ */

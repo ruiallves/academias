@@ -16,6 +16,11 @@ class PagarQuotaDto {
   phone?: string;
 }
 
+class TelefoneDto {
+  @IsString() @Length(9, 40)
+  telefone!: string;
+}
+
 class VotarDto {
   @IsString() @Length(1, 60)
   optionId!: string;
@@ -70,6 +75,13 @@ export class ClubAppController {
    * pelo JWT como o resto da área de sócio. A app pede por aqui só quando não
    * tem outro chapéu — ver `lib/notificacoes` na app da família.
    */
+  /** O encarregado sem telemóvel grava-o (a app pede-o uma vez). Ver `ClubAppService.gravarTelefone`. */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Patch("api/app/telefone")
+  gravarTelefone(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string, @Body() body: TelefoneDto) {
+    return this.app.gravarTelefone(auth, slug ?? "", body.telefone);
+  }
+
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get("api/socio/notificacoes")
   notificacoes(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string) {

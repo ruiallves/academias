@@ -55,6 +55,8 @@ type State = {
   /** O contexto vestido. `null` = por escolher (ou só há um, e resolve-se sozinho). */
   active: ContextType | null;
   error: string | null;
+  /** Encarregado sem telemóvel: a app pede-o antes da área de família. Ver `screens/PedirTelefone.tsx`. */
+  telefoneEmFalta?: boolean;
 };
 
 const entregaKey = () => `academia.app.contexto:${academySlug()}`;
@@ -124,10 +126,10 @@ export async function loadContexts(): Promise<void> {
 
   if (import.meta.env.DEV) await resolverClubeDaConta();
   try {
-    const r = await apiGet<{ contexts: AppContext[] }>("/api/app/contexts");
+    const r = await apiGet<{ contexts: AppContext[]; telefoneEmFalta?: boolean }>("/api/app/contexts");
     guardarArranque("contextos", r.contexts);
     const active = resolverActivo(r.contexts);
-    state = { contexts: r.contexts, active, error: null };
+    state = { contexts: r.contexts, active, error: null, telefoneEmFalta: r.telefoneEmFalta === true };
     setActiveArea(active);
   } catch (e) {
     // Com os guardados à vista, uma falha de rede no arranque é silêncio: a próxima volta corrige.
@@ -175,6 +177,12 @@ async function resolverClubeDaConta(): Promise<void> {
  * Vestir um contexto — do seletor pós-login ou do switcher. Sem logout, sem
  * recarregar, e **sem guardar**: a escolha é desta abertura da app.
  */
+/** O telemóvel ficou gravado: a porta abre sem voltar a perguntar ao servidor. */
+export function telefoneGravado(): void {
+  state = { ...state, telefoneEmFalta: false };
+  emit();
+}
+
 export function chooseContext(type: ContextType): void {
   state = { ...state, active: type };
   setActiveArea(type);

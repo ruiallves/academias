@@ -39,6 +39,7 @@ import DocumentosDoClube from "@/screens/DocumentosDoClube";
 import DadosDeFaturacao from "@/screens/DadosDeFaturacao";
 import { LegalGate } from "@/screens/LegalGate";
 import PedidoPendente from "@/screens/PedidoPendente";
+import { PedirTelefone } from "@/screens/PedirTelefone";
 
 /* -------------------------------------------------------------------------- */
 /* Educando activo                                                             */
@@ -178,6 +179,8 @@ function Dentro({
   onboarded: boolean;
   setOnboarded: (v: boolean) => void;
 }) {
+  /* Encarregado sem telemóvel: pede-se antes da área de família. Ver `screens/PedirTelefone`. */
+  const { telefoneEmFalta } = useContexts();
   /*
    * O arranque da família só depois da porta legal: com termos por aceitar o
    * servidor recusa o `/api/bootstrap`, e pedi-lo antes era um erro garantido
@@ -236,6 +239,9 @@ function Dentro({
    * de os contextos terem chegado antes de o pedido existir.
    */
   if (areaActiva === "FAMILY" && (familiaPendente || store.pendente)) return <PedidoPendente />;
+
+  /* O telemóvel em falta, antes de entrar: obrigatório desde 09/11/2026. */
+  if (areaActiva === "FAMILY" && telefoneEmFalta) return <PedirTelefone nome={session.name} />;
 
   if (!store.ready) return <Splash />;
   // O clube está fechado por falta de pagamento à plataforma. Não é avaria, e não é desta conta.
