@@ -331,13 +331,17 @@ export class FaturacaoService implements OnModuleInit, OnModuleDestroy {
       if (!conta) throw new NotFoundException("O clube não tem faturação ligada");
       const atual = this.definicoes(conta.settings);
       const texto = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 120) : undefined);
+      // `!== undefined` e nunca `in`: o ValidationPipe entrega uma instância de
+      // DefinirDto com todos os campos da classe, mesmo os que não vieram. Com
+      // `in`, gravar a série apagava a empresa. Limpar um campo é mandar "".
+      const veio = (v: unknown) => v !== undefined;
       const novas: DefinicoesDaConta = {
         ...atual,
-        ...("serieId" in dto ? { serieId: texto(dto.serieId), serieNome: texto(dto.serieNome) } : {}),
-        ...("companyId" in dto ? { companyId: texto(dto.companyId), companyNome: texto(dto.companyNome) } : {}),
-        ...("paymentMethodId" in dto ? { paymentMethodId: texto(dto.paymentMethodId) } : {}),
-        ...("bankAccountId" in dto ? { bankAccountId: texto(dto.bankAccountId) } : {}),
-        ...("paymentTypeId" in dto ? { paymentTypeId: texto(dto.paymentTypeId) } : {}),
+        ...(veio(dto.serieId) ? { serieId: texto(dto.serieId), serieNome: texto(dto.serieNome) } : {}),
+        ...(veio(dto.companyId) ? { companyId: texto(dto.companyId), companyNome: texto(dto.companyNome) } : {}),
+        ...(veio(dto.paymentMethodId) ? { paymentMethodId: texto(dto.paymentMethodId) } : {}),
+        ...(veio(dto.bankAccountId) ? { bankAccountId: texto(dto.bankAccountId) } : {}),
+        ...(veio(dto.paymentTypeId) ? { paymentTypeId: texto(dto.paymentTypeId) } : {}),
       };
       // Mudar de empresa na Moloni muda os produtos e as taxas: o que estava preparado deixa de valer.
       if (dto.companyId !== undefined && dto.companyId !== atual.companyId) novas.interno = {};
