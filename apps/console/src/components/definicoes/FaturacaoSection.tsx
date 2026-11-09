@@ -27,7 +27,8 @@ import { useSession } from "@/session";
  *
  * Não há uma lista de campos: há cartões, pela ordem que o programa pede, e
  * cada um diz se já está definido. A Moloni é o caso que obriga a esta ordem,
- * porque as séries e os métodos só existem depois de se escolher a empresa.
+ * porque as séries só existem depois de se escolher a empresa. O método de
+ * pagamento não se escolhe na Moloni: vai o de cada pagamento.
  *
  * Quem vê: quem configura o clube (`settings:write`) ou quem vê a cobrança
  * (`billing:read`). Repetir e reenviar faturas pede `billing:write`. O
@@ -115,6 +116,7 @@ const PRECISA: Record<Provider, string> = {
 
 /** Uma nota por baixo do cabeçalho da ligação, quando o programa tem uma particularidade. */
 const NOTA: Partial<Record<Provider, string>> = {
+  MOLONI: "Cada fatura-recibo leva o método com que a pessoa pagou: MB WAY, Multibanco, cartão ou débito direto. Os que a Moloni ainda não tiver são criados quando a ligação fica pronta.",
   SAGE_ONE: "A Sage One não tem fatura-recibo: sai uma fatura e o recibo dela (dois documentos por pagamento). Precisa do plano Standard.",
 };
 
@@ -139,9 +141,8 @@ const PASSOS: Record<Provider, Passo[]> = {
     { lista: "series", campo: "serieId", nome: "serieNome", titulo: "Série", ajuda: "A série em que as faturas saem. Sem escolher, vale a série por omissão da conta.", obrigatorio: false },
   ],
   MOLONI: [
-    { lista: "empresas", campo: "companyId", nome: "companyNome", titulo: "Empresa", ajuda: "A empresa da Moloni em nome da qual saem as faturas. Escolhe primeiro: as séries e os métodos são dela.", obrigatorio: true },
+    { lista: "empresas", campo: "companyId", nome: "companyNome", titulo: "Empresa", ajuda: "A empresa da Moloni em nome da qual saem as faturas. Escolhe primeiro: as séries são dela.", obrigatorio: true },
     { lista: "series", campo: "serieId", nome: "serieNome", titulo: "Série", ajuda: "A série de fatura-recibo em que os documentos saem.", obrigatorio: true, dependeDe: "companyId" },
-    { lista: "metodosDePagamento", campo: "paymentMethodId", titulo: "Método de pagamento", ajuda: "O método que fica registado em cada fatura-recibo.", obrigatorio: true, dependeDe: "companyId" },
   ],
   SAGE_ONE: [
     { lista: "contasBancarias", campo: "bankAccountId", titulo: "Conta bancária", ajuda: "A conta onde o recibo regista o pagamento.", obrigatorio: true },
@@ -152,7 +153,13 @@ const PASSOS: Record<Provider, Passo[]> = {
   ],
   VENDUS: [
     { lista: "series", campo: "serieId", nome: "serieNome", titulo: "Caixa", ajuda: "A caixa (registo) da Vendus por onde saem os documentos.", obrigatorio: true },
-    { lista: "metodosDePagamento", campo: "paymentMethodId", titulo: "Método de pagamento", ajuda: "O método que fica registado em cada fatura-recibo.", obrigatorio: true },
+    {
+      lista: "metodosDePagamento",
+      campo: "paymentMethodId",
+      titulo: "Método de pagamento por omissão",
+      ajuda: "Cada fatura-recibo leva o método com que a pessoa pagou (MB WAY, Multibanco, cartão, débito direto) quando a Vendus tem um com esse nome. Este fica nos restantes.",
+      obrigatorio: true,
+    },
   ],
 };
 

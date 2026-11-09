@@ -11,10 +11,20 @@ botão. Feito a 26/10/2026.
 | Programa | Como o clube liga | O que precisa | Documento |
 |---|---|---|---|
 | InvoiceXpress | Nome da conta + chave da API (app.invoicexpress.com/users/api) | Série registada na AT (ATCUD) | Fatura-recibo |
-| Moloni | Autoriza na página da Moloni (OAuth) | Plano Flex ou Pro; escolher a empresa, a série e o método de pagamento | Fatura-recibo |
+| Moloni | Autoriza na página da Moloni (OAuth) | Plano Flex ou Pro; escolher a empresa e a série | Fatura-recibo |
 | Sage One (PT) | Autoriza na página da Sage (OAuth) | Plano Standard (o Básico dá 5 documentos/mês); conta bancária e tipo de pagamento do recibo | Fatura + recibo (não há fatura-recibo) |
 | PHC GO | Endereço da instalação + utilizador + palavra-passe; antes, regista a nossa aplicação em "Aplicações externas licenciadas" | Pacote de pedidos da API (12 por fatura); série de fatura-recibo | Fatura-recibo |
-| Vendus (Cegid) | Chave da API de um utilizador (Configuração › Utilizadores › API) | Plano Flex ou Pro; uma caixa (registo) e o método de pagamento | Fatura-recibo |
+| Vendus (Cegid) | Chave da API de um utilizador (Configuração › Utilizadores › API) | Plano Flex ou Pro; uma caixa (registo) e o método de pagamento por omissão | Fatura-recibo |
+
+**O método de pagamento** de cada fatura-recibo é o com que a pessoa pagou:
+MB WAY, Multibanco, cartão (com Google Pay, Apple Pay e Paysafecard) ou
+débito direto (`MEIOS_DA_FATURA` em `tipos.ts`, `meioDaFatura` e
+`metodoNoPrograma` em `documento.ts`). `preparar` procura-os no programa pelo
+nome e guarda os ids em `interno` (`metodo_MBWAY`, …). A Moloni cria os que
+faltam, e por isso não pede método ao clube; a Vendus só procura, e o método
+que o clube escolhe fica para os que não encontrou. A Sage regista o recibo
+com um tipo de pagamento escolhido à parte, e a InvoiceXpress e o PHC GO não
+recebem método (vai nas observações, como em todos).
 
 Fora, sem forma automática a partir da nuvem: **PHC CS / PHC Evolution** e
 **Primavera V10 / Evolution** vivem no servidor do clube e não têm API a que
@@ -124,7 +134,7 @@ disponível".
 
 ## Testar
 
-`npm run test:faturacao` (88): as regras puras, o cofre, e os cinco
+`npm run test:faturacao` (116): as regras puras, o cofre, e os cinco
 conectores contra um `fetch` de mentira que responde o que cada programa
 responde e guarda o que lhe mandámos. Prova a forma dos pedidos e o
 tratamento dos erros; não prova que os programas aceitam o que mandamos. Isso

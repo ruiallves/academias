@@ -18,11 +18,15 @@
  * preço é o pago (`gross_price`). Uma fatura-recibo não se anula: passa-se
  * uma nota de crédito a apontar para ela.
  *
+ * O método de pagamento de cada fatura-recibo é o com que a pessoa pagou,
+ * quando a Vendus tem um com esse nome (`preparar` procura-os). Os que não
+ * tem caem no método que o clube escolheu nas Definições.
+ *
  * Documentação: https://www.vendus.pt/ws/ (v1.1).
  */
 import type { InvoicingProvider } from "@prisma/client";
 import { descarregar, erroDaResposta, mensagemDoPrograma, pedir, type Resposta } from "./http";
-import { diaIso, observacoes } from "./documento";
+import { diaIso, metodoNoPrograma, metodosPorNome, observacoes } from "./documento";
 import {
   ErroDeFaturacao,
   type Conector,
@@ -100,8 +104,20 @@ export class Vendus implements Conector {
   porDefinir(def: DefinicoesDaConta): string[] {
     const falta: string[] = [];
     if (!def.serieId) falta.push("a caixa (registo) por onde saem os documentos");
-    if (!def.paymentMethodId) falta.push("o método de pagamento");
+    if (!def.paymentMethodId) falta.push("o método de pagamento por omissão");
     return falta;
+  }
+
+  /** Os métodos de pagamento da conta com o nome de cada método com que se paga (MB WAY, Multibanco, …). */
+  async preparar(cred: Credenciais, def: DefinicoesDaConta): Promise<DefinicoesDaConta> {
+    const c = this.cred(cred);
+    const r = await this.chamar(c, "GET", "/documents/paymentmethods/");
+    const lista = Array.isArray(this.ok(r, "os métodos de pagamento")) ? (r.json as Record<string, unknown>[]) : [];
+    const achados = metodosPorNome(lista.map((m) => ({ id: String(m.id), nome: String(m.title ?? m.name ?? "") })));
+    const interno: Record<string, string> = Object.fromEntries(Object.entries(def.interno ?? {}).filter(([k]) => !k.startsWith("metodo_")));
+    for (const [meio, id] of Object.entries(achados)) interno[`metodo_${meio}`] = id;
+    interno.preparadoEm = new Date().toISOString();
+    return { ...def, interno };
   }
 
   async procurar(cred: Credenciais, _def: DefinicoesDaConta, referencia: string): Promise<Emitido | null> {
@@ -141,7 +157,7 @@ export class Vendus implements Conector {
         tax_id: TAXA[l.regra.iva] ?? "NOR",
         ...(l.regra.iva === 0 ? { tax_exemption: l.regra.isencao ?? "M07" } : {}),
       })),
-      payments: [{ id: Number(def.paymentMethodId), amount: doc.totalCents / 100 }],
+      payments: [{ id: Number(metodoNoPrograma(def, doc)), amount: doc.totalCents / 100 }],
       output: "pdf_url",
       errors_full: "yes",
     });

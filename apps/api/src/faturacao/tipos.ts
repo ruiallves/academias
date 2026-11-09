@@ -102,6 +102,12 @@ export type DocumentoAFaturar = {
   /** Quando foi pago, e como ("MB WAY", "Multibanco", …). Vai nas observações e no recibo. */
   pagoEm: string;
   metodo: string;
+  /**
+   * O método do pagamento como a base o guarda (`MBWAY`, `CARD`, …), para o
+   * programa registar na fatura o método com que a pessoa pagou. Opcional
+   * porque as faturas fotografadas antes de existir só têm `metodo`.
+   */
+  meio?: string;
   /** O que o pagamento é, para o email: "a mensalidade de Outubro", "2 bilhetes", … */
   resumo: string;
 };
@@ -136,7 +142,12 @@ export type DefinicoesDaConta = {
   /** Moloni: a empresa da conta a usar. */
   companyId?: string;
   companyNome?: string;
-  /** Moloni: o método de pagamento com que se marca a fatura-recibo como paga. */
+  /**
+   * Vendus: o método de pagamento a usar quando o programa não tem um com o
+   * nome do método com que a pessoa pagou. Os métodos por meio de pagamento
+   * resolvem-se em `preparar` e ficam em `interno` (`metodo_MBWAY`, …). Na
+   * Moloni já não se escolhe: os que faltam são criados.
+   */
   paymentMethodId?: string;
   /** Sage One: a conta bancária e o tipo de pagamento do recibo. */
   bankAccountId?: string;
@@ -160,6 +171,21 @@ export type Opcoes = {
   contasBancarias?: Opcao[];
   tiposDePagamento?: Opcao[];
 };
+
+/**
+ * Os métodos de pagamento que a fatura regista. Cada pagamento da euPago cai
+ * num destes; o programa do clube tem (ou passa a ter) um método com o mesmo
+ * nome, e é esse que fica na fatura-recibo. `padrao` reconhece o método na
+ * lista do programa; `nome` é o que se cria quando falta.
+ */
+export type MeioDaFatura = "MBWAY" | "MULTIBANCO" | "CARTAO" | "DEBITO_DIRETO";
+
+export const MEIOS_DA_FATURA: { meio: MeioDaFatura; nome: string; padrao: RegExp }[] = [
+  { meio: "MBWAY", nome: "MB WAY", padrao: /mb\s*-?\s*way/i },
+  { meio: "MULTIBANCO", nome: "Multibanco", padrao: /^(?!.*way)(.*multibanco|.*refer[êe]ncia\s*mb|\s*mb\s*$)/i },
+  { meio: "CARTAO", nome: "Cartão", padrao: /^(?!.*paysafe).*(cart[ãa]o|card|visa|mastercard)/i },
+  { meio: "DEBITO_DIRETO", nome: "Débito direto", padrao: /d[ée]bito\s+dire(c)?to|sepa/i },
+];
 
 /** O que ficou emitido. */
 export type Emitido = {

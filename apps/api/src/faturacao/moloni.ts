@@ -18,15 +18,20 @@
  * (`liquidoDeBruto`), com a taxa da empresa na linha; as linhas isentas vão
  * sem taxa e com o motivo.
  *
+ * O método de pagamento de cada fatura-recibo é o com que a pessoa pagou (MB
+ * WAY, Multibanco, cartão, débito direto). `preparar` procura-os na empresa
+ * pelo nome e cria os que faltam, por isso o clube não escolhe nenhum.
+ *
  * Documentação: https://www.moloni.pt/dev/ e o plugin oficial para o
  * WooCommerce (github.com/moloni-pt/woocommerce), que é onde se vê o que a
  * documentação não diz.
  */
 import type { InvoicingProvider } from "@prisma/client";
 import { descarregar, mensagemDoPrograma, pedir } from "./http";
-import { diaIso, isencaoDoDocumento, observacoes } from "./documento";
+import { diaIso, isencaoDoDocumento, metodoNoPrograma, metodosPorNome, observacoes } from "./documento";
 import {
   ErroDeFaturacao,
+  MEIOS_DA_FATURA,
   TIPOS_DE_VENDA,
   liquidoDeBruto,
   type Conector,
@@ -174,20 +179,16 @@ export class Moloni implements Conector {
     };
     if (!def.companyId) return opcoes;
     const company_id = this.empresa(def);
-    const [series, metodos] = await Promise.all([
-      this.chamar<{ document_set_id: number; name: string; active_by_default?: number }[]>(c, "documentSets/getAll", { company_id }),
-      this.chamar<{ payment_method_id: number; name: string }[]>(c, "paymentMethods/getAll", { company_id }),
-    ]);
+    const series = await this.chamar<{ document_set_id: number; name: string; active_by_default?: number }[]>(c, "documentSets/getAll", { company_id });
     opcoes.series = series.map((s) => ({ id: String(s.document_set_id), label: s.name, porOmissao: Number(s.active_by_default) === 1 }));
-    opcoes.metodosDePagamento = metodos.map((m) => ({ id: String(m.payment_method_id), label: m.name, porOmissao: /mb ?way|multibanco|eupago/i.test(m.name) }));
     return opcoes;
   }
 
+  /** O método de pagamento não entra: resolve-se em `preparar`, pelo método com que cada pessoa pagou. */
   porDefinir(def: DefinicoesDaConta): string[] {
     const falta: string[] = [];
     if (!def.companyId) falta.push("a empresa");
     if (!def.serieId) falta.push("a série");
-    if (!def.paymentMethodId) falta.push("o método de pagamento");
     return falta;
   }
 
@@ -237,6 +238,34 @@ export class Moloni implements Conector {
       interno.maturityDateId = String(pronto.maturity_date_id);
     }
 
+    /*
+     * Os métodos de pagamento: um por cada método com que se paga na euPago.
+     * Procura-se sempre (o clube pode ter criado ou renomeado um entretanto)
+     * e cria-se o que falta, com o nome que a fatura vai mostrar.
+     */
+    const metodos = await this.chamar<{ payment_method_id: number; name: string }[]>(c, "paymentMethods/getAll", { company_id });
+    const achados = metodosPorNome((Array.isArray(metodos) ? metodos : []).map((m) => ({ id: String(m.payment_method_id), nome: String(m.name ?? "") })));
+    for (const { meio, nome } of MEIOS_DA_FATURA) {
+      const chave = `metodo_${meio}`;
+      if (achados[meio]) {
+        interno[chave] = achados[meio]!;
+        continue;
+      }
+      try {
+        const criado = await this.chamar<{ payment_method_id: number }>(c, "paymentMethods/insert", { company_id, name: nome });
+        if (!criado?.payment_method_id) throw new Error("sem id");
+        interno[chave] = String(criado.payment_method_id);
+      } catch (e) {
+        // A Moloni em baixo cura-se a repetir; uma recusa, não.
+        if (e instanceof ErroDeFaturacao && !e.definitivo) throw e;
+        throw new ErroDeFaturacao(
+          `A Moloni não deixou criar o método de pagamento "${nome}". Cria-o na Moloni (Definições › Métodos de pagamento) e volta a gravar aqui.`,
+          true,
+          e instanceof Error ? e.message.slice(0, 300) : undefined,
+        );
+      }
+    }
+
     for (const { tipo, label } of TIPOS_DE_VENDA) {
       const chave = `produto_${tipo}`;
       if (interno[chave]) continue;
@@ -283,7 +312,10 @@ export class Moloni implements Conector {
     const interno = def.interno ?? {};
     if (!interno.preparadoEm) throw new ErroDeFaturacao("A ligação à Moloni ainda não foi preparada.", true);
 
-    const customer_id = await this.cliente(c, def, doc);
+    const payment_method_id = Number(metodoNoPrograma(def, doc));
+    if (!payment_method_id) throw new ErroDeFaturacao(`A Moloni não tem o método de pagamento ${doc.metodo}. Volta a gravar as definições da faturação para o criar.`, true);
+
+    const customer_id = await this.cliente(c, def, doc, payment_method_id);
 
     const products: Linha[] = doc.linhas.map((l, i) => {
       const product_id = Number(interno[`produto_${l.tipo}`]);
@@ -313,7 +345,7 @@ export class Moloni implements Conector {
       notes: observacoes(doc),
       status: 0,
       products,
-      payments: [{ payment_method_id: Number(def.paymentMethodId), date: `${dia} 00:00:00`, value: doc.totalCents / 100, notes: doc.metodo }],
+      payments: [{ payment_method_id, date: `${dia} 00:00:00`, value: doc.totalCents / 100, notes: doc.metodo }],
     });
 
     /*
@@ -349,7 +381,7 @@ export class Moloni implements Conector {
   }
 
   /** O cliente na Moloni: pelo NIF, ou pelo email entre os sem NIF; criado se não existe. */
-  private async cliente(c: Cred, def: DefinicoesDaConta, doc: DocumentoAFaturar): Promise<number> {
+  private async cliente(c: Cred, def: DefinicoesDaConta, doc: DocumentoAFaturar, payment_method_id: number): Promise<number> {
     const company_id = this.empresa(def);
     const interno = def.interno ?? {};
     const vat = doc.cliente.nif ?? CONSUMIDOR_FINAL;
@@ -382,7 +414,7 @@ export class Moloni implements Conector {
       country_id: 1,
       email: doc.cliente.email ?? "",
       maturity_date_id: Number(interno.maturityDateId),
-      payment_method_id: Number(def.paymentMethodId),
+      payment_method_id,
     });
     return criado.customer_id;
   }

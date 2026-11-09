@@ -14,7 +14,7 @@
  * Uso: npm run test:faturacao
  */
 import { Cofre } from "../src/faturacao/cofre";
-import { dadosDeFaturacao, montarDocumento, nifOuNada, nifValido, regrasCompletas, regrasFiscais } from "../src/faturacao/documento";
+import { dadosDeFaturacao, meioDaFatura, metodoNoPrograma, metodosPorNome, montarDocumento, nifOuNada, nifValido, regrasCompletas, regrasFiscais } from "../src/faturacao/documento";
 import { InvoiceXpress, codigoDoCliente } from "../src/faturacao/invoicexpress";
 import { Moloni } from "../src/faturacao/moloni";
 import { SageOne, assinar, codificar } from "../src/faturacao/sage-one";
@@ -99,6 +99,7 @@ const docMensalidade = (): DocumentoAFaturar =>
     referencia: "AC-MENS-2026-10-JOAO-MARIA-abc123",
     pagoEm: new Date("2026-10-25T10:31:00Z"),
     metodo: "MB WAY",
+    meio: "MBWAY",
     resumo: "a mensalidade de Outubro de 2026 de João Silva",
   });
 
@@ -129,6 +130,26 @@ function testarRegras() {
   }
   check("linhas que não somam o pago: recusa", rebentou);
   check("tipo sem regra do clube usa a sugerida (QUOTA → M07)", montarDocumento({ ...d, itens: [{ tipo: "QUOTA", descricao: "x", quantidade: 1, unitarioCents: 2500 }], surchargeCents: 0, totalCents: 2500, regras, pagoEm: new Date(), metodo: "x", resumo: "x" }).linhas[0]!.regra.isencao === "M07");
+
+  check("o documento guarda o método da base", d.meio === "MBWAY" && meioDaFatura(d) === "MBWAY");
+  check("Apple Pay, Google Pay e Paysafecard são cartão", ["APPLE_PAY", "GOOGLE_PAY", "PAYSAFECARD", "CARD"].every((m) => meioDaFatura({ meio: m, metodo: "x" }) === "CARTAO"));
+  check("fatura antiga sem meio: lê o nome escrito", meioDaFatura({ metodo: "Multibanco" }) === "MULTIBANCO" && meioDaFatura({ metodo: "Débito direto" }) === "DEBITO_DIRETO");
+  check("transferência e numerário não têm método de fatura", meioDaFatura({ meio: "TRANSFER", metodo: "Transferência" }) === null);
+  const nomes = metodosPorNome([
+    { id: "1", nome: "Numerário" },
+    { id: "2", nome: "Cartão de Débito" },
+    { id: "3", nome: "MB WAY" },
+    { id: "4", nome: "Multibanco" },
+    { id: "5", nome: "Paysafecard" },
+    { id: "6", nome: "Débito Direto" },
+  ]);
+  check("métodos reconhecidos pelo nome", nomes.MBWAY === "3" && nomes.MULTIBANCO === "4" && nomes.CARTAO === "2" && nomes.DEBITO_DIRETO === "6", JSON.stringify(nomes));
+  check("MB WAY não passa por Multibanco nem Paysafecard por cartão", metodosPorNome([{ id: "9", nome: "MBWay" }]).MULTIBANCO === undefined && metodosPorNome([{ id: "5", nome: "Paysafecard" }]).CARTAO === undefined);
+  check("Referência MB conta como Multibanco", metodosPorNome([{ id: "7", nome: "Referência MB" }]).MULTIBANCO === "7");
+  const defMetodos = { paymentMethodId: "11", interno: { metodo_MBWAY: "21" } };
+  check("o método do pagamento ganha ao por omissão", metodoNoPrograma(defMetodos, { meio: "MBWAY", metodo: "MB WAY" }) === "21");
+  check("sem método igual, vale o por omissão", metodoNoPrograma(defMetodos, { meio: "MULTIBANCO", metodo: "Multibanco" }) === "11");
+  check("sem nenhum, nulo", metodoNoPrograma({}, { meio: "CARD", metodo: "Cartão" }) === null);
 
   const lidas = regrasFiscais({ confirmadas: true, porTipo: { LOJA: { iva: 23 }, QUOTA: { iva: 0, isencao: "M10" }, BILHETE: { iva: 99 }, ENVIO: { iva: 0, isencao: "lixo" } } });
   check("regrasFiscais ignora IVA inválido e motivo mal formado", !lidas.porTipo.BILHETE && lidas.porTipo.ENVIO?.iva === 0 && !lidas.porTipo.ENVIO?.isencao && lidas.porTipo.QUOTA?.isencao === "M10");
@@ -238,7 +259,8 @@ async function testarMoloni() {
   limpar();
   const moloni = new Moloni({ clientId: "dev", clientSecret: "seg" });
   const cred = { provider: "MOLONI" as const, accessToken: "tok", refreshToken: "ref", expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
-  const def = { companyId: "5", serieId: "123", paymentMethodId: "11", interno: { taxa23: "7", unitId: "1", categoryId: "2", maturityDateId: "3", produto_MENSALIDADE: "900", produto_LOJA: "901", produto_TAXA: "902", preparadoEm: "x" } };
+  const def = { companyId: "5", serieId: "123", interno: { taxa23: "7", unitId: "1", categoryId: "2", maturityDateId: "3", produto_MENSALIDADE: "900", produto_LOJA: "901", produto_TAXA: "902", metodo_MBWAY: "21", metodo_MULTIBANCO: "22", preparadoEm: "x" } };
+  check("a Moloni não pede método de pagamento ao clube", moloni.porDefinir({ companyId: "5", serieId: "123" }).length === 0);
 
   check("url de autorização nova", moloni.urlDeAutorizacao("https://api/cb", "st").startsWith("https://www.moloni.pt/ac/root/oauth/?response_type=code&client_id=dev"));
   check("não renova com mais de 30 min de vida", (await moloni.renovar(cred)) === null);
@@ -260,12 +282,43 @@ async function testarMoloni() {
   check("emite, confere o total e fecha", emitido.externalId === "44" && emitido.number === "FR A/12");
   check("o token vai na query e o corpo em JSON", pedidos.every((p) => p.url.includes("access_token=tok") && p.url.includes("json=true") && p.headers["content-type"] === "application/json"));
   const cliente = ultimo((p) => p.url.includes("/customers/insert/"))?.json as Record<string, unknown>;
-  check("cliente novo com o NIF e os ids da conta", cliente.vat === "123456789" && cliente.number === "42" && cliente.maturity_date_id === 3 && cliente.payment_method_id === 11 && cliente.zip_code === "1000-100");
+  check("cliente novo com o NIF e os ids da conta", cliente.vat === "123456789" && cliente.number === "42" && cliente.maturity_date_id === 3 && cliente.payment_method_id === 21 && cliente.zip_code === "1000-100");
   const insert = ultimo((p) => p.url.includes("/invoiceReceipts/insert/"))?.json as Record<string, unknown>;
   const linha = (insert.products as Record<string, unknown>[])[0]!;
   check("linha isenta: sem taxas, com motivo, preço sem IVA = pago", Array.isArray(linha.taxes) && (linha.taxes as unknown[]).length === 0 && linha.exemption_reason === "M07" && linha.price === 25 && linha.product_id === 900);
   check("nasce rascunho, com a nossa referência e o pagamento", insert.status === 0 && insert.our_reference === doc.referencia && (insert.payments as { value: number }[])[0]!.value === 25);
   check("fecha com status 1", (ultimo((p) => p.url.includes("/invoiceReceipts/update/"))?.json as { status: number }).status === 1);
+  check("pago por MB WAY: a fatura-recibo leva o MB WAY da Moloni", (insert.payments as { payment_method_id: number }[])[0]!.payment_method_id === 21);
+
+  limpar();
+  rota((p) => p.url.includes("/invoiceReceipts/getAll/"), () => ({ json: [] }));
+  rota((p) => p.url.includes("/customers/getByVat/"), () => ({ json: [{ customer_id: 3, vat: "123456789" }] }));
+  rota((p) => p.url.includes("/invoiceReceipts/insert/"), () => ({ json: { valid: 1, document_id: 46 } }));
+  rota((p) => p.url.includes("/documents/getOne/"), () => ({ json: { document_id: 46, net_value: 25, number: 13, status: 1 } }));
+  rota((p) => p.url.includes("/invoiceReceipts/update/"), () => ({ json: { valid: 1 } }));
+  await moloni.emitir(cred, def, { ...doc, meio: "MULTIBANCO", metodo: "Multibanco" });
+  const porMultibanco = ultimo((p) => p.url.includes("/invoiceReceipts/insert/"))?.json as { payments: { payment_method_id: number }[] };
+  check("pago por Multibanco: leva o Multibanco da Moloni", porMultibanco.payments[0]!.payment_method_id === 22);
+  limpar();
+  const semMetodo = await erroDe(moloni.emitir(cred, def, { ...doc, meio: "CARD", metodo: "Cartão" }));
+  check("método que a ligação não conhece: definitivo, antes de chamar a Moloni", semMetodo instanceof ErroDeFaturacao && semMetodo.definitivo && pedidos.length === 0);
+
+  limpar();
+  rota((p) => p.url.includes("/taxes/getAll/"), () => ({ json: [{ tax_id: 7, value: 23, saft_type: 1, fiscal_zone: "PT" }] }));
+  rota((p) => p.url.includes("/paymentMethods/getAll/"), () => ({ json: [{ payment_method_id: 31, name: "Numerário" }, { payment_method_id: 32, name: "Multibanco" }, { payment_method_id: 33, name: "Cartão de Crédito" }] }));
+  rota((p) => p.url.includes("/paymentMethods/insert/"), (_p, vez) => ({ json: { valid: 1, payment_method_id: 40 + vez } }));
+  const produtos = Object.fromEntries(["MENSALIDADE", "EXTRA", "QUOTA", "BILHETE", "LOJA", "ENVIO", "TAXA"].map((t, i) => [`produto_${t}`, String(900 + i)]));
+  const preparado = await moloni.preparar(cred, { companyId: "5", serieId: "123", interno: { unitId: "1", categoryId: "2", maturityDateId: "3", ...produtos } });
+  const criados = pedidos.filter((p) => p.url.includes("/paymentMethods/insert/")).map((p) => (p.json as { name: string }).name);
+  check("preparar usa os métodos que a Moloni já tem", preparado.interno?.metodo_MULTIBANCO === "32" && preparado.interno?.metodo_CARTAO === "33");
+  check("preparar cria os que faltam (MB WAY, Débito direto)", criados.join("|") === "MB WAY|Débito direto" && preparado.interno?.metodo_MBWAY === "40" && preparado.interno?.metodo_DEBITO_DIRETO === "41", criados.join("|"));
+
+  limpar();
+  rota((p) => p.url.includes("/taxes/getAll/"), () => ({ json: [] }));
+  rota((p) => p.url.includes("/paymentMethods/getAll/"), () => ({ json: [] }));
+  rota((p) => p.url.includes("/paymentMethods/insert/"), () => ({ json: [{ code: 2, description: "Sem permissão" }] }));
+  const recusado = await erroDe(moloni.preparar(cred, { companyId: "5", serieId: "123", interno: { unitId: "1", categoryId: "2", maturityDateId: "3", ...produtos } }));
+  check("a Moloni recusa criar o método: definitivo e diz o que fazer", recusado instanceof ErroDeFaturacao && recusado.definitivo && /MB WAY/.test(recusado.message), recusado?.message);
 
   limpar();
   rota((p) => p.url.includes("/invoiceReceipts/getAll/"), () => ({ json: [] }));
@@ -425,6 +478,18 @@ async function testarVendus() {
   check("cliente com NIF e sem email da Vendus", (corpo.client as { fiscal_id: string; send_email: string }).fiscal_id === "123456789" && (corpo.client as { send_email: string }).send_email === "no");
   rota((p) => p.url.includes("/documents/501.pdf"), () => ({ pdf: true }));
   check("PDF pelo endereço do documento", (await vendus.pdf(cred, {}, emitido)).subarray(0, 4).toString() === "%PDF");
+  check("sem métodos preparados, vale o por omissão", (corpo.payments as { id: number }[])[0]!.id === 3);
+
+  limpar();
+  rota((p) => p.url.includes("/documents/paymentmethods/"), () => ({ json: [{ id: 3, title: "Numerário" }, { id: 4, title: "MB WAY" }, { id: 5, title: "Multibanco" }] }));
+  const prepVendus = await vendus.preparar(cred, { serieId: "7", paymentMethodId: "3", interno: { metodo_CARTAO: "99" } });
+  check("Vendus: preparar encontra MB WAY e Multibanco pelo nome e esquece os antigos", prepVendus.interno?.metodo_MBWAY === "4" && prepVendus.interno?.metodo_MULTIBANCO === "5" && prepVendus.interno?.metodo_CARTAO === undefined);
+  rota((p) => p.url.includes("/documents/?external_reference="), () => ({ json: [] }));
+  rota((p) => p.url.endsWith("/documents/") && p.metodo === "POST", () => ({ status: 201, json: { id: 502, amount_gross: 25 } }));
+  await vendus.emitir(cred, prepVendus, doc);
+  check("Vendus: pago por MB WAY leva o MB WAY", ((ultimo((p) => p.url.endsWith("/documents/") && p.metodo === "POST")!.json as { payments: { id: number }[] }).payments[0]!.id === 4));
+  await vendus.emitir(cred, prepVendus, { ...doc, meio: "CARD", metodo: "Cartão" });
+  check("Vendus: cartão sem método igual leva o por omissão", ((ultimo((p) => p.url.endsWith("/documents/") && p.metodo === "POST")!.json as { payments: { id: number }[] }).payments[0]!.id === 3));
   limpar();
   rota((p) => p.url.includes("/registers/"), () => ({ status: 401, texto: "{}" }));
   const chave = await erroDe(vendus.verificar(cred));

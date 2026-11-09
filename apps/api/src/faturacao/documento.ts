@@ -6,9 +6,12 @@
  * qualquer conector sabe emitir. Tem teste (`test:faturacao`).
  */
 import {
+  MEIOS_DA_FATURA,
   REGRAS_SUGERIDAS,
   type ClienteAFaturar,
+  type DefinicoesDaConta,
   type DocumentoAFaturar,
+  type MeioDaFatura,
   type LinhaAFaturar,
   type RegraFiscal,
   type RegrasFiscais,
@@ -128,6 +131,8 @@ export function montarDocumento(input: {
   referencia: string;
   pagoEm: Date;
   metodo: string;
+  /** O método como a base o guarda (`MBWAY`, `CARD`, …). */
+  meio?: string;
   resumo: string;
 }): DocumentoAFaturar {
   const linhas: LinhaAFaturar[] = input.itens
@@ -163,8 +168,50 @@ export function montarDocumento(input: {
     referencia: input.referencia,
     pagoEm: input.pagoEm.toISOString(),
     metodo: input.metodo,
+    ...(input.meio ? { meio: input.meio } : {}),
     resumo: input.resumo,
   };
+}
+
+/** Os métodos da base em cada método da fatura. Google Pay, Apple Pay e Paysafecard são pagamentos com cartão. */
+const MEIO_DO_METODO: Record<string, MeioDaFatura> = {
+  MBWAY: "MBWAY",
+  MULTIBANCO: "MULTIBANCO",
+  CARD: "CARTAO",
+  GOOGLE_PAY: "CARTAO",
+  APPLE_PAY: "CARTAO",
+  PAYSAFECARD: "CARTAO",
+  DIRECT_DEBIT: "DEBITO_DIRETO",
+};
+
+/**
+ * Com que método se pagou, no vocabulário da fatura. Lê `meio` e, nas faturas
+ * fotografadas antes de ele existir, o nome escrito em `metodo` ("MB WAY").
+ */
+export function meioDaFatura(doc: Pick<DocumentoAFaturar, "meio" | "metodo">): MeioDaFatura | null {
+  if (doc.meio && MEIO_DO_METODO[doc.meio]) return MEIO_DO_METODO[doc.meio]!;
+  const porNome = Object.entries(MEIO_DO_METODO).find(([codigo]) => nomeDoMetodo(codigo) === doc.metodo);
+  return porNome ? porNome[1] : null;
+}
+
+/**
+ * O id do método de pagamento no programa para este documento: o do método
+ * com que a pessoa pagou, resolvido em `preparar`; senão, o escolhido pelo
+ * clube (`paymentMethodId`). Nulo quando não há nenhum.
+ */
+export function metodoNoPrograma(def: DefinicoesDaConta, doc: Pick<DocumentoAFaturar, "meio" | "metodo">): string | null {
+  const meio = meioDaFatura(doc);
+  return (meio ? def.interno?.[`metodo_${meio}`] : undefined) ?? def.paymentMethodId ?? null;
+}
+
+/** Encontra, na lista de métodos do programa, o de cada método da fatura. Só os que existem. */
+export function metodosPorNome(lista: { id: string; nome: string }[]): Partial<Record<MeioDaFatura, string>> {
+  const achados: Partial<Record<MeioDaFatura, string>> = {};
+  for (const { meio, padrao } of MEIOS_DA_FATURA) {
+    const m = lista.find((x) => padrao.test(x.nome));
+    if (m) achados[meio] = m.id;
+  }
+  return achados;
 }
 
 /** "MBWAY" → "MB WAY", como se escreve nas observações. */

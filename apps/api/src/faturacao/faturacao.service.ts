@@ -586,7 +586,7 @@ export class FaturacaoService implements OnModuleInit, OnModuleDestroy {
     });
     if (!p || p.status !== PaymentStatus.PAID || !p.paidAt) return null;
 
-    const base = { surchargeCents: p.surchargeCents, totalCents: p.amountCents, regras, referencia: p.identificador ?? p.id, pagoEm: p.paidAt, metodo: nomeDoMetodo(p.method) };
+    const base = { surchargeCents: p.surchargeCents, totalCents: p.amountCents, regras, referencia: p.identificador ?? p.id, pagoEm: p.paidAt, metodo: nomeDoMetodo(p.method), meio: p.method };
     const comoFamilia = (guardians: { membership: { invoiceDetails: unknown; user: { name: string | null; email: string | null } } }[], payerName: string | null) => {
       const escolhido = guardians.find((g) => payerName && g.membership.user.name?.trim() === payerName.trim()) ?? guardians[0];
       return escolhido ? clienteDe({ nome: escolhido.membership.user.name, email: escolhido.membership.user.email }, dadosDeFaturacao(escolhido.membership.invoiceDetails)) : null;
