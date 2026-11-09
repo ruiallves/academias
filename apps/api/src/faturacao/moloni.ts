@@ -147,10 +147,15 @@ export class Moloni implements Conector {
      * Os erros de dados vêm com 200 e uma lista de `{ code, description }`
      * (com `human_errors`) ou de frases "1 name"; e os `insert`/`update`
      * respondem `{ valid: 0 }` quando não gravaram. Tudo isso é definitivo:
-     * mandar o mesmo outra vez dá o mesmo.
+     * mandar o mesmo outra vez dá o mesmo. Um registo verdadeiro também pode
+     * ter `description` (categorias, produtos): o que o distingue de um erro é
+     * trazer um id (`category_id`, `product_id`, …).
      */
+    const pareceErro = (x: unknown) =>
+      typeof x === "string" ||
+      (!!x && typeof x === "object" && ("code" in x || "description" in x) && !Object.keys(x).some((k) => k.endsWith("_id")));
     const erroDeDados =
-      (Array.isArray(j) && j.length > 0 && j.every((x) => typeof x === "string" || (x && typeof x === "object" && ("code" in (x as object) || "description" in (x as object))))) ||
+      (Array.isArray(j) && j.length > 0 && j.every(pareceErro)) ||
       (j && !Array.isArray(j) && (typeof j.error === "string" || j.valid === 0 || j.valid === "0"));
     if (r.status !== 200 || erroDeDados) {
       throw new ErroDeFaturacao(`A Moloni recusou o pedido a ${recurso}: ${mensagemDoPrograma(r) ?? `erro ${r.status}`}.`, true, r.texto.slice(0, 500));

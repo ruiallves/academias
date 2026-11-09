@@ -555,9 +555,13 @@ function CabecalhoDaLigacao({ ligacao, mayWrite, busy, onDesligar }: { ligacao: 
             <div className="text-body font-medium text-ink">{ligacao.nome}</div>
             {ligacao.pronta ? (
               <p className="mt-0.5 text-meta font-medium text-ok">Pronta: as faturas saem a cada pagamento.</p>
-            ) : (
+            ) : ligacao.porDefinir.length > 0 ? (
               <p className="mt-0.5 text-meta leading-relaxed text-ink-2">
                 <span className="font-medium text-warn">Falta:</span> {ligacao.porDefinir.join(", ")}.
+              </p>
+            ) : (
+              <p className="mt-0.5 text-meta leading-relaxed text-warn">
+                {ligacao.erro ? "Ainda não está pronta: o programa recusou um pedido (em baixo)." : "Ainda não está pronta."}
               </p>
             )}
             {ligacao.pronta && ligacao.desde && <p className="mt-0.5 text-meta text-ink-4">Desde {dataCurta(ligacao.desde)}.</p>}

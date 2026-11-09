@@ -313,6 +313,20 @@ async function testarMoloni() {
   check("preparar usa os métodos que a Moloni já tem", preparado.interno?.metodo_MULTIBANCO === "32" && preparado.interno?.metodo_CARTAO === "33");
   check("preparar cria os que faltam (MB WAY, Débito direto)", criados.join("|") === "MB WAY|Débito direto" && preparado.interno?.metodo_MBWAY === "40" && preparado.interno?.metodo_DEBITO_DIRETO === "41", criados.join("|"));
 
+  // Conta Moloni acabada de abrir (o Fundão, 09/11): as categorias e os
+  // produtos trazem `description`, e uma lista deles não é uma lista de erros.
+  limpar();
+  rota((p) => p.url.includes("/taxes/getAll/"), () => ({ json: [{ tax_id: 7, value: 23, saft_type: 1, fiscal_zone: "PT", name: "Normal", description: "" }] }));
+  rota((p) => p.url.includes("/measurementUnits/getAll/"), () => ({ json: [{ unit_id: 1, name: "Unidade", short_name: "Un." }] }));
+  rota((p) => p.url.includes("/productCategories/getAll/"), () => ({ json: [{ category_id: 12, parent_id: 0, name: "Categoria exemplo - Produtos/Serviços", description: "", num_categories: 1, num_products: 1 }] }));
+  rota((p) => p.url.includes("/productCategories/insert/"), () => ({ json: { valid: 1, category_id: 13 } }));
+  rota((p) => p.url.includes("/maturityDates/getAll/"), () => ({ json: [{ maturity_date_id: 3, name: "Pronto pagamento", days: 0 }] }));
+  rota((p) => p.url.includes("/paymentMethods/getAll/"), () => ({ json: [{ payment_method_id: 21, name: "MB WAY" }, { payment_method_id: 22, name: "Multibanco" }, { payment_method_id: 23, name: "Cartão" }, { payment_method_id: 24, name: "Débito direto" }] }));
+  rota((p) => p.url.includes("/products/getByReference/"), () => ({ json: [{ product_id: 500, category_id: 13, reference: "ACAD-MENSALIDADE", name: "Mensalidade", description: "" }] }));
+  rota((p) => p.url.includes("/products/insert/"), (_p, vez) => ({ json: { valid: 1, product_id: 600 + vez } }));
+  const deRaiz = await moloni.preparar(cred, { companyId: "5", serieId: "123" });
+  check("conta nova: categorias e produtos com description passam", deRaiz.interno?.categoryId === "13" && deRaiz.interno?.produto_MENSALIDADE === "500" && Boolean(deRaiz.interno?.preparadoEm), JSON.stringify(deRaiz.interno));
+
   limpar();
   rota((p) => p.url.includes("/taxes/getAll/"), () => ({ json: [] }));
   rota((p) => p.url.includes("/paymentMethods/getAll/"), () => ({ json: [] }));
