@@ -8,6 +8,15 @@ export function digitosDoTelefone(t: string | null | undefined): string {
   return (t ?? "").replace(/\D/g, "").replace(/^(00351|351)(?=\d{9}$)/, "");
 }
 
+/**
+ * O telemóvel como se grava. Há teclados de telemóvel onde o `+` está na mesma
+ * tecla do `*`, e um pai de fora escreve `*33 6…` sem dar por isso: à frente, o
+ * `*` (ou o `＋` de largura dupla) vale `+`.
+ */
+export function telefoneLimpo(t: string | null | undefined): string {
+  return (t ?? "").trim().replace(/^[*＋]/, "+").replace(/\s+/g, " ");
+}
+
 /** Nove algarismos no mínimo (um número português), quinze no máximo (o limite internacional). */
 export function telefoneValido(t: string | null | undefined): boolean {
   const d = digitosDoTelefone(t);

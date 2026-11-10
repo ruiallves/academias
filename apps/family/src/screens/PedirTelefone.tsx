@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
-import { PhoneCall, ShieldCheck } from "lucide-react";
+import { ChevronDown, PhoneCall, ShieldCheck } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { readBrand } from "@/lib/brand";
 import { telefoneGravado } from "@/lib/contexts";
@@ -23,16 +23,40 @@ export function PedirTelefone({ nome }: { nome?: string | null }) {
   const [aGravar, setAGravar] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Um número de fora (+44…, 0033…) escreve-se inteiro; os portugueses levam o +351 à frente, já escrito.
-  const internacional = /^\s*(\+|00)/.test(telefone) && !/^\s*(\+|00)351/.test(telefone);
+  /*
+   * Os portugueses levam o +351 à frente, já escrito, e o número corta nos 9
+   * algarismos. Um número de outro país escreve-se inteiro, com o indicativo:
+   * entra-se nesse modo tocando no "+351" ou escrevendo/colando +, 00 ou * (há
+   * teclados onde o + está na tecla do *). Sem isto, um pai de fora não tinha
+   * como gravar o número e ficava preso neste ecrã.
+   */
+  const [deFora, setDeFora] = useState(false);
   const digitos = telefone.replace(/\D/g, "").replace(/^(00351|351)(?=\d{9}$)/, "");
-  const valido = internacional ? digitos.length >= 9 && digitos.length <= 15 : digitos.length === 9;
+  const valido = deFora ? digitos.length >= 9 && digitos.length <= 15 : digitos.length === 9;
 
   function escrever(v: string) {
-    if (/^\s*(\+|00)/.test(v)) return setTelefone(v);
+    const comIndicativo = /^\s*(\+|00|\*|＋)/.test(v);
+    if (deFora || comIndicativo) {
+      if (!deFora) setDeFora(true);
+      // Só algarismos, espaços e um + à frente; o * e o + largo valem +.
+      const limpo = v.replace(/^\s*[*＋]/, "+").replace(/(?!^\+)[^\d\s]/g, "");
+      return setTelefone(limpo);
+    }
     // 912345678 → 912 345 678, à medida que se escreve.
     const d = v.replace(/\D/g, "").slice(0, 9);
     setTelefone([d.slice(0, 3), d.slice(3, 6), d.slice(6)].filter(Boolean).join(" "));
+  }
+
+  function trocarPais() {
+    setErro(null);
+    if (deFora) {
+      setDeFora(false);
+      setTelefone("");
+    } else {
+      setDeFora(true);
+      setTelefone("+");
+    }
+    document.getElementById(id)?.focus();
   }
 
   async function gravar(e: FormEvent) {
@@ -40,8 +64,11 @@ export function PedirTelefone({ nome }: { nome?: string | null }) {
     if (!valido || aGravar) return;
     setAGravar(true);
     setErro(null);
+    // De fora, sem + nem 00 escritos: o indicativo veio nos algarismos, falta o +.
+    const t = telefone.trim();
+    const enviar = deFora && !/^(\+|00)/.test(t) ? `+${t}` : t;
     try {
-      await apiPatch("/api/app/telefone", { telefone: telefone.trim() });
+      await apiPatch("/api/app/telefone", { telefone: enviar });
       telefoneGravado();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível gravar o telemóvel.");
@@ -73,20 +100,32 @@ export function PedirTelefone({ nome }: { nome?: string | null }) {
           O teu telemóvel
         </label>
         <div className="flex items-stretch overflow-hidden rounded-[14px] border border-line bg-canvas focus-within:border-ink-3">
-          {!internacional && (
-            <span className="flex items-center border-r border-line px-3.5 text-[17px] font-medium text-ink-3 tabular-nums">+351</span>
+          {!deFora && (
+            <button
+              type="button"
+              onClick={trocarPais}
+              aria-label="Número de outro país"
+              className="flex items-center gap-1 border-r border-line px-3.5 text-[17px] font-medium text-ink-3 tabular-nums active:bg-sunken"
+            >
+              +351
+              <ChevronDown className="size-4" strokeWidth={2} />
+            </button>
           )}
           <input
             id={id}
             value={telefone}
             onChange={(e) => escrever(e.target.value)}
             inputMode="tel"
-            autoComplete="tel-national"
-            placeholder="912 345 678"
+            autoComplete={deFora ? "tel" : "tel-national"}
+            placeholder={deFora ? "+33 6 12 34 56 78" : "912 345 678"}
             autoFocus
             className="min-w-0 flex-1 bg-transparent px-3.5 py-3.5 text-[19px] font-medium tracking-[0.02em] text-ink tabular-nums placeholder:font-normal placeholder:text-ink-4 focus:outline-none"
           />
         </div>
+        <button type="button" onClick={trocarPais} className="mt-2 text-meta font-semibold text-ink-3 underline-offset-2 active:underline">
+          {deFora ? "É um número português" : "O teu número é de outro país?"}
+        </button>
+        {deFora && <p className="mt-1 text-meta text-ink-4">Escreve o número inteiro, com o indicativo do país.</p>}
         {erro && <p className="mt-2 text-meta text-risk">{erro}</p>}
 
         <ul className="mt-5 space-y-4 border-t border-line pt-5">

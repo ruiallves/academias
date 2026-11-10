@@ -9,7 +9,7 @@ import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
 import { familyApprovedEmail, familyInviteEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
-import { telefoneValido } from "../common/telefone";
+import { telefoneLimpo, telefoneValido } from "../common/telefone";
 import { DOCUMENTO_VALIDO, NIF_VALIDO, normalizarDocumento, normalizarNif } from "../academy/identificacao";
 
 /**
@@ -323,7 +323,10 @@ export class FamilyInvitesService {
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("Falta o teu nome");
     // Obrigatório desde 09/11/2026: o formulário já o pedia, a API não.
-    if (!telefoneValido(dto.phone)) throw new BadRequestException("Falta o telemóvel: é por aqui que o clube te liga");
+    const phone = telefoneLimpo(dto.phone);
+    if (!telefoneValido(phone)) {
+      throw new BadRequestException("Falta o telemóvel (9 algarismos, ou + e o indicativo se for de outro país): é por aqui que o clube te liga");
+    }
 
     const athleteId = await this.matchAthlete(academyId, dto, dto.birthdate);
 
@@ -342,7 +345,7 @@ export class FamilyInvitesService {
       const userId = `usr_${randomBytes(12).toString("hex")}`;
       const created = await db.$queryRaw<{ id: string }[]>`
         SELECT app.upsert_invited_user(
-          ${userId}, ${account.authId}, ${email}, ${name}, ${dto.phone.trim() || null}
+          ${userId}, ${account.authId}, ${email}, ${name}, ${phone || null}
         ) AS id
       `;
 

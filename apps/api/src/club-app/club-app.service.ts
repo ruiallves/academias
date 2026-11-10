@@ -10,7 +10,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { PaymentMethod } from "@prisma/client";
-import { telefoneValido } from "../common/telefone";
+import { telefoneLimpo, telefoneValido } from "../common/telefone";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { SupabaseJwtService } from "../auth/supabase-jwt.service";
@@ -286,8 +286,10 @@ export class ClubAppService {
     const eu = await this.identidade(authorization);
     const academyId = await this.academiaDe(slug);
     if (!eu.userId) throw new UnauthorizedException("Conta sem perfil neste clube");
-    const valor = telefone.trim();
-    if (!telefoneValido(valor)) throw new BadRequestException("Escreve um telemóvel com 9 algarismos");
+    const valor = telefoneLimpo(telefone);
+    if (!telefoneValido(valor)) {
+      throw new BadRequestException("Escreve o telemóvel com 9 algarismos. Se for de outro país, começa por + e o indicativo (ex.: +33 6 12 34 56 78).");
+    }
 
     const memberships = await this.auth.membershipsOf(eu.authId);
     if (!memberships.some((m) => m.academy_id === academyId && m.role === "GUARDIAN")) {
