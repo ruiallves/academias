@@ -29,7 +29,7 @@ import { matchTitle } from "../common/match-title";
 import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
 import { minutosDasPartesParaGravar, partesDoJogo, problemaNoTempoDoJogo } from "./minutos-do-jogo";
-import { siteIncluido, siteSoNaExperiencia } from "../site/plano";
+import { enderecoDoSite, siteIncluido, siteSoNaExperiencia } from "../site/plano";
 
 /**
  * Um jogo com bilhetes vendidos não se desmarca nem se apaga pelo calendário:
@@ -364,6 +364,8 @@ export class AcademyService {
               websiteIncluido: await siteIncluido(db, ctx.academyId),
               // Só por causa do período experimental: a consola diz até quando (`trialEndsAt`).
               websiteNaExperiencia: await siteSoNaExperiencia(db, ctx.academyId),
+              // O endereço do site, só publicado e no plano: a ligação "Site do clube" no menu da conta.
+              siteUrl: await enderecoDoSite(db, ctx.academyId, this.config.get<string>("SITE_PREVIEW_DOMAIN") ?? "website.academias.pt"),
               /*
                * Os meses de cada escalão desta época, para o período de cobrança
                * por escalão. Vazio = segue os meses do clube.

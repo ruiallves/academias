@@ -32,6 +32,7 @@ import { fichaDeSocioDaConta } from "../members/socio-menor";
 import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
 import { SELECT_VENDAS, tiposQueSeVendem, vendeOnline } from "../common/vendas-online";
 import { tiposValidos } from "../site/site.tipos";
+import { enderecoDoSite } from "../site/plano";
 import { LegalService } from "../legal/legal.service";
 import { SuspensaoService } from "../auth/suspensao.service";
 
@@ -211,6 +212,15 @@ export class ClubAppService {
     const staff = daAcademia.find((m) => !deFamilia(m.role));
     const pendente = !familia && (await this.auth.familyApprovalPending(eu.authId, academyId));
 
+    /*
+     * O site do clube (Connect Pro), para a ligação discreta do ecrã de escolha
+     * de área. Numa transação à parte e sem deixar cair o resto: uma falha aqui
+     * não pode impedir ninguém de entrar na app.
+     */
+    const site = await this.prisma
+      .runAs(academyId, (db) => enderecoDoSite(db, academyId, this.config.get<string>("SITE_PREVIEW_DOMAIN") ?? "website.academias.pt"))
+      .catch(() => null);
+
     return this.prisma.runAs(academyId, async (db) => {
       /*
        * A ficha que esta conta vê: a sua, ou a de sócio-atleta menor do atleta
@@ -277,7 +287,7 @@ export class ClubAppService {
       const eu2 = familia && eu.userId ? await db.user.findUnique({ where: { id: eu.userId }, select: { phone: true } }) : null;
       const telefoneEmFalta = Boolean(eu2) && !telefoneValido(eu2!.phone);
 
-      return { contexts, ...(telefoneEmFalta ? { telefoneEmFalta: true } : {}) };
+      return { contexts, ...(telefoneEmFalta ? { telefoneEmFalta: true } : {}), ...(site ? { site } : {}) };
     });
   }
 

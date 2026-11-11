@@ -1,4 +1,4 @@
-import { Briefcase, IdCard, Users, Dumbbell } from "lucide-react";
+import { ArrowUpRight, Briefcase, Dumbbell, Globe, IdCard, Users } from "lucide-react";
 import { readBrand } from "@/lib/brand";
 import { chooseContext, useContexts, type ContextType } from "@/lib/contexts";
 import { ROLE_LABEL } from "@/lib/handoff";
@@ -29,7 +29,7 @@ import { ClubMark } from "@/ClubMark";
  */
 export default function EscolherArea({ name }: { name: string }) {
   const brand = readBrand();
-  const { contexts } = useContexts();
+  const { contexts, site } = useContexts();
   const primeiro = name.trim().split(/\s+/)[0];
 
   const staff = contexts?.find((c) => c.type === "STAFF");
@@ -94,6 +94,25 @@ export default function EscolherArea({ name }: { name: string }) {
       </div>
 
       <p className="text-center text-[12px] text-ink-4">Podes trocar a qualquer momento, sem sair da conta.</p>
+
+      {/*
+        O site do clube (Connect Pro), quando está publicado. Discreto de
+        propósito: é uma saída da app, não uma área, e não compete com as de cima.
+      */}
+      {site && (
+        <a
+          href={site}
+          target="_blank"
+          rel="noopener"
+          className="mx-auto -mt-2 flex items-center gap-2 rounded-full px-3 py-2 text-[13px] text-ink-3 active:bg-sunken"
+        >
+          <Globe className="size-[15px]" strokeWidth={1.9} />
+          <span>
+            Site do clube · <span className="font-semibold text-ink-2">{site.replace(/^https:\/\//, "")}</span>
+          </span>
+          <ArrowUpRight className="size-[14px]" strokeWidth={2} />
+        </a>
+      )}
     </div>
   );
 }

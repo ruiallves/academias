@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Bell, Check, ChevronDown, ChevronsUpDown, LogOut, PanelLeft, Search, Shield, Users } from "@/lib/icons";
+import { ArrowUpRight, Bell, Check, ChevronDown, ChevronsUpDown, Globe, LogOut, PanelLeft, Search, Shield, Users } from "@/lib/icons";
 import { teamAgeLabel } from "@/lib/team-age";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { useNavGroups } from "@/lib/nav-groups";
@@ -592,6 +592,29 @@ function UserCard({ collapsed, showSettings }: { collapsed: boolean; showSetting
                   <span className="block truncate text-[11px] text-ink-3">Academia, cargos, época, pagamentos</span>
                 </span>
               </NavLink>
+            </div>
+          )}
+
+          {/* O site do clube (Connect Pro), só publicado. Abre noutro separador. */}
+          {academy.siteUrl && (
+            <div className="mt-1 border-t border-line pt-1">
+              <a
+                href={academy.siteUrl}
+                target="_blank"
+                rel="noopener"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left transition-colors duration-[120ms] hover:bg-sunken"
+              >
+                <span className="flex size-6 shrink-0 items-center justify-center text-ink-3">
+                  <Globe className="size-3.5" strokeWidth={1.75} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-medium text-ink">Site do clube</span>
+                  <span className="block truncate text-[11px] text-ink-3">{academy.siteUrl.replace(/^https:\/\//, "")}</span>
+                </span>
+                <ArrowUpRight className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
+              </a>
             </div>
           )}
 

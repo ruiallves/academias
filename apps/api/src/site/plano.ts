@@ -20,6 +20,22 @@ export async function siteIncluido(db: Pick<ScopedClient, "$queryRaw">, academyI
 }
 
 /**
+ * O endereço do site do clube, só quando ele está aberto ao público: publicado
+ * e com o site no plano (Connect Pro, ou os 30 dias de experiência). É a mesma
+ * regra do `SitePublicoService.clube`, por isso a ligação nunca dá num 404. O
+ * domínio próprio quando o há, senão a pré-visualização `<slug>.website.academias.pt`.
+ */
+export async function enderecoDoSite(db: ScopedClient, academyId: string, previewDomain: string): Promise<string | null> {
+  const [a, config, noPlano] = await Promise.all([
+    db.academy.findFirst({ where: { id: academyId }, select: { slug: true, siteDomain: true } }),
+    db.siteConfig.findUnique({ where: { academyId }, select: { published: true } }),
+    siteIncluido(db, academyId),
+  ]);
+  if (!a || !config?.published || !noPlano) return null;
+  return a.siteDomain ? `https://${a.siteDomain}` : `https://${a.slug}.${previewDomain}`;
+}
+
+/**
  * O site está cá só por causa do período experimental? A consola usa-o para
  * dizer até quando, e que depois é preciso o Connect Pro.
  */

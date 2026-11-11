@@ -57,6 +57,8 @@ type State = {
   error: string | null;
   /** Encarregado sem telemóvel: a app pede-o antes da área de família. Ver `screens/PedirTelefone.tsx`. */
   telefoneEmFalta?: boolean;
+  /** O site público do clube (Connect Pro), quando está publicado. Ver `EscolherArea`. */
+  site?: string | null;
 };
 
 const entregaKey = () => `academia.app.contexto:${academySlug()}`;
@@ -126,10 +128,11 @@ export async function loadContexts(): Promise<void> {
 
   if (import.meta.env.DEV) await resolverClubeDaConta();
   try {
-    const r = await apiGet<{ contexts: AppContext[]; telefoneEmFalta?: boolean }>("/api/app/contexts");
+    const r = await apiGet<{ contexts: AppContext[]; telefoneEmFalta?: boolean; site?: string }>("/api/app/contexts");
     guardarArranque("contextos", r.contexts);
     const active = resolverActivo(r.contexts);
-    state = { contexts: r.contexts, active, error: null, telefoneEmFalta: r.telefoneEmFalta === true };
+    const site = typeof r.site === "string" && /^https:\/\//.test(r.site) ? r.site : null;
+    state = { contexts: r.contexts, active, error: null, telefoneEmFalta: r.telefoneEmFalta === true, site };
     setActiveArea(active);
   } catch (e) {
     // Com os guardados à vista, uma falha de rede no arranque é silêncio: a próxima volta corrige.

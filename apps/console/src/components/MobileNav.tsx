@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
-import { Bell, LogOut, Search, X } from "@/lib/icons";
+import { ArrowUpRight, Bell, Globe, LogOut, Search, X } from "@/lib/icons";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { permissionsOf } from "@/lib/permissions";
 import { academy, listAthletes, listTeams, navCounts, nomesDasEquipas } from "@/lib/api";
@@ -306,6 +306,21 @@ function MobileMenuSheet({ onClose }: { onClose: () => void }) {
                 <div className="border-t border-line">
                   <SheetItem item={SETTINGS_ITEM} />
                 </div>
+              )}
+              {/* O site do clube (Connect Pro), só publicado. Abre fora da consola. */}
+              {academy.siteUrl && (
+                <a
+                  href={academy.siteUrl}
+                  target="_blank"
+                  rel="noopener"
+                  className="flex min-h-12 items-center gap-3 border-t border-line px-3 text-body font-medium text-ink"
+                >
+                  <Globe className="size-[18px] shrink-0 nav-icon" strokeWidth={1.75} />
+                  <span className="min-w-0 flex-1 truncate">
+                    Site do clube <span className="font-normal text-ink-3">· {academy.siteUrl.replace(/^https:\/\//, "")}</span>
+                  </span>
+                  <ArrowUpRight className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
+                </a>
               )}
             </div>
             <TrialBadge

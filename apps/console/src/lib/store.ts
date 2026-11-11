@@ -73,6 +73,8 @@ type ApiBootstrap = {
     websiteIncluido?: boolean;
     /** O site está cá só por causa do período experimental. */
     websiteNaExperiencia?: boolean;
+    /** O endereço do site público, só publicado e no plano. */
+    siteUrl?: string | null;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -409,7 +411,7 @@ const EMPTY: State = {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
     billingDueDay: 8, billingMonths: [], billingNext: null, billingByTeam: false, billingTeams: [],
-    paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true, websiteIncluido: false, websiteNaExperiencia: false,
+    paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true, websiteIncluido: false, websiteNaExperiencia: false, siteUrl: null,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
     association: "",
@@ -1154,6 +1156,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       // Aqui ao contrário: sem a resposta do servidor, o site não está no plano.
       websiteIncluido: boot.academy.websiteIncluido ?? false,
       websiteNaExperiencia: boot.academy.websiteNaExperiencia ?? false,
+      siteUrl: typeof boot.academy.siteUrl === "string" && /^https:\/\//.test(boot.academy.siteUrl) ? boot.academy.siteUrl : null,
       feesOnPayer: boot.academy.feesOnPayer ?? false,
       billingNext: boot.academy.billingNextFrom
         ? {

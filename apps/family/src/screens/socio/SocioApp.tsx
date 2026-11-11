@@ -7,6 +7,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { Ecras } from "@/Ecras";
+import { SiteDoClube } from "@/SiteDoClube";
 import { SaidaDoSplash, Splash } from "@/Splash";
 import QRCode from "qrcode";
 import {
@@ -2143,6 +2144,8 @@ function Perfil() {
       <p className="px-2 text-center text-[12px] leading-relaxed text-ink-4">
         Para alterar estes dados, contacta o clube.
       </p>
+
+      <SiteDoClube />
 
       <button
         type="button"

@@ -106,6 +106,8 @@ export type Academy = {
   websiteIncluido: boolean;
   /** O site está cá só por causa do período experimental: acaba em `trialEndsAt`, e depois é preciso o Connect Pro. */
   websiteNaExperiencia: boolean;
+  /** O endereço do site público, só quando está publicado e no plano. É a ligação "Site do clube" do menu da conta. */
+  siteUrl: string | null;
   /**
    * A comissão da euPago é de quem paga. Ligado, **os valores da plataforma são
    * o que o clube recebe**, e a família paga esse valor mais a taxa, a mesma em

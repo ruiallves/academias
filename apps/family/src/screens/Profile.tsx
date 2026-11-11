@@ -6,6 +6,7 @@ import { apiPost } from "@/lib/http";
 import { signOut } from "@/lib/session";
 import { resetOnboarding } from "@/lib/onboarding";
 import { NotificationCard } from "@/NotificationCard";
+import { SiteDoClube } from "@/SiteDoClube";
 import { Avatar, Label, cx } from "@/ui";
 import { campoDaProva, provaParaApi, provaValida, provaVazia, TipoDeDocumento } from "@/IdentificacaoDoFilho";
 
@@ -99,6 +100,7 @@ export default function Profile() {
       <section>
         <Label>Clube</Label>
         <div className="space-y-2">
+          <SiteDoClube />
           <ActionRow icon={BookOpen} label="Documentos do clube" onClick={() => navigate("/documentos")} />
           <ActionRow icon={ShieldAlert} label="Canal de denúncia" onClick={() => navigate("/denuncias")} />
         </div>
