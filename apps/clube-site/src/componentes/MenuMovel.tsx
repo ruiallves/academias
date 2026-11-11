@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
@@ -14,6 +15,11 @@ import { useCarrinho } from "@/lib/carrinho";
 /**
  * O menu do telemóvel. Abre por baixo do cabeçalho, fecha ao navegar e com
  * Escape, e enquanto está aberto a página por trás não rola.
+ *
+ * O painel vai para o `body` por um portal. Dentro do cabeçalho não aparecia:
+ * o vidro do cabeçalho (`backdrop-blur`) faz de caixa para os filhos `fixed`,
+ * e o painel ficava com a altura do cabeçalho menos o topo, ou seja zero
+ * (cbfundao.pt, 11/11/2026).
  */
 export function MenuMovel({ clube, topo = "top-[calc(2.5rem+4.25rem)]" }: { clube: Clube; topo?: string }) {
   const [aberto, setAberto] = useState(false);
@@ -47,7 +53,7 @@ export function MenuMovel({ clube, topo = "top-[calc(2.5rem+4.25rem)]" }: { club
         {aberto ? <X size={22} /> : <Menu size={22} />}
       </button>
 
-      {aberto && (
+      {aberto && createPortal(
         <div
           id="menu-movel"
           className={`fixed inset-x-0 ${topo} bottom-0 z-40 overflow-y-auto bg-surface`}
@@ -86,7 +92,8 @@ export function MenuMovel({ clube, topo = "top-[calc(2.5rem+4.25rem)]" }: { club
               <Redes social={clube.social} shortName={clube.shortName} />
             </div>
           </nav>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
