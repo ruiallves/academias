@@ -420,6 +420,12 @@ export class Moloni implements Conector {
       email: doc.cliente.email ?? "",
       maturity_date_id: Number(interno.maturityDateId),
       payment_method_id,
+      // Obrigatórios em contas novas (CB Fundão, 11/11/2026): sem vendedor,
+      // sem dia fixo de pagamento, sem desconto nem limite. Como o plugin oficial.
+      salesman_id: 0,
+      payment_day: 0,
+      discount: 0,
+      credit_limit: 0,
     });
     return criado.customer_id;
   }

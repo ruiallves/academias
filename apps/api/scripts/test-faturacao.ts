@@ -283,6 +283,7 @@ async function testarMoloni() {
   check("o token vai na query e o corpo em JSON", pedidos.every((p) => p.url.includes("access_token=tok") && p.url.includes("json=true") && p.headers["content-type"] === "application/json"));
   const cliente = ultimo((p) => p.url.includes("/customers/insert/"))?.json as Record<string, unknown>;
   check("cliente novo com o NIF e os ids da conta", cliente.vat === "123456789" && cliente.number === "42" && cliente.maturity_date_id === 3 && cliente.payment_method_id === 21 && cliente.zip_code === "1000-100");
+  check("cliente novo leva vendedor e dia de pagamento a 0 (contas novas exigem)", cliente.salesman_id === 0 && cliente.payment_day === 0 && cliente.discount === 0 && cliente.credit_limit === 0);
   const insert = ultimo((p) => p.url.includes("/invoiceReceipts/insert/"))?.json as Record<string, unknown>;
   const linha = (insert.products as Record<string, unknown>[])[0]!;
   check("linha isenta: sem taxas, com motivo, preço sem IVA = pago", Array.isArray(linha.taxes) && (linha.taxes as unknown[]).length === 0 && linha.exemption_reason === "M07" && linha.price === 25 && linha.product_id === 900);

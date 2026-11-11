@@ -134,7 +134,7 @@ disponível".
 
 ## Testar
 
-`npm run test:faturacao` (117): as regras puras, o cofre, e os cinco
+`npm run test:faturacao` (118): as regras puras, o cofre, e os cinco
 conectores contra um `fetch` de mentira que responde o que cada programa
 responde e guarda o que lhe mandámos. Prova a forma dos pedidos e o
 tratamento dos erros; não prova que os programas aceitam o que mandamos. Isso
