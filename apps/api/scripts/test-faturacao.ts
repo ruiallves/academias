@@ -360,7 +360,17 @@ async function testarMoloni() {
   rota((p) => p.url.startsWith("https://moloni/pdf"), () => ({ status: 200, texto: "<html>não é pdf</html>" }));
   rota((p) => p.url.startsWith("https://www.moloni.pt/downloads/index.php"), () => ({ pdf: true }));
   const pdf = await moloni.pdf(cred, def, emitido);
-  check("PDF: tenta o link e depois o do plugin", pdf.subarray(0, 4).toString() === "%PDF" && pedidos.some((p) => p.url.includes("action=getDownload&x=1&y=2")));
+  check("PDF: descarrega como o plugin (com e= e t=n, sem signed)", pdf.subarray(0, 4).toString() === "%PDF"
+    && pedidos.some((p) => /action=getDownload&x=1&y=2&e=[^&]+&t=n$/.test(p.url))
+    && (ultimo((p) => p.url.includes("/documents/getPDFLink/"))?.json as Record<string, unknown>).signed === undefined
+    && !pedidos.some((p) => p.url.startsWith("https://moloni/pdf")));
+
+  limpar();
+  rota((p) => p.url.includes("/documents/getPDFLink/"), () => ({ json: { url: "https://moloni/pdf?x=1&y=2" } }));
+  rota((p) => p.url.startsWith("https://www.moloni.pt/downloads/index.php"), () => ({ status: 200, texto: "<html>não é pdf</html>" }));
+  rota((p) => p.url.startsWith("https://moloni/pdf"), () => ({ status: 200, texto: "<html>também não</html>" }));
+  const semPdf = await erroDe(moloni.pdf(cred, def, emitido));
+  check("PDF que não vem: tenta outra vez mais tarde e diz o que recebeu", semPdf instanceof ErroDeFaturacao && !semPdf.definitivo && /getDownload 200/.test(semPdf.detalhe ?? ""));
 }
 
 async function testarSage() {

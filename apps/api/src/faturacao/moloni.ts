@@ -44,6 +44,8 @@ import {
 } from "./tipos";
 
 const PROGRAMA = "A Moloni";
+/** O `e` do link de descarga do PDF: quem o descarrega (o plugin oficial põe um email seu). */
+const QUEM_DESCARREGA = "geral@academias.pt";
 const BASE = "https://api.moloni.pt/v1";
 const AUTORIZAR = "https://www.moloni.pt/ac/root/oauth/";
 /** O NIF do consumidor final, que a Moloni aceita num cliente sem NIF. */
@@ -434,17 +436,24 @@ export class Moloni implements Conector {
   async pdf(cred: Credenciais, def: DefinicoesDaConta, emitido: Emitido): Promise<Buffer> {
     const c = this.cred(cred);
     const company_id = this.empresa(def);
-    const r = await this.chamar<{ url?: string }>(c, "documents/getPDFLink", { company_id, document_id: Number(emitido.externalId), signed: 1 });
+    // Como o plugin oficial (moloni-pt/woocommerce, DownloadDocument.php): só o
+    // documento, sem `signed`, e a descarga pelo getDownload com a query do link
+    // mais `e` (quem descarrega) e `t=n`. Sem o `e` a Moloni não dava o PDF
+    // (CB Fundão, 11/11/2026: FR M/1 e M/2 emitidas, PDF sempre "por pronto").
+    const r = await this.chamar<{ url?: string }>(c, "documents/getPDFLink", { company_id, document_id: Number(emitido.externalId) });
     if (!r?.url) throw new ErroDeFaturacao("A Moloni não devolveu o link do PDF. Voltamos a tentar mais tarde.", false);
-    const f = await descarregar(r.url, {}, PROGRAMA);
-    if (f.status === 200 && f.corpo.length > 100 && (f.tipo.includes("pdf") || f.corpo.subarray(0, 4).toString() === "%PDF")) return f.corpo;
-    // O plugin oficial reconstrói o link de descarga a partir da query do que a API devolve.
+    const ehPdf = (f: { status: number; corpo: Buffer }) => f.status === 200 && f.corpo.subarray(0, 4).toString() === "%PDF";
+    const vistos: string[] = [];
     const query = r.url.split("?")[1];
     if (query) {
-      const g = await descarregar(`https://www.moloni.pt/downloads/index.php?action=getDownload&${query}&t=n`, {}, PROGRAMA);
-      if (g.status === 200 && g.corpo.subarray(0, 4).toString() === "%PDF") return g.corpo;
+      const g = await descarregar(`https://www.moloni.pt/downloads/index.php?action=getDownload&${query}&e=${encodeURIComponent(QUEM_DESCARREGA)}&t=n`, {}, PROGRAMA);
+      if (ehPdf(g)) return g.corpo;
+      vistos.push(`getDownload ${g.status} ${g.tipo} ${g.corpo.length}B`);
     }
-    throw new ErroDeFaturacao("O PDF da Moloni ainda não estava pronto. Voltamos a tentar mais tarde.", false);
+    const f = await descarregar(r.url, {}, PROGRAMA);
+    if (ehPdf(f)) return f.corpo;
+    vistos.push(`link ${f.status} ${f.tipo} ${f.corpo.length}B`);
+    throw new ErroDeFaturacao("O PDF da Moloni ainda não estava pronto. Voltamos a tentar mais tarde.", false, vistos.join("; "));
   }
 
   async anular(cred: Credenciais, def: DefinicoesDaConta, emitido: Emitido, motivo: string): Promise<void> {
