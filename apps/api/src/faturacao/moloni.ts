@@ -426,6 +426,7 @@ export class Moloni implements Conector {
       payment_day: 0,
       discount: 0,
       credit_limit: 0,
+      delivery_method_id: 0,
     });
     return criado.customer_id;
   }
