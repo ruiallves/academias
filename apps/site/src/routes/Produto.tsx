@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Monitor, Telemovel } from "@/components/aparelhos";
 import { cx, Seta } from "@/components/marca";
-import { AI_ADDON, ASSISTENTE, euro, PESSOAS, ROADMAP, SECURITY } from "@/lib/content";
+import { ASSISTENTE, PESSOAS, ROADMAP, SECURITY } from "@/lib/content";
 
 /**
  * O clube por dentro.
