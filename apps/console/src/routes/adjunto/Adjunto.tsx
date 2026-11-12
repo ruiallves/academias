@@ -129,8 +129,12 @@ export default function Adjunto() {
      * de falar fica sempre em baixo. `absolute inset-0` contra o `<main>`
      * (que é `relative`), por cima da moldura de padding de todas as outras
      * páginas, que aqui só afastava os painéis das bordas.
+     *
+     * No telemóvel o fundo pára acima da barra de navegação: o `inset-0` não
+     * respeita o padding de baixo do `<main>`, e a caixa de escrever ficava
+     * escondida por trás do menu.
      */
-    <div className="absolute inset-0 flex min-h-0 flex-col bg-canvas md:flex-row">
+    <div className="absolute inset-0 flex min-h-0 flex-col bg-canvas max-md:bottom-[calc(64px+env(safe-area-inset-bottom))] md:flex-row">
       {!mobile && lista}
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">

@@ -25,8 +25,8 @@ import { Compositor } from "./Compositor";
  * estado vive em `lib/adjunto.ts`. A seta em cima leva para a página; um
  * pedido grande (uma importação) também, porque o ensaio não cabe num balão.
  *
- * No telemóvel o balão vira folha a meio do ecrã, e o robô fica por cima da
- * barra de navegação.
+ * No telemóvel não há robô ao canto nem minichat: a entrada é a roda com a
+ * cor do clube no meio da barra de baixo, e abre a página (ver `MobileTabBar`).
  */
 export function AdjuntoFlutuante() {
   const { ligado, aberto, irParaAPagina } = useAdjunto();
@@ -34,7 +34,8 @@ export function AdjuntoFlutuante() {
   const navigate = useNavigate();
   const mobile = useMobile();
   const naPagina = pathname === "/assistente" || pathname.startsWith("/assistente/");
-  const visivel = ligado === true && !naPagina;
+  // No telemóvel o robô não flutua: vive no meio da barra de baixo (ver `MobileTabBar`) e abre a página.
+  const visivel = ligado === true && !naPagina && !mobile;
 
   useEffect(() => {
     void carregarEstado();

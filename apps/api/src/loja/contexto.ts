@@ -23,7 +23,10 @@ import { caixaDoEmail } from "../platform/ficha-do-site";
  * só durante a reserva (milissegundos); o pedido à euPago acontece depois.
  */
 export async function bloquearLoja(db: ScopedClient, academyId: string): Promise<void> {
-  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${"loja:" + academyId}))`;
+  // $executeRaw e não $queryRaw: a função devolve `void`, e o Prisma no
+  // Postgres a sério não sabe ler essa coluna (P2010 "deserialize column of
+  // type 'void'"). O PGlite dos testes lia-a, por isso só partiu em produção.
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"loja:" + academyId}))`;
 }
 
 /**

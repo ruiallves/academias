@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
-import { ArrowUpRight, Bell, Globe, LogOut, Search, X } from "@/lib/icons";
+import { ArrowUpRight, Bell, Bot, Globe, LogOut, Search, X } from "@/lib/icons";
+import { NOME_DO_ADJUNTO, useAdjunto } from "@/lib/adjunto";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { permissionsOf } from "@/lib/permissions";
 import { academy, listAthletes, listTeams, navCounts, nomesDasEquipas } from "@/lib/api";
@@ -45,6 +46,9 @@ import { AreaSwitch } from "./AreaSwitch";
  * fica com Visão geral, Atletas, Calendário e Presenças; a direcção com
  * Mensalidades no lugar das Presenças se não as tiver. O resto está a um toque,
  * no "Menu".
+ *
+ * Com o Assistente IA ligado no clube, a casa do meio passa a ser a roda do
+ * robô (cor do clube) e ficam três destinos em vez de quatro, sem o Calendário.
  */
 
 /** Por esta ordem, os primeiros quatro que a pessoa tiver. */
@@ -124,10 +128,23 @@ export function MobileTabBar() {
   const counts = navCounts(session);
   const items = groups.flatMap((g) => g.items);
 
+  /*
+   * Com o Assistente IA ligado no clube, a casa do meio é dele: uma roda com a
+   * cor do clube e o robô, que abre a página do assistente. O Calendário sai
+   * da barra para lhe dar lugar e fica no Menu.
+   */
+  const { ligado: assistenteLigado } = useAdjunto();
+  const comAssistente = assistenteLigado === true;
+
   const principais = useMemo(() => {
     const porChave = new Map(items.map((i) => [i.key, i]));
-    return PREFERIDOS.map((k) => porChave.get(k)).filter((i): i is NavItem => Boolean(i)).slice(0, 4);
-  }, [items]);
+    const ordem = comAssistente ? PREFERIDOS.filter((k) => k !== "calendar") : PREFERIDOS;
+    return ordem.map((k) => porChave.get(k)).filter((i): i is NavItem => Boolean(i)).slice(0, comAssistente ? 3 : 4);
+  }, [items, comAssistente]);
+
+  const naPaginaDoAssistente = pathname === "/assistente" || pathname.startsWith("/assistente/");
+  const esquerda = comAssistente ? principais.slice(0, 2) : principais;
+  const direita = comAssistente ? principais.slice(2) : [];
 
   // Fecha a folha ao navegar — o destino já está no ecrã por baixo dela.
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -137,7 +154,9 @@ export function MobileTabBar() {
    * a barra não tem Sócios, e ficar com as cinco casas apagadas dizia que ela
    * não estava em lado nenhum.
    */
-  const naBarra = principais.some((i) => (i.to === "/" ? pathname === "/" : pathname.startsWith(i.to)));
+  const naBarra =
+    (comAssistente && naPaginaDoAssistente) ||
+    principais.some((i) => (i.to === "/" ? pathname === "/" : pathname.startsWith(i.to)));
 
   return (
     <>
@@ -147,7 +166,27 @@ export function MobileTabBar() {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <ul className="grid grid-cols-5" style={{ height: BAR_H }}>
-          {principais.map((item) => (
+          {esquerda.map((item) => (
+            <li key={item.key}>
+              <Tab item={item} badge={item.badge?.(counts)} />
+            </li>
+          ))}
+          {comAssistente && (
+            <li className="flex items-center justify-center">
+              <NavLink
+                to="/assistente"
+                aria-label={NOME_DO_ADJUNTO}
+                aria-current={naPaginaDoAssistente ? "page" : undefined}
+                className={cx(
+                  "inline-flex size-[52px] -translate-y-2.5 items-center justify-center rounded-full bg-signal-strong text-signal-on",
+                  "shadow-[0_6px_16px_rgba(26,25,23,0.22)] ring-4 ring-surface transition-transform duration-[120ms] active:scale-95",
+                )}
+              >
+                <Bot className="size-[26px]" strokeWidth={1.8} />
+              </NavLink>
+            </li>
+          )}
+          {direita.map((item) => (
             <li key={item.key}>
               <Tab item={item} badge={item.badge?.(counts)} />
             </li>
