@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Minus, Package, Plus, ShoppingBag, Trash2, Truck } from "lucide-react";
+import { ArrowLeft, Loader2, Minus, Package, Plus, ShoppingBag, Trash2, Truck, X } from "lucide-react";
 import type { LojaDoClube } from "@/dados/tipos";
 import { Botao, BotaoLink } from "@/componentes/Botao";
 import { Foto } from "@/componentes/Foto";
@@ -77,6 +77,9 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
   const [morada, setMorada] = useState({ linha1: "", linha2: "", codigoPostal: "", localidade: "" });
   const [nota, setNota] = useState("");
   const [metodo, setMetodo] = useState<Metodo>("MBWAY");
+  /** O código promocional aplicado (o que vai em cada pedido) e o que se está a escrever. */
+  const [codigo, setCodigo] = useState("");
+  const [codigoEscrito, setCodigoEscrito] = useState("");
   const topo = useRef<HTMLDivElement | null>(null);
   const ficha = useRef("");
   const desafio = useRef<TurnstileHandle | null>(null);
@@ -98,14 +101,14 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
 
   /** O carrinho como a API o vê hoje. Em demonstração monta-se aqui, com o que o carrinho guardou. */
   const verificar = useCallback(
-    async (linhas: LinhaDoCarrinho[]): Promise<Verificacao> => {
+    async (linhas: LinhaDoCarrinho[], cod: string = codigo): Promise<Verificacao> => {
       if (linhas.length === 0) return { fase: "pronto", v: vazio(loja) };
-      if (demonstracao) return { fase: "pronto", v: verificacaoDeDemonstracao(linhas, loja) };
+      if (demonstracao) return { fase: "pronto", v: verificacaoDeDemonstracao(linhas, loja, cod) };
       try {
         const r = await fetch(`${base}/carrinho`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ linhas: linhas.map((l) => ({ productId: l.productId, tamanho: l.tamanho || undefined, quantidade: l.quantidade })) }),
+          body: JSON.stringify({ linhas: linhas.map((l) => ({ productId: l.productId, tamanho: l.tamanho || undefined, quantidade: l.quantidade })), codigo: cod || undefined }),
         });
         if (!r.ok) return { fase: "falhou" };
         return { fase: "pronto", v: (await r.json()) as CarrinhoVerificado };
@@ -113,7 +116,7 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
         return { fase: "falhou" };
       }
     },
-    [base, demonstracao, loja],
+    [base, demonstracao, loja, codigo],
   );
 
   // Cada vez que o carrinho muda, volta a perguntar (a API junta e conta; o site só desenha).
@@ -189,9 +192,18 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
   const problemas = linhas.filter(({ api: a }) => !a || !a.aVenda || (a.disponivel !== null && a.disponivel < (a.quantidade ?? 0)));
   const itemsCents = v.itemsCents ?? linhas.reduce((n, { local, api: a }) => n + local.quantidade * (a?.precoCents ?? Math.round(local.preco * 100)), 0);
   const envioCents = entrega === "SHIPPING" ? (v.envio ?? 0) : 0;
-  const totalCents = itemsCents + envioCents;
+  const descontoCents = v.desconto?.descontoCents ?? 0;
+  const totalCents = Math.max(0, itemsCents - descontoCents) + envioCents;
   const n = carrinho.linhas.reduce((s, l) => s + l.quantidade, 0);
   const podePagar = v.vende && v.ok && problemas.length === 0 && !!entrega;
+
+  /** Aplica (ou tira, com vazio) o código e volta a perguntar à API o que o carrinho vale. */
+  const aplicarCodigo = async (novo: string) => {
+    const limpo = novo.trim().toUpperCase().replace(/\s+/g, "");
+    setCodigo(limpo);
+    setCodigoEscrito(limpo);
+    setVerif(await verificar(carrinho.linhas, limpo));
+  };
 
   const irPara = (p: "carrinho" | "pagar") => {
     setPasso(p);
@@ -229,7 +241,7 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
     if (demonstracao) {
       await new Promise((ok) => setTimeout(ok, 700));
       const token = `demo-${Math.random().toString(36).slice(2, 12)}`;
-      guardarDemonstracao(token, { linhas: carrinho.linhas, nome, email, entrega, morada, envioCents, metodo: metodoFinal, loja });
+      guardarDemonstracao(token, { linhas: carrinho.linhas, nome, email, entrega, morada, envioCents, metodo: metodoFinal, loja, desconto: v.desconto ?? null });
       esvaziarCarrinho(slug);
       router.push(`/encomenda/${token}`);
       return;
@@ -249,6 +261,7 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
           morada: entrega === "SHIPPING" ? { nome: nome.trim(), ...morada } : undefined,
           nota: nota.trim() || undefined,
           metodo: metodoFinal,
+          codigo: v.desconto ? codigo : undefined,
           notaExtra,
           ficha: ficha.current,
           turnstile: desafio.current?.token() || undefined,
@@ -259,8 +272,8 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
         const mensagem = mensagemDe(b, "Não foi possível guardar a encomenda. Tenta outra vez.");
         void pedirFicha();
         desafio.current?.renovar();
-        // O stock mudou entretanto: volta ao carrinho com os números de agora.
-        if (/esgot|Só há|já não|tira-o/i.test(mensagem)) {
+        // O stock (ou o código) mudou entretanto: volta ao carrinho com os números de agora.
+        if (/esgot|Só há|já não|tira-o|código/i.test(mensagem)) {
           void verificar(carrinho.linhas).then(setVerif);
           irPara("carrinho");
         }
@@ -292,6 +305,19 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
         ))}
       </ul>
       <dl className="mt-4 space-y-1 border-t border-line pt-4">
+        <div className="flex items-baseline justify-between gap-4 text-ink-2">
+          <dt>Artigos</dt>
+          <dd className="tabular">{euroDeCents(itemsCents)}</dd>
+        </div>
+        {v.desconto && (
+          <div className="flex items-baseline justify-between gap-4 text-ink-2">
+            <dt className="flex items-center gap-1.5">
+              Desconto <span className="font-semibold text-ink">{v.desconto.codigo}</span>
+              {v.desconto.envioGratis && descontoCents === 0 && <span className="text-ink-3">· envio grátis</span>}
+            </dt>
+            <dd className="tabular text-signal-ink">{descontoCents > 0 ? `−${euroDeCents(descontoCents)}` : "—"}</dd>
+          </div>
+        )}
         {entrega === "SHIPPING" && (
           <div className="flex items-baseline justify-between gap-4 text-ink-2">
             <dt>Envio</dt>
@@ -304,6 +330,57 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
         </div>
       </dl>
       {totalCents > 0 && <p className="mt-2 text-xs text-ink-3">Se o clube cobrar a taxa do pagamento, ela soma-se a este total.</p>}
+    </div>
+  );
+
+  /* O código promocional: escreve-se e aplica-se; aplicado, mostra-se com um botão para tirar. */
+  const caixaDoCodigo = v.vende && v.ok && (
+    <div className="rounded-card border border-line bg-surface p-4 sm:p-5">
+      {v.desconto ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 text-sm text-ink-2">
+            Código <span className="font-semibold text-ink">{v.desconto.codigo}</span> aplicado.
+          </p>
+          <button type="button" onClick={() => void aplicarCodigo("")} className="inline-flex h-11 shrink-0 items-center gap-1 text-sm font-semibold text-ink-3 hover:text-risk">
+            <X size={16} aria-hidden />
+            Tirar
+          </button>
+        </div>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (codigoEscrito.trim()) void aplicarCodigo(codigoEscrito);
+          }}
+        >
+          <label htmlFor="codigo-promocional" className="text-sm font-semibold text-ink">
+            Código promocional
+          </label>
+          <div className="mt-1.5 flex gap-2">
+            <input
+              id="codigo-promocional"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={30}
+              placeholder="NATAL10"
+              className="block h-12 min-w-0 flex-1 rounded-control border border-line-strong bg-surface px-3.5 text-[1rem] uppercase text-ink placeholder:normal-case placeholder:text-ink-4 focus:border-ink"
+              value={codigoEscrito}
+              onChange={(e) => setCodigoEscrito(e.target.value)}
+              aria-invalid={!!v.erroCodigo}
+              aria-describedby={v.erroCodigo ? "codigo-erro" : undefined}
+            />
+            <Botao type="submit" variante="contorno" disabled={!codigoEscrito.trim()}>
+              Aplicar
+            </Botao>
+          </div>
+          {v.erroCodigo && codigo && (
+            <p id="codigo-erro" role="alert" className="mt-2 text-sm font-semibold text-risk">
+              {v.erroCodigo}
+            </p>
+          )}
+        </form>
+      )}
     </div>
   );
 
@@ -551,6 +628,7 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
 
         <aside className="space-y-4">
           {resumo}
+          {caixaDoCodigo}
           {v.vende && (
             <>
               <Botao onClick={() => irPara("pagar")} disabled={!podePagar} className="w-full">
@@ -623,15 +701,23 @@ function entregaDe(loja: LojaDoClube | null): CarrinhoVerificado["entrega"] {
 }
 
 function vazio(loja: LojaDoClube | null): CarrinhoVerificado {
-  return { vende: loja?.compraOnline ?? false, entrega: entregaDe(loja), ok: false, erro: null, itemsCents: 0, envio: null, linhas: [] };
+  return { vende: loja?.compraOnline ?? false, entrega: entregaDe(loja), ok: false, erro: null, itemsCents: 0, envio: null, linhas: [], desconto: null, erroCodigo: null };
 }
 
+/** Os códigos da demonstração: um de 10 % e um de envio grátis. */
+const CODIGOS_DEMO: Record<string, { pct: number; envioGratis: boolean }> = { SOCIO10: { pct: 10, envioGratis: false }, ENVIOGRATIS: { pct: 0, envioGratis: true } };
+
 /** O carrinho "verificado" sem API: o que o carrinho guardou, sem contagens. */
-function verificacaoDeDemonstracao(linhas: LinhaDoCarrinho[], loja: LojaDoClube | null): CarrinhoVerificado {
+function verificacaoDeDemonstracao(linhas: LinhaDoCarrinho[], loja: LojaDoClube | null, codigo = ""): CarrinhoVerificado {
   const itemsCents = linhas.reduce((n, l) => n + l.quantidade * Math.round(l.preco * 100), 0);
   const e = entregaDe(loja);
-  const envio = e.envio.ativo ? (e.envio.gratisAPartirDe !== null && itemsCents >= e.envio.gratisAPartirDe * 100 ? 0 : Math.round(e.envio.preco * 100)) : null;
+  const c = codigo ? CODIGOS_DEMO[codigo] : undefined;
+  const descontoCents = c ? Math.round((itemsCents * c.pct) / 100) : 0;
+  const base = itemsCents - descontoCents;
+  const envio = e.envio.ativo ? (c?.envioGratis || (e.envio.gratisAPartirDe !== null && base >= e.envio.gratisAPartirDe * 100) ? 0 : Math.round(e.envio.preco * 100)) : null;
   return {
+    desconto: c ? { codigo, descontoCents, envioGratis: c.envioGratis } : null,
+    erroCodigo: codigo && !c ? "Este código não existe ou já não está ativo. Na demonstração, experimenta SOCIO10." : null,
     vende: loja?.compraOnline ?? true,
     entrega: e,
     ok: true,
@@ -648,10 +734,21 @@ function verificacaoDeDemonstracao(linhas: LinhaDoCarrinho[], loja: LojaDoClube 
  */
 function guardarDemonstracao(
   token: string,
-  c: { linhas: LinhaDoCarrinho[]; nome: string; email: string; entrega: Entrega; morada: { linha1: string; linha2: string; codigoPostal: string; localidade: string }; envioCents: number; metodo: Metodo; loja: LojaDoClube | null },
+  c: {
+    linhas: LinhaDoCarrinho[];
+    nome: string;
+    email: string;
+    entrega: Entrega;
+    morada: { linha1: string; linha2: string; codigoPostal: string; localidade: string };
+    envioCents: number;
+    metodo: Metodo;
+    loja: LojaDoClube | null;
+    desconto: CarrinhoVerificado["desconto"];
+  },
 ) {
   const itemsCents = c.linhas.reduce((n, l) => n + l.quantidade * Math.round(l.preco * 100), 0);
-  const totalCents = itemsCents + c.envioCents;
+  const descontoCents = c.desconto?.descontoCents ?? 0;
+  const totalCents = itemsCents - descontoCents + c.envioCents;
   const encomenda: Encomenda = {
     numero: 42,
     estado: totalCents === 0 ? "paga" : "a-pagar",
@@ -660,6 +757,8 @@ function guardarDemonstracao(
     reservadoAte: new Date(Date.now() + 10 * 60_000).toISOString(),
     itemsCents,
     envioCents: c.envioCents,
+    descontoCents,
+    codigo: c.desconto?.codigo ?? null,
     totalCents,
     pagamento:
       totalCents === 0

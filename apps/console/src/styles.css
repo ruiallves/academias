@@ -446,6 +446,35 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/* Adjunto                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/* O minichat sobe do robô, um passo curto. */
+@keyframes adjunto-abre {
+  from { transform: translateY(12px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1);       opacity: 1; }
+}
+.adjunto-abre { animation: adjunto-abre 180ms var(--ease-out, ease-out); transform-origin: bottom right; }
+
+/* O ponto que respira enquanto o Adjunto pensa. */
+@keyframes adjunto-pulso {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+.adjunto-pulso { animation: adjunto-pulso 1.1s ease-in-out infinite; }
+
+/* O anel do botão de voz a ouvir: alarga e esvai-se, como uma onda. */
+@keyframes adjunto-anel {
+  from { transform: scale(1);    opacity: 0.7; }
+  to   { transform: scale(1.45); opacity: 0; }
+}
+.adjunto-anel { animation: adjunto-anel 1.6s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .adjunto-abre, .adjunto-pulso, .adjunto-anel { animation: none; }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Avisos                                                                      */
 /* -------------------------------------------------------------------------- */
 

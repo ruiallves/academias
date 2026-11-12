@@ -36,7 +36,7 @@ export function Onboarding() {
 
   return (
     <aside
-      className="fixed right-4 bottom-4 z-40 w-[320px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)] max-md:inset-x-3 max-md:bottom-[calc(72px+env(safe-area-inset-bottom))] max-md:w-auto"
+      className="fixed right-4 bottom-[calc(16px+var(--adjunto-h,0px))] z-40 w-[320px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)] max-md:inset-x-3 max-md:bottom-[calc(72px+env(safe-area-inset-bottom)+var(--adjunto-h,0px))] max-md:w-auto"
       aria-label="Primeiros passos"
     >
       <header className="flex items-start gap-2.5 border-b border-line px-4 py-3">

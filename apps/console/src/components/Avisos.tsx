@@ -45,7 +45,11 @@ export function Avisos() {
        * cliques a tudo o que estivesse por baixo dele — incluindo o botão de
        * fechar do painel dos primeiros passos.
        */
-      className="pointer-events-none fixed right-4 bottom-4 z-[80] flex w-[360px] flex-col gap-2 max-md:inset-x-3 max-md:bottom-[calc(72px+env(safe-area-inset-bottom))] max-md:w-auto"
+      /*
+       * `--adjunto-h` é a altura do robô do Adjunto quando ele está no canto
+       * (ver `adjunto/Botao.tsx`); sem ele vale zero e fica tudo como era.
+       */
+      className="pointer-events-none fixed right-4 bottom-[calc(16px+var(--adjunto-h,0px))] z-[80] flex w-[360px] flex-col gap-2 max-md:inset-x-3 max-md:bottom-[calc(72px+env(safe-area-inset-bottom)+var(--adjunto-h,0px))] max-md:w-auto"
       /*
        * `assertive` porque isto é quase sempre um erro a seguir a um gesto: quem
        * usa leitor de ecrã tem de o ouvir agora, e não quando acabar de ler o

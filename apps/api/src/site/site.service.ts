@@ -26,6 +26,8 @@ import {
 import { SiteRevalidarService } from "./site-revalidar.service";
 import { SEM_PLANO, siteIncluido } from "./plano";
 import { SELECT_VENDAS, faturacaoLigada, motivoParaNaoVender } from "../common/vendas-online";
+import { CatalogoService } from "../loja/catalogo.service";
+import { slugDoTexto, slugLivre } from "../loja/regras";
 
 /**
  * O site do clube, do lado da consola (menu Website).
@@ -58,6 +60,7 @@ export class SiteService {
     private readonly espaco: EspacoService,
     private readonly config: ConfigService,
     private readonly revalidar: SiteRevalidarService,
+    private readonly catalogo: CatalogoService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -97,6 +100,8 @@ export class SiteService {
         loja: lojaParaConsola(config?.shop),
         /** Encomendas pagas à espera de preparar. A pastilha do submenu. */
         encomendasPorTratar: porTratar,
+        /** As categorias da loja (com quantos produtos cada) e os códigos promocionais (com os usos). */
+        ...(await this.catalogo.paraConsola(db)),
         /** Os pagamentos do clube estão ligados? Sem eles a loja fica em catálogo. */
         pagamentosLigados: academy?.paymentsEnabled ?? false,
         /**
@@ -272,7 +277,11 @@ export class SiteService {
     await this.mustWrite(ctx);
     const p = await this.prisma.runAs(ctx.academyId, async (db) => {
       const position = dto.ordem ?? (await db.siteProduct.count());
-      return db.siteProduct.create({ data: { academyId: ctx.academyId, ...this.dadosDoProduto(ctx, dto), position } });
+      const categoria = await this.catalogo.categoriaDoProduto(db, ctx.academyId, dto);
+      const slug = await this.slugDoProduto(db, dto.slug?.trim() || dto.nome, null);
+      return db.siteProduct.create({
+        data: { academyId: ctx.academyId, ...this.dadosDoProduto(ctx, dto), category: categoria.nome, categoryId: categoria.id, slug, position },
+      });
     });
     this.avisar(ctx);
     return produtoParaConsola(p);
@@ -281,9 +290,19 @@ export class SiteService {
   async editarProduto(ctx: RequestContext, id: string, dto: ProdutoDto) {
     await this.mustWrite(ctx);
     const p = await this.prisma.runAs(ctx.academyId, async (db) => {
-      const antes = await db.siteProduct.findFirst({ where: { id }, select: { id: true, inventoryItemId: true } });
+      const antes = await db.siteProduct.findFirst({ where: { id }, select: { id: true, inventoryItemId: true, slug: true, name: true, categoryId: true, category: true } });
       if (!antes) throw new NotFoundException("Produto não encontrado");
-      const dados = this.dadosDoProduto(ctx, dto);
+      const dados = {
+        ...this.dadosDoProduto(ctx, dto),
+        // Uma consola de antes das categorias manda só o nome; sem nada, a categoria fica.
+        ...(dto.categoriaId !== undefined || dto.categoria !== undefined
+          ? await this.catalogo.categoriaDoProduto(db, ctx.academyId, dto).then((c) => ({ category: c.nome, categoryId: c.id }))
+          : { category: antes.category, categoryId: antes.categoryId }),
+        slug:
+          dto.slug !== undefined && dto.slug.trim() !== (antes.slug ?? "")
+            ? await this.slugDoProduto(db, dto.slug.trim() || dto.nome, id)
+            : (antes.slug ?? (await this.slugDoProduto(db, dto.nome, id))),
+      };
       // Num produto ligado ao inventário, os tamanhos, o esgotado e o stock são do artigo: não se escrevem.
       if (antes.inventoryItemId) {
         delete (dados as Partial<typeof dados>).sizes;
@@ -313,10 +332,16 @@ export class SiteService {
     const stockLido = stockValido(dto.stock);
     const stock: Record<string, number> = {};
     for (const t of tamanhos.length ? tamanhos : [""]) if (t in stockLido) stock[t] = stockLido[t];
+    const priceCents = Math.round(dto.preco * 100);
+    const antesCents = dto.precoAntes ? Math.round(dto.precoAntes * 100) : null;
     return {
       name: dto.nome.trim(),
-      category: (dto.categoria ?? "Equipamento").trim() || "Equipamento",
-      priceCents: Math.round(dto.preco * 100),
+      priceCents,
+      // O preço de antes só conta se for maior do que o de agora; senão não é promoção.
+      ...(dto.precoAntes !== undefined ? { compareAtPriceCents: antesCents !== null && antesCents > priceCents ? antesCents : null } : {}),
+      ...(dto.novidade !== undefined ? { isNew: dto.novidade } : {}),
+      ...(dto.seoTitulo !== undefined ? { seoTitle: dto.seoTitulo.trim() } : {}),
+      ...(dto.seoDescricao !== undefined ? { seoDescription: dto.seoDescricao.trim() } : {}),
       imageUrl: this.imagemDoClube(ctx, dto.imagem),
       images: (dto.imagens ?? []).map((i) => this.imagemDoClube(ctx, i)).filter((i): i is string => !!i),
       description: (dto.descricao ?? "").trim(),
@@ -325,6 +350,17 @@ export class SiteService {
       visible: dto.visivel !== false,
       ...(dto.stock !== undefined ? { stock } : {}),
     };
+  }
+
+  /** O endereço livre para um produto, a partir do pedido (ou do nome). */
+  private async slugDoProduto(db: ScopedClient, pedido: string, semId: string | null): Promise<string> {
+    const base = slugDoTexto(pedido) || "artigo";
+    const ocupados = new Set(
+      (await db.siteProduct.findMany({ where: { slug: { startsWith: base.slice(0, 40) }, ...(semId ? { id: { not: semId } } : {}) }, select: { slug: true } }))
+        .map((p) => p.slug)
+        .filter((x): x is string => !!x),
+    );
+    return slugLivre(base, ocupados);
   }
 
   /* ------------------------------------------------------------------------ */
@@ -380,9 +416,15 @@ export class SiteService {
 
       const existente = await db.siteProduct.findUnique({ where: { inventoryItemId: itemId } });
       const imagem = await this.fotoDoArtigoNoSite(ctx.academyId, itemId, item.imageKeys[0], existente?.imageUrl ?? null);
+      const categoria =
+        dto.categoriaId !== undefined || dto.categoria !== undefined
+          ? await this.catalogo.categoriaDoProduto(db, ctx.academyId, dto)
+          : { id: existente?.categoryId ?? null, nome: existente?.category ?? "" };
       const dados = {
         name: item.name,
-        category: (dto.categoria ?? existente?.category ?? "Equipamento").trim() || "Equipamento",
+        category: categoria.nome,
+        categoryId: categoria.id,
+        ...(existente?.slug ? {} : { slug: await this.slugDoProduto(db, item.name, existente?.id ?? null) }),
         priceCents: Math.round(dto.preco * 100),
         description: (dto.descricao ?? existente?.description ?? item.description ?? "").trim(),
         visible: dto.visivel ?? existente?.visible ?? true,
@@ -718,11 +760,24 @@ function produtoParaConsola(p: {
   visible: boolean;
   stock: unknown;
   inventoryItemId: string | null;
+  slug?: string | null;
+  categoryId?: string | null;
+  compareAtPriceCents?: number | null;
+  isNew?: boolean;
+  seoTitle?: string;
+  seoDescription?: string;
 }) {
   return {
     id: p.id,
     nome: p.name,
     categoria: p.category,
+    categoriaId: p.categoryId ?? null,
+    slug: p.slug ?? p.id,
+    /** O preço riscado, em euros. Nulo = sem promoção. */
+    precoAntes: p.compareAtPriceCents ? p.compareAtPriceCents / 100 : null,
+    novidade: p.isNew === true,
+    seoTitulo: p.seoTitle ?? "",
+    seoDescricao: p.seoDescription ?? "",
     preco: p.priceCents / 100,
     imagem: p.imageUrl ?? "",
     /** A galeria, a seguir à capa. */

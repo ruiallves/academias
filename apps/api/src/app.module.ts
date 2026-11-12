@@ -132,7 +132,8 @@ import { BilheteiraAppController, BilheteiraConsolaController, BilheteiraPublica
 import { BilheteiraService } from "./bilheteira/bilheteira.service";
 import { BilheteiraEmissao } from "./bilheteira/emissao.service";
 import { PortaService } from "./bilheteira/porta.service";
-import { LojaConsolaController, LojaPublicaController } from "./loja/loja.controller";
+import { CatalogoController, LojaConsolaController, LojaPublicaController } from "./loja/loja.controller";
+import { CatalogoService } from "./loja/catalogo.service";
 import { LojaService } from "./loja/loja.service";
 import { LojaEmissao } from "./loja/emissao.service";
 import { TurnstileService } from "./common/turnstile.service";
@@ -140,6 +141,11 @@ import { SitePublicoService } from "./site/site-publico.service";
 import { SiteDominioController } from "./site/site-dominio.controller";
 import { SiteDominioService } from "./site/site-dominio.service";
 import { SiteRevalidarService } from "./site/site-revalidar.service";
+import { AdjuntoController } from "./adjunto/adjunto.controller";
+import { AdjuntoService } from "./adjunto/adjunto.service";
+import { OpenAiClient } from "./adjunto/openai.client";
+import { PropostasService } from "./adjunto/propostas.service";
+import { ImportacaoService } from "./adjunto/importacao/importacao.service";
 
 /**
  * Monólito modular.
@@ -249,7 +255,10 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     BilheteiraConsolaController,
     LojaPublicaController,
     LojaConsolaController,
+    CatalogoController,
     SiteDominioController,
+    // O Adjunto: o assistente com IA da consola. Ver `adjunto/`.
+    AdjuntoController,
   ],
   providers: [
     // O throttler como guard global — aplica-se a todas as rotas, incluindo as
@@ -325,6 +334,7 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     PortaService,
     LojaService,
     LojaEmissao,
+    CatalogoService,
     TurnstileService,
     SiteDominioService,
     SiteRevalidarService,
@@ -335,6 +345,10 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     SupabaseAccountsService,
     PasswordResetService,
     LegalAdminService,
+    OpenAiClient,
+    AdjuntoService,
+    PropostasService,
+    ImportacaoService,
   ],
   exports: [PrismaService, NotificationsService],
 })

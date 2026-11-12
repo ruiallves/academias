@@ -34,6 +34,8 @@ export class ProdutoDoInventarioDto {
   /** Em euros. */
   @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(10_000) preco!: number;
   @IsOptional() @IsString() @MaxLength(40) categoria?: string;
+  /** A categoria da loja pelo id; ganha a `categoria` (nome) quando vem. */
+  @IsOptional() @IsString() @MaxLength(60) categoriaId?: string | null;
   @IsOptional() @IsString() @MaxLength(2000) descricao?: string;
   @IsOptional() @IsBoolean() visivel?: boolean;
 }
@@ -81,6 +83,15 @@ export class ProdutoDto {
   @IsOptional() @IsArray() @ArrayMaxSize(8) @IsString({ each: true }) @MaxLength(500, { each: true }) imagens?: string[];
   /** O stock por tamanho (`{ "M": 3 }`; `{ "": 12 }` sem tamanhos). Um tamanho ausente vende-se sem contagem. Ver `stockValido`. */
   @IsOptional() @IsObject() stock?: Record<string, unknown>;
+  /** A categoria da loja pelo id. `null` = sem categoria. Sem este campo vale `categoria` (o nome). */
+  @IsOptional() @IsString() @MaxLength(60) categoriaId?: string | null;
+  /** O endereço (`/loja/<slug>`). Vazio ou ausente num produto novo: nasce do nome. */
+  @IsOptional() @IsString() @MaxLength(80) slug?: string;
+  /** O preço de antes, riscado (euros). Nulo = sem promoção. */
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(10_000) precoAntes?: number | null;
+  @IsOptional() @IsBoolean() novidade?: boolean;
+  @IsOptional() @IsString() @MaxLength(70) seoTitulo?: string;
+  @IsOptional() @IsString() @MaxLength(170) seoDescricao?: string;
 }
 
 export class PatrocinadorDto {

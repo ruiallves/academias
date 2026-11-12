@@ -190,9 +190,14 @@ export type FaturacaoDoClube = {
   vende: boolean;
 };
 
+/** O Assistente IA de um clube. Ver `AssistenteDoClubePanel`. */
+export type AssistenteDoClube = { ligado: boolean; chaveNaApi: boolean };
+
 export type AcademyDetail = {
   id: string;
   storage: EspacoDoClube;
+  /** Ausente numa API anterior a 12/11/2026. */
+  assistente?: AssistenteDoClube;
   eupago: EupagoDoClube;
   /** Ausente numa API anterior a 25/10/2026. */
   faturacao?: FaturacaoDoClube;

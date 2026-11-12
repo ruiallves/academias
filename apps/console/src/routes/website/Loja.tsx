@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Boxes, ImagePlus, Package, PackageOpen, Pencil, Plus, ShoppingBag, Trash2, Truck } from "@/lib/icons";
+import { Boxes, ImagePlus, Package, PackageOpen, Pencil, Percent, Plus, ShoppingBag, Tags, Trash2, Truck } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
-import { Segmented } from "@/components/filters";
+import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
@@ -11,26 +11,29 @@ import { apagarProduto, guardarConfig, guardarProduto, motivoSemVendas, useSite,
 import { mostrarOk } from "@/lib/avisos";
 import { CampoDeImagem } from "./CampoDeImagem";
 import { Encomendas } from "./Encomendas";
+import { Categorias, Codigos, slugDe } from "./LojaCatalogo";
 
 const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
 
-const CATEGORIAS = ["Equipamento", "Roupa", "Adeptos"];
-
-type Vista = "produtos" | "encomendas" | "entrega";
+type Vista = "produtos" | "categorias" | "codigos" | "encomendas" | "entrega";
+const VISTAS: Vista[] = ["produtos", "categorias", "codigos", "encomendas", "entrega"];
 
 /**
- * A loja do site, em três vistas: os produtos (foto, galeria, preço, tamanhos
- * e stock; visível ou não), as encomendas (para preparar, entregar, anular e
- * reembolsar), e a entrega (levantamento no clube, envio pelo correio e o
- * aviso da loja). A vista fica no endereço (`?vista=encomendas`), que é para
- * onde o email de uma encomenda nova aponta.
+ * A loja do site, em cinco vistas: os produtos (foto, galeria, preço e preço
+ * riscado, categoria, endereço, tamanhos e stock; visível ou não), as
+ * categorias (ordem e endereço do filtro do site), os códigos promocionais,
+ * as encomendas (para preparar, entregar, anular e reembolsar), e a entrega
+ * (levantamento no clube, envio pelo correio e o aviso da loja). A vista fica
+ * no endereço (`?vista=encomendas`), que é para onde o email de uma encomenda
+ * nova aponta.
  */
 export function Loja() {
   const store = useStore();
   const slug = store.academy.slug;
   const site = useSite(slug);
   const [params, setParams] = useSearchParams();
-  const vista: Vista = params.get("vista") === "encomendas" ? "encomendas" : params.get("vista") === "entrega" ? "entrega" : "produtos";
+  const pedida = params.get("vista") as Vista | null;
+  const vista: Vista = pedida && VISTAS.includes(pedida) ? pedida : "produtos";
   const irPara = (v: Vista) => {
     const p = new URLSearchParams(params);
     if (v === "produtos") p.delete("vista");
@@ -49,6 +52,8 @@ export function Loja() {
         label="Partes da loja"
         options={[
           { value: "produtos" as const, label: "Produtos", count: site.produtos.length },
+          { value: "categorias" as const, label: "Categorias", count: site.categorias.length || undefined, icon: Tags },
+          { value: "codigos" as const, label: "Códigos", count: site.codigos.filter((c) => c.estado === "ativo").length || undefined, icon: Percent },
           { value: "encomendas" as const, label: "Encomendas", count: site.encomendasPorTratar || undefined, icon: PackageOpen },
           { value: "entrega" as const, label: "Entrega", icon: Truck },
         ]}
@@ -66,6 +71,8 @@ export function Loja() {
       )}
 
       {vista === "produtos" && <Produtos />}
+      {vista === "categorias" && <Categorias />}
+      {vista === "codigos" && <Codigos />}
       {vista === "encomendas" && <Encomendas />}
       {vista === "entrega" && <Entrega loja={site.loja} />}
     </div>
@@ -81,6 +88,15 @@ function Produtos() {
   const site = useSite(store.academy.slug);
   const [aberto, setAberto] = useState<ProdutoDoSite | "novo" | null>(null);
   const [apagar, setApagar] = useState<ProdutoDoSite | null>(null);
+  const [procura, setProcura] = useState("");
+  const [filtro, setFiltro] = useState<string>("todas");
+  const termo = procura.trim().toLowerCase();
+  const lista = site.produtos.filter(
+    (p) =>
+      (filtro === "todas" ||
+        (filtro === "sem" ? !p.categoriaId : filtro === "promocao" ? p.precoAntes !== null && p.precoAntes > p.preco : filtro === "novidade" ? p.novidade : p.categoriaId === filtro)) &&
+      (!termo || p.nome.toLowerCase().includes(termo) || p.slug.includes(termo)),
+  );
 
   const mudar = (p: ProdutoDoSite, f: (p: ProdutoDoSite) => ProdutoDoSite) => void guardarProduto(f(p)).catch(() => undefined);
 
@@ -103,11 +119,34 @@ function Produtos() {
         </button>
       </div>
 
+      {site.produtos.length > 0 && (
+        <div className="mb-3">
+          <Toolbar>
+            <SearchInput value={procura} onChange={setProcura} placeholder="Procurar produto" />
+            <Select
+              value={filtro}
+              onChange={setFiltro}
+              label="Filtrar produtos"
+              options={[
+                { value: "todas", label: "Todas as categorias" },
+                ...site.categorias.map((c) => ({ value: c.id, label: c.nome })),
+                { value: "sem", label: "Sem categoria" },
+                { value: "promocao", label: "Em promoção" },
+                { value: "novidade", label: "Novidades" },
+              ]}
+            />
+            <ResultCount n={lista.length} noun={["produto", "produtos"]} />
+          </Toolbar>
+        </div>
+      )}
+
       {site.produtos.length === 0 ? (
         <Empty icon={ShoppingBag} title="A loja está vazia" detail="Os produtos visíveis aparecem na loja do site e na página de início. Um artigo do Inventário põe-se à venda na ficha dele." />
+      ) : lista.length === 0 ? (
+        <p className="rounded-[12px] border border-line bg-surface px-4 py-8 text-center text-meta text-ink-3">Nenhum produto com este filtro.</p>
       ) : (
         <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
-          {site.produtos.map((p) => {
+          {lista.map((p) => {
             const stock = resumoDoStock(p);
             return (
               <li key={p.id} className={cx("flex items-center gap-3 border-b border-line px-3 py-3 last:border-b-0 sm:gap-4 sm:px-4", !p.visivel && "opacity-60")}>
@@ -116,7 +155,8 @@ function Produtos() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-x-2 text-meta text-ink-3">
-                    {p.categoria}
+                    {p.categoria || <span className="text-ink-4">Sem categoria</span>}
+                    {p.novidade && <span className="rounded-full bg-signal-soft px-1.5 py-px text-[11px] font-medium text-signal-ink">Novidade</span>}
                     {/* Vendido a partir do Inventário: o stock manda nos tamanhos e no esgotado, e a ficha do artigo é onde se mexe. */}
                     {p.artigoId && (
                       <Link
@@ -140,7 +180,14 @@ function Produtos() {
                   <p className="truncate text-body font-medium text-ink">{p.nome}</p>
                   {(stock || p.tamanhos) && <p className="truncate text-meta text-ink-4">{stock ?? p.tamanhos}</p>}
                 </div>
-                <span className="shrink-0 text-body font-medium tabular-nums text-ink">{euro(p.preco)}</span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-body font-medium tabular-nums text-ink">{euro(p.preco)}</span>
+                  {p.precoAntes !== null && p.precoAntes > p.preco && (
+                    <span className="block text-meta tabular-nums text-ink-4">
+                      <s>{euro(p.precoAntes)}</s> <span className="font-medium text-ok">−{Math.round((1 - p.preco / p.precoAntes) * 100)} %</span>
+                    </span>
+                  )}
+                </span>
                 <Interruptor ligado={p.visivel} onChange={() => mudar(p, (x) => ({ ...x, visivel: !x.visivel }))} label={`Mostrar ${p.nome} no site`} />
                 <button type="button" onClick={() => setAberto(p)} aria-label="Editar" className="ctl-ghost size-9 shrink-0 justify-center px-0">
                   <Pencil className="size-4" strokeWidth={1.75} />
@@ -186,12 +233,39 @@ function Produtos() {
 const MAX_GALERIA = 8;
 
 function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite | null; onClose: () => void; onGuardar: (p: ProdutoDoSite) => Promise<void> }) {
+  const site = useSite(useStore().academy.slug);
   const [p, setP] = useState<ProdutoDoSite>(
-    inicial ?? { id: "", nome: "", categoria: "Equipamento", preco: 0, imagem: "", imagens: [], descricao: "", tamanhos: "", esgotado: false, visivel: true, stock: {}, artigoId: null },
+    inicial ?? {
+      id: "",
+      nome: "",
+      categoria: "",
+      categoriaId: site.categorias[0]?.id ?? null,
+      preco: 0,
+      imagem: "",
+      imagens: [],
+      descricao: "",
+      tamanhos: "",
+      esgotado: false,
+      visivel: true,
+      stock: {},
+      artigoId: null,
+      slug: "",
+      precoAntes: null,
+      novidade: true,
+      seoTitulo: "",
+      seoDescricao: "",
+    },
   );
   const [preco, setPreco] = useState(inicial ? String(inicial.preco).replace(".", ",") : "");
+  const [precoAntes, setPrecoAntes] = useState(inicial?.precoAntes ? String(inicial.precoAntes).replace(".", ",") : "");
+  // Num produto novo o endereço acompanha o nome até alguém lhe mexer.
+  const [slugMexido, setSlugMexido] = useState(!!inicial);
   const valor = Number(preco.replace(",", "."));
-  const pronto = p.nome.trim() && preco.trim() && Number.isFinite(valor) && valor >= 0;
+  const antes = precoAntes.trim() ? Number(precoAntes.replace(",", ".")) : null;
+  const promocao = antes !== null && Number.isFinite(antes) && antes > valor ? Math.round((1 - valor / antes) * 100) : null;
+  const slug = slugMexido ? p.slug : slugDe(p.nome);
+  const pronto = p.nome.trim() && preco.trim() && Number.isFinite(valor) && valor >= 0 && slugDe(slug);
+  const dominio = site.dominio || `${site.slug}.website.academias.pt`;
   const [aGravar, setAGravar] = useState(false);
   /*
    * Um produto do Inventário: o nome é o do artigo e os tamanhos, o esgotado e
@@ -205,7 +279,14 @@ function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite
   const guardar = async () => {
     setAGravar(true);
     try {
-      await onGuardar({ ...p, nome: p.nome.trim(), preco: Math.round(valor * 100) / 100 });
+      await onGuardar({
+        ...p,
+        nome: p.nome.trim(),
+        preco: Math.round(valor * 100) / 100,
+        precoAntes: promocao !== null && antes !== null ? Math.round(antes * 100) / 100 : null,
+        slug: slugDe(slug),
+        categoria: site.categorias.find((c) => c.id === p.categoriaId)?.nome ?? "",
+      });
     } catch {
       // O erro já apareceu no cartão de erros; o diálogo fica aberto com o que se escreveu.
     } finally {
@@ -226,7 +307,7 @@ function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite
       title={inicial ? "Editar produto" : "Novo produto"}
       icon={<ShoppingBag className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
-      width={600}
+      width={680}
       footer={
         <>
           <button type="button" className="ctl-ghost" onClick={onClose}>
@@ -242,18 +323,50 @@ function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite
         <DialogField label="Nome" hint={doInventario ? "é o do artigo" : undefined}>
           <input className={dialogInputClass} value={p.nome} onChange={(e) => setP({ ...p, nome: e.target.value })} autoFocus={!doInventario} readOnly={doInventario} disabled={doInventario} />
         </DialogField>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <DialogField label="Endereço no site" hint="nasce do nome; muda-o se quiseres um link mais curto">
+          <div className="flex items-center overflow-hidden rounded-[var(--radius-control)] border border-line bg-surface focus-within:border-line-strong">
+            <span className="hidden max-w-[50%] shrink-0 truncate border-r border-line bg-sunken px-2.5 py-2 font-mono text-[12px] text-ink-3 sm:block">{dominio}/loja/</span>
+            <span className="shrink-0 border-r border-line bg-sunken px-2.5 py-2 font-mono text-[12px] text-ink-3 sm:hidden">/loja/</span>
+            <input
+              className="h-9 min-w-0 flex-1 bg-transparent px-2.5 font-mono text-[13px] text-ink outline-none"
+              maxLength={80}
+              value={slug}
+              aria-label="Endereço do produto"
+              onChange={(e) => {
+                setSlugMexido(true);
+                setP({ ...p, slug: e.target.value });
+              }}
+              onBlur={() => setP({ ...p, slug: slugDe(slug) })}
+            />
+          </div>
+        </DialogField>
+        <div className="grid gap-4 sm:grid-cols-3">
           <DialogField label="Categoria">
-            <select className={dialogInputClass} value={p.categoria} onChange={(e) => setP({ ...p, categoria: e.target.value })}>
-              {[...new Set([...CATEGORIAS, p.categoria])].map((c) => (
-                <option key={c}>{c}</option>
+            <select className={dialogInputClass} value={p.categoriaId ?? ""} onChange={(e) => setP({ ...p, categoriaId: e.target.value || null })}>
+              <option value="">Sem categoria</option>
+              {site.categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
               ))}
             </select>
           </DialogField>
           <DialogField label="Preço (€)">
-            <input className={dialogInputClass} inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} />
+            <input className={cx(dialogInputClass, "tabular-nums")} inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} />
+          </DialogField>
+          <DialogField label="Preço antes (€)" hint={promocao !== null ? `promoção de ${promocao} %` : "riscado; vazio = sem promoção"}>
+            <input className={cx(dialogInputClass, "tabular-nums")} inputMode="decimal" placeholder="49,90" value={precoAntes} onChange={(e) => setPrecoAntes(e.target.value)} />
           </DialogField>
         </div>
+        {site.categorias.length === 0 && (
+          <p className="-mt-2 text-meta text-ink-3">
+            Ainda não há categorias.{" "}
+            <Link to="?vista=categorias" className="font-medium text-signal-ink hover:underline">
+              Criar categorias
+            </Link>
+          </p>
+        )}
+        {antes !== null && promocao === null && preco.trim() && <p className="-mt-2 text-meta text-warn">O preço antes tem de ser maior do que o preço, senão não conta como promoção.</p>}
         <DialogField label="Tamanhos" hint={doInventario ? "Os tamanhos, o esgotado e o stock vêm do artigo" : "Separados por vírgulas. Vazio num produto sem tamanhos."}>
           <input className={dialogInputClass} placeholder="S, M, L, XL" value={p.tamanhos} onChange={(e) => setP({ ...p, tamanhos: e.target.value })} disabled={doInventario} />
         </DialogField>
@@ -287,6 +400,37 @@ function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite
         </DialogField>
         <CampoDeImagem valor={p.imagem} onMudar={(imagem) => setP({ ...p, imagem })} max={1200} proporcao="aspect-[9/11] max-w-[220px]" rotulo="Fotografia principal" />
         <Galeria imagens={p.imagens} onMudar={(imagens) => setP({ ...p, imagens })} />
+
+        <div className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2.5">
+          <div>
+            <span className="text-body text-ink">Novidade</span>
+            <p className="text-meta text-ink-3">Leva a etiqueta "Novidade" na loja e entra no filtro Novidades.</p>
+          </div>
+          <Interruptor ligado={p.novidade} onChange={() => setP({ ...p, novidade: !p.novidade })} label="Novidade" />
+        </div>
+
+        <details className="group rounded-[8px] border border-line px-3 py-2.5" open={!!(p.seoTitulo || p.seoDescricao)}>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-body text-ink [&::-webkit-details-marker]:hidden">
+            <span>
+              Pesquisa e partilhas
+              <span className="block text-meta text-ink-3">Como aparece no Google e quando se partilha o link.</span>
+            </span>
+            <span className="text-meta text-ink-3 group-open:hidden">Editar</span>
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="rounded-[8px] bg-sunken/60 px-3 py-2.5">
+              <p className="truncate text-[12px] text-ink-3">{dominio} › loja › {slugDe(slug) || "…"}</p>
+              <p className="truncate text-[15px] font-medium text-[#1a0dab] dark:text-[#8ab4f8]">{p.seoTitulo || p.nome || "Nome do produto"}</p>
+              <p className="line-clamp-2 text-meta text-ink-2">{p.seoDescricao || p.descricao || "A descrição do produto."}</p>
+            </div>
+            <DialogField label="Título" hint={`${p.seoTitulo.length}/70 · vazio = o nome`}>
+              <input className={dialogInputClass} maxLength={70} value={p.seoTitulo} placeholder={p.nome} onChange={(e) => setP({ ...p, seoTitulo: e.target.value })} />
+            </DialogField>
+            <DialogField label="Descrição" hint={`${p.seoDescricao.length}/170 · vazio = a descrição do produto`}>
+              <textarea className={cx(dialogInputClass, "h-16 py-2")} maxLength={170} value={p.seoDescricao} placeholder={p.descricao.slice(0, 170)} onChange={(e) => setP({ ...p, seoDescricao: e.target.value })} />
+            </DialogField>
+          </div>
+        </details>
 
         {!doInventario && (
           <div className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2.5">

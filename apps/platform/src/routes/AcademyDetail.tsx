@@ -9,6 +9,7 @@ import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { type AcademyDetail as Detail, type Me } from "@/lib/types";
 import { EspacoDoClubePanel } from "@/components/EspacoDoClubePanel";
+import { AssistenteDoClubePanel } from "@/components/AssistenteDoClubePanel";
 import { EupagoDoClubePanel } from "@/components/EupagoDoClubePanel";
 import { FaturacaoDoClubePanel } from "@/components/FaturacaoDoClubePanel";
 import { SiteDoClubePanel } from "@/components/SiteDoClubePanel";
@@ -168,6 +169,11 @@ export default function AcademyDetail({ me }: { me: Me }) {
           espaco={d.storage}
           mayEdit={me.role === "OWNER" || me.role === "ADMIN"}
         />
+
+        {/* O Assistente IA: nasce desligado, liga-se aqui quando o clube contrata o extra. Ver `AssistenteDoClubePanel`. */}
+        {d.assistente && (
+          <AssistenteDoClubePanel key={`assistente-${d.id}`} academyId={d.id} assistente={d.assistente} mayEdit={me.role === "OWNER" || me.role === "ADMIN"} />
+        )}
 
         {/* O site do clube: onde está, e o domínio próprio. Ver `SiteDoClubePanel`. */}
         <SiteDoClubePanel key={`site-${d.id}`} academyId={d.id} mayEdit={me.role === "OWNER" || me.role === "ADMIN"} />

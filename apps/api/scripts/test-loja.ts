@@ -23,6 +23,14 @@ import {
   moradaValida,
   proximoNumero,
   verificarCarrinho,
+  avaliarCodigo,
+  codigoNormalizado,
+  linhaComDescontoParaFatura,
+  repartirDesconto,
+  resumoDoCodigo,
+  slugDoTexto,
+  slugLivre,
+  type CodigoPromocional,
   type ProdutoParaVenda,
 } from "../src/loja/regras";
 import { produtoParaVenda } from "../src/loja/contexto";
@@ -175,6 +183,67 @@ console.log("\nO pagamento");
   check("uma reserva passada já não está", !estaGuardada({ status: "RESERVED", reservedUntil: new Date("2026-10-24T09:00:00Z") }, agora));
   check("uma encomenda paga não está guardada (o stock já desceu)", !estaGuardada({ status: "PAID", reservedUntil: ate }, agora));
   check("a primeira encomenda é a n.º 1, e segue", proximoNumero(null) === 1 && proximoNumero(41) === 42);
+}
+
+console.log("\nEndereços (11/11/2026)");
+{
+  check("o nome vira endereço sem acentos", slugDoTexto("Camisola Principal 2026/27") === "camisola-principal-2026-27");
+  check("acentos e símbolos saem", slugDoTexto("  Calções — Ação!  ") === "calcoes-acao");
+  check("um endereço ocupado ganha -2", slugLivre("Cachecol", new Set(["cachecol"])) === "cachecol-2");
+  check("e -3 quando o -2 também está", slugLivre("cachecol", new Set(["cachecol", "cachecol-2"])) === "cachecol-3");
+  check("um nome sem letras fica artigo", slugLivre("!!!", new Set()) === "artigo");
+}
+
+console.log("\nCódigos promocionais (11/11/2026)");
+{
+  const agora = new Date("2026-11-20T12:00:00Z");
+  const base: CodigoPromocional = {
+    id: "c1", code: "NATAL10", kind: "PERCENT", value: 10, freeShipping: false, minOrderCents: null, startsAt: null, endsAt: null,
+    maxUses: null, oncePerCustomer: false, categoryIds: [], excludeOnSale: false, active: true,
+  };
+  const linhas = [
+    { quantity: 2, unitPriceCents: 3990, categoryId: "camisolas", emPromocao: false },
+    { quantity: 1, unitPriceCents: 1200, categoryId: "adeptos", emPromocao: true },
+  ];
+  const items = 2 * 3990 + 1200;
+  const av = (c: Partial<CodigoPromocional>, extra: { usos?: number; usosDaPessoa?: number; itemsCents?: number } = {}) =>
+    avaliarCodigo({ codigo: { ...base, ...c }, linhas, itemsCents: extra.itemsCents ?? items, agora, usos: extra.usos ?? 0, usosDaPessoa: extra.usosDaPessoa ?? 0 });
+
+  const r = av({});
+  check("10 % sobre os artigos todos", r.ok && r.descontoCents === Math.round(items * 0.1), JSON.stringify(r));
+  check("a repartição soma o desconto", r.ok && r.porLinha.reduce((n, v) => n + v, 0) === r.descontoCents);
+  check("código desligado recusa", !av({ active: false }).ok);
+  check("código inexistente recusa", !avaliarCodigo({ codigo: null, linhas, itemsCents: items, agora, usos: 0, usosDaPessoa: 0 }).ok);
+  check("antes do início recusa", !av({ startsAt: new Date("2026-12-01T00:00:00Z") }).ok);
+  check("depois do fim recusa", !av({ endsAt: new Date("2026-11-19T00:00:00Z") }).ok);
+  check("abaixo do mínimo recusa", !av({ minOrderCents: 10_000 }).ok);
+  check("no mínimo aceita", av({ minOrderCents: items }).ok);
+  check("usos esgotados recusa", !av({ maxUses: 5 }, { usos: 5 }).ok && av({ maxUses: 5 }, { usos: 4 }).ok);
+  check("uma vez por pessoa recusa a segunda", !av({ oncePerCustomer: true }, { usosDaPessoa: 1 }).ok);
+  const cat = av({ categoryIds: ["camisolas"] });
+  check("só numa categoria desconta só essas linhas", cat.ok && cat.descontoCents === 798 && cat.porLinha[1] === 0, JSON.stringify(cat));
+  check("categoria que não está no carrinho recusa", !av({ categoryIds: ["bones"] }).ok);
+  const semPromo = av({ excludeOnSale: true });
+  check("sem promoções salta o artigo em promoção", semPromo.ok && semPromo.porLinha[1] === 0 && semPromo.descontoCents === 798);
+  const fixo = av({ kind: "FIXED", value: 500 });
+  check("valor fixo de 5 €", fixo.ok && fixo.descontoCents === 500);
+  check("valor fixo nunca passa dos artigos", (() => { const x = av({ kind: "FIXED", value: 100_000 }); return x.ok && x.descontoCents === items; })());
+  const envio = av({ value: 0, freeShipping: true });
+  check("só envio grátis: 0 € de desconto e envio grátis", envio.ok && envio.descontoCents === 0 && envio.envioGratis);
+  check("o código escreve-se em maiúsculas sem espaços", codigoNormalizado(" natal 10 ") === "NATAL10");
+  check("o resumo diz o essencial", resumoDoCodigo({ kind: "PERCENT", value: 10, freeShipping: true, minOrderCents: 3000, endsAt: null }).replace(/\s/g, " ") ==="10 % · envio grátis · mín. 30,00 €", resumoDoCodigo({ kind: "PERCENT", value: 10, freeShipping: true, minOrderCents: 3000, endsAt: null }));
+}
+
+console.log("\nO desconto na fatura");
+{
+  const partes = repartirDesconto([1000, 1000, 1000], 100);
+  check("100 cêntimos por três linhas iguais: 34 + 33 + 33", partes.join(",") === "34,33,33", partes.join(","));
+  check("uma linha a zero não leva desconto", repartirDesconto([0, 500], 50).join(",") === "0,50");
+  const f = linhaComDescontoParaFatura(3, 990, 297);
+  const soma = f.reduce((n, l) => n + l.quantidade * l.unitarioCents, 0);
+  check("3 × 9,90 € menos 2,97 € parte-se em linhas que somam certo", soma === 3 * 990 - 297 && f.reduce((n, l) => n + l.quantidade, 0) === 3, JSON.stringify(f));
+  check("sem desconto fica a linha como está", JSON.stringify(linhaComDescontoParaFatura(2, 500, 0)) === JSON.stringify([{ quantidade: 2, unitarioCents: 500 }]));
+  check("um desconto que divide certo fica numa linha", linhaComDescontoParaFatura(2, 1000, 200).length === 1);
 }
 
 console.log(`\n${ok} OK, ${falhas} falhas`);

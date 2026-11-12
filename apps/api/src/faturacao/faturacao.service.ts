@@ -25,6 +25,7 @@
  * pergunta-se-lhe se já lá está um documento com a nossa referência: um
  * servidor que morra entre o "criar" e o "gravar o id" não emite duas vezes.
  */
+import { linhaComDescontoParaFatura } from "../loja/regras";
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit, BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InvoiceStatus, InvoicingProvider, PaymentStatus, Prisma } from "@prisma/client";
@@ -584,7 +585,7 @@ export class FaturacaoService implements OnModuleInit, OnModuleDestroy {
           },
         },
         siteOrder: {
-          select: { status: true, number: true, buyerName: true, buyerEmail: true, buyerTaxId: true, itemsCents: true, shippingCents: true, totalCents: true, items: { select: { productName: true, size: true, quantity: true, unitPriceCents: true } } },
+          select: { status: true, number: true, buyerName: true, buyerEmail: true, buyerTaxId: true, itemsCents: true, shippingCents: true, totalCents: true, discountCents: true, discountCode: true, items: { select: { productName: true, size: true, quantity: true, unitPriceCents: true, discountCents: true } } },
         },
       },
     });
@@ -647,7 +648,17 @@ export class FaturacaoService implements OnModuleInit, OnModuleDestroy {
     if (p.siteOrder) {
       const o = p.siteOrder;
       if (!ESTADO_PAGO_DA_ENCOMENDA.includes(o.status)) return null;
-      const itens: ItemPago[] = o.items.map((i) => ({ tipo: "LOJA", descricao: i.size ? `${i.productName} · ${i.size}` : i.productName, quantidade: i.quantity, unitarioCents: i.unitPriceCents }));
+      /*
+       * Com um código promocional, cada linha leva a parte do desconto que lhe
+       * coube na encomenda (`SiteOrderItem.discountCents`), já no preço: a
+       * fatura mostra o que se pagou por cada artigo. Uma linha cujo desconto
+       * não divide certo pela quantidade parte-se em duas (ver
+       * `linhaComDescontoParaFatura`), para a soma bater ao cêntimo.
+       */
+      const itens: ItemPago[] = o.items.flatMap((i) => {
+        const descricao = (i.size ? `${i.productName} · ${i.size}` : i.productName) + (i.discountCents > 0 && o.discountCode ? ` (código ${o.discountCode})` : "");
+        return linhaComDescontoParaFatura(i.quantity, i.unitPriceCents, i.discountCents).map((l) => ({ tipo: "LOJA" as const, descricao, quantidade: l.quantidade, unitarioCents: l.unitarioCents }));
+      });
       if (o.shippingCents > 0) itens.push({ tipo: "ENVIO", descricao: "Portes de envio", quantidade: 1, unitarioCents: o.shippingCents });
       return montarDocumento({
         ...base,

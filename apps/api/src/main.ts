@@ -77,6 +77,12 @@ async function bootstrap() {
    * painel é fechado pelo `PlatformGuard`, e o serviço recusa acima de 5 MB.
    */
   app.use("/api/platform/contas/mensalidades", json({ limit: "8mb" }));
+  /*
+   * O Adjunto recebe ficheiros para importar e troços de áudio ditados, em
+   * base64 no corpo. Rotas de sessão, atrás do guard; o serviço recusa acima
+   * de 8 MB de conteúdo (12 MB em base64).
+   */
+  app.use("/api/adjunto", json({ limit: "12mb" }));
 
   /**
    * O corpo em bruto é preservado para as rotas de webhook: a assinatura HMAC é

@@ -71,6 +71,54 @@ export type ProdutoDoSite = {
    * ignora-os ao editar. Põe-se à venda na ficha do artigo, não aqui.
    */
   artigoId: string | null;
+  /** A categoria da loja (id). Nula = sem categoria. `categoria` traz o nome dela. */
+  categoriaId: string | null;
+  /** O endereço no site: `/loja/<slug>`. */
+  slug: string;
+  /** O preço de antes, riscado (euros). Nulo = sem promoção. */
+  precoAntes: number | null;
+  novidade: boolean;
+  /** Para o Google e as partilhas. Vazios = o nome e a descrição. */
+  seoTitulo: string;
+  seoDescricao: string;
+};
+
+/** Uma categoria da loja, gerida em Website › Loja › Categorias. */
+export type CategoriaDaLoja = {
+  id: string;
+  nome: string;
+  /** O endereço: `/loja?categoria=<slug>`. */
+  slug: string;
+  descricao: string;
+  visivel: boolean;
+  ordem: number;
+  /** Quantos produtos tem. */
+  produtos: number;
+};
+
+/** Um código promocional da loja. Valores em euros e percentagens, como se escrevem. */
+export type CodigoDaLoja = {
+  id: string;
+  codigo: string;
+  descricao: string;
+  tipo: "PERCENTAGEM" | "FIXO";
+  valor: number;
+  envioGratis: boolean;
+  minimo: number | null;
+  /** ISO. */
+  inicio: string | null;
+  fim: string | null;
+  maxUsos: number | null;
+  umaVezPorPessoa: boolean;
+  /** Ids de categorias. Vazio = todos os produtos. */
+  categorias: string[];
+  semPromocoes: boolean;
+  ativo: boolean;
+  /** Só leitura, do servidor. */
+  usos: number;
+  descontadoEuros: number;
+  estado: "ativo" | "agendado" | "expirado" | "esgotado" | "desligado";
+  resumo: string;
 };
 
 /** Como a loja entrega. Em euros; a API guarda em cêntimos. */
@@ -223,6 +271,10 @@ export type SiteDoClube = {
   inicio: Inicio;
   noticias: NoticiaDoSite[];
   produtos: ProdutoDoSite[];
+  /** As categorias da loja, pela ordem do clube. */
+  categorias: CategoriaDaLoja[];
+  /** Os códigos promocionais da loja. */
+  codigos: CodigoDaLoja[];
   /** Os recintos do clube vistos de cima: o estádio, o pavilhão. */
   recintos: Recinto[];
   /** Por id de jogo. Um jogo sem entrada não tem bilheteira. */
@@ -288,6 +340,8 @@ export function siteVazio(): SiteDoClube {
     inicio: inicioVazio(),
     noticias: [],
     produtos: [],
+    categorias: [],
+    codigos: [],
     recintos: [],
     bilheteira: {},
     equipas: {},
@@ -404,13 +458,31 @@ function normalizar(s: SiteDoClube): SiteDoClube {
     ),
     categoriasDeSocio: Array.isArray(s.categoriasDeSocio) ? s.categoriasDeSocio : [],
     // Um servidor de antes da loja a vender não manda a galeria, o stock nem a entrega.
-    produtos: (s.produtos ?? []).map((p) => ({ ...p, imagens: Array.isArray(p.imagens) ? p.imagens : [], stock: p.stock && typeof p.stock === "object" ? p.stock : {} })),
+    produtos: (s.produtos ?? []).map(produtoNormalizado),
+    // Um servidor de antes das categorias geridas e dos códigos não os manda.
+    categorias: Array.isArray(s.categorias) ? s.categorias : [],
+    codigos: Array.isArray(s.codigos) ? s.codigos : [],
     loja: s.loja ? { ...vazio.loja, ...s.loja, levantamento: { ...vazio.loja.levantamento, ...(s.loja.levantamento ?? {}) }, envio: { ...vazio.loja.envio, ...(s.loja.envio ?? {}) } } : vazio.loja,
     encomendasPorTratar: typeof s.encomendasPorTratar === "number" ? s.encomendasPorTratar : 0,
     pagamentosLigados: s.pagamentosLigados === true,
     // Um servidor de antes de 25/10 não manda a faturação: lê-se como por ligar.
     faturacaoLigada: s.faturacaoLigada === true,
     programaDeFaturacao: typeof s.programaDeFaturacao === "string" ? s.programaDeFaturacao : null,
+  };
+}
+
+/** Um produto com todos os campos, venha de que servidor vier. */
+function produtoNormalizado(p: ProdutoDoSite): ProdutoDoSite {
+  return {
+    ...p,
+    imagens: Array.isArray(p.imagens) ? p.imagens : [],
+    stock: p.stock && typeof p.stock === "object" ? p.stock : {},
+    categoriaId: p.categoriaId ?? null,
+    slug: p.slug ?? p.id,
+    precoAntes: typeof p.precoAntes === "number" ? p.precoAntes : null,
+    novidade: p.novidade === true,
+    seoTitulo: p.seoTitulo ?? "",
+    seoDescricao: p.seoDescricao ?? "",
   };
 }
 
@@ -530,13 +602,84 @@ export async function guardarProduto(p: ProdutoDoSite): Promise<ProdutoDoSite> {
     esgotado: p.esgotado,
     visivel: p.visivel,
     stock: p.stock,
+    categoriaId: p.categoriaId,
+    slug: p.slug,
+    precoAntes: p.precoAntes,
+    novidade: p.novidade,
+    seoTitulo: p.seoTitulo,
+    seoDescricao: p.seoDescricao,
   };
-  const gravado = p.id ? await apiPatch<ProdutoDoSite>(`/api/site/produtos/${p.id}`, corpo) : await apiPost<ProdutoDoSite>("/api/site/produtos", corpo);
+  const gravado = produtoNormalizado(p.id ? await apiPatch<ProdutoDoSite>(`/api/site/produtos/${p.id}`, corpo) : await apiPost<ProdutoDoSite>("/api/site/produtos", corpo));
+  const antes = estado.site.produtos.find((x) => x.id === gravado.id);
   mudarLocal((s) => ({
     ...s,
     produtos: s.produtos.some((x) => x.id === gravado.id) ? s.produtos.map((x) => (x.id === gravado.id ? gravado : x)) : [...s.produtos, gravado],
+    // A contagem de produtos por categoria acompanha.
+    categorias:
+      antes?.categoriaId === gravado.categoriaId
+        ? s.categorias
+        : s.categorias.map((c) => ({ ...c, produtos: c.produtos + (c.id === gravado.categoriaId ? 1 : 0) - (c.id === antes?.categoriaId ? 1 : 0) })),
+  }));
+  // Uma categoria escrita por nome pode ter nascido agora: lê-se tudo outra vez.
+  if (gravado.categoriaId && !estado.site.categorias.some((c) => c.id === gravado.categoriaId)) repor();
+  return gravado;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Categorias e códigos da loja                                                 */
+/* -------------------------------------------------------------------------- */
+
+export async function guardarCategoria(c: Pick<CategoriaDaLoja, "id" | "nome" | "slug" | "descricao" | "visivel">): Promise<CategoriaDaLoja> {
+  const corpo = { nome: c.nome, slug: c.slug, descricao: c.descricao, visivel: c.visivel };
+  const gravada = c.id ? await apiPatch<CategoriaDaLoja>(`/api/site/categorias/${c.id}`, corpo) : await apiPost<CategoriaDaLoja>("/api/site/categorias", corpo);
+  mudarLocal((s) => ({
+    ...s,
+    categorias: s.categorias.some((x) => x.id === gravada.id) ? s.categorias.map((x) => (x.id === gravada.id ? gravada : x)) : [...s.categorias, gravada],
+    // O nome da categoria nos produtos acompanha.
+    produtos: s.produtos.map((p) => (p.categoriaId === gravada.id ? { ...p, categoria: gravada.nome } : p)),
+  }));
+  return gravada;
+}
+
+export async function apagarCategoria(id: string) {
+  await apiDelete(`/api/site/categorias/${id}`);
+  mudarLocal((s) => ({
+    ...s,
+    categorias: s.categorias.filter((c) => c.id !== id),
+    produtos: s.produtos.map((p) => (p.categoriaId === id ? { ...p, categoriaId: null, categoria: "" } : p)),
+  }));
+}
+
+/** Uma categoria sobe ou desce uma posição. O ecrã muda já; se o servidor recusar, volta a ler. */
+export async function moverCategoria(id: string, delta: -1 | 1) {
+  const lista = [...estado.site.categorias];
+  const i = lista.findIndex((c) => c.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= lista.length) return;
+  [lista[i], lista[j]] = [lista[j], lista[i]];
+  mudarLocal((s) => ({ ...s, categorias: lista.map((c, k) => ({ ...c, ordem: k })) }));
+  try {
+    await apiPut("/api/site/categorias-ordem", { ids: lista.map((c) => c.id) });
+  } catch {
+    repor();
+  }
+}
+
+export type CodigoParaGravar = Omit<CodigoDaLoja, "usos" | "descontadoEuros" | "estado" | "resumo">;
+
+export async function guardarCodigo(c: CodigoParaGravar): Promise<CodigoDaLoja> {
+  const { id, ...corpo } = c;
+  const gravado = id ? await apiPatch<CodigoDaLoja>(`/api/site/codigos/${id}`, corpo) : await apiPost<CodigoDaLoja>("/api/site/codigos", corpo);
+  mudarLocal((s) => ({
+    ...s,
+    codigos: s.codigos.some((x) => x.id === gravado.id) ? s.codigos.map((x) => (x.id === gravado.id ? gravado : x)) : [gravado, ...s.codigos],
   }));
   return gravado;
+}
+
+export async function apagarCodigo(id: string) {
+  await apiDelete(`/api/site/codigos/${id}`);
+  mudarLocal((s) => ({ ...s, codigos: s.codigos.filter((c) => c.id !== id) }));
 }
 
 export async function apagarProduto(id: string) {

@@ -14,6 +14,7 @@ import { ClubMark } from "./ClubMark";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { useUnreadCount } from "@/lib/notifications";
 import { TrialBadge } from "./TrialBadge";
+import { useAdjunto } from "@/lib/adjunto";
 
 export function Sidebar({
   collapsed,
@@ -23,6 +24,8 @@ export function Sidebar({
   onToggle: () => void;
 }) {
   const { session } = useSession();
+  // O menu lê se o Adjunto está ligado (`navFor`); subscrever é o que o faz aparecer quando a resposta chega.
+  useAdjunto();
   const groups = navFor(session);
   const counts = navCounts(session);
   const { estaAberto, alternar } = useNavGroups();

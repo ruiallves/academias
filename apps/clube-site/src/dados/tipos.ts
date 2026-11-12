@@ -256,14 +256,27 @@ export type Evento = {
 
 export type Produto = {
   id: string;
+  /** O endereço (`/loja/<slug>`), escolhido na consola. Num servidor antigo é o id. */
   slug: string;
   name: string;
   /** Em euros. */
   price: number;
+  /** O preço de antes, riscado (em promoção). Só vem quando é maior do que `price`. */
+  compareAtPrice?: number;
+  /** Marcado pelo clube como novidade. */
+  isNew?: boolean;
   image?: string;
   images?: string[];
+  /** O nome da categoria. Vazio num produto sem categoria. */
   category: string;
+  /** O endereço da categoria (`/loja?categoria=<slug>`). Ausente num servidor antigo. */
+  categorySlug?: string;
   description: string;
+  /** Para o Google e as partilhas. Ausentes: o nome e a descrição. */
+  seoTitle?: string;
+  seoDescription?: string;
+  /** ISO. Para ordenar por "mais recentes". */
+  createdAt?: string;
   /** "Tamanho" → ["S", "M", "L"]. Sem variantes num cachecol. */
   variants?: { name: string; options: string[] };
   /**
@@ -275,7 +288,9 @@ export type Produto = {
   soldOut?: boolean;
 };
 
-/** A fronteira entre o site e os dados. Uma implementação por origem. */
+/** Uma categoria da loja, como o filtro do site a mostra. */
+export type CategoriaDaLoja = { slug: string; name: string; description?: string };
+
 /** Uma categoria de sócio que o clube publica (as mesmas da página `/ser-socio` da API). */
 export type CategoriaDeSocio = {
   id: string;
@@ -297,6 +312,7 @@ export type Adesao = {
   tiers: CategoriaDeSocio[];
 };
 
+/** A fronteira entre o site e os dados. Uma implementação por origem. */
 export interface Fonte {
   clube(slug: string): Promise<Clube | null>;
   socios(slug: string): Promise<Adesao>;
@@ -309,4 +325,6 @@ export interface Fonte {
   eventos(slug: string): Promise<Evento[]>;
   produtos(slug: string): Promise<Produto[]>;
   produto(slug: string, id: string): Promise<Produto | null>;
+  /** As categorias visíveis da loja, pela ordem do clube. */
+  categoriasDaLoja(slug: string): Promise<CategoriaDaLoja[]>;
 }

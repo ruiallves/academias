@@ -9,8 +9,8 @@
  * As páginas só conhecem a interface `Fonte`. Trocar a origem não lhes toca.
  */
 
-import type { Adesao, Clube, Equipa, Evento, Fonte, Jogo, Noticia, Produto } from "./tipos";
-import { DEMO, PRODUTOS } from "./demo/monteverde";
+import type { Adesao, CategoriaDaLoja, Clube, Equipa, Evento, Fonte, Jogo, Noticia, Produto } from "./tipos";
+import { CATEGORIAS_DA_LOJA, DEMO, PRODUTOS } from "./demo/monteverde";
 import { clubeComFoto, equipasComFoto } from "@/lib/fotos";
 
 const porData = <T extends { startsAt: string }>(a: T, b: T) => a.startsAt.localeCompare(b.startsAt);
@@ -52,6 +52,9 @@ const demo: Fonte = {
   async produto(slug, id) {
     if (slug !== DEMO.clube.slug) return null;
     return PRODUTOS.find((p) => p.slug === id || p.id === id) ?? null;
+  },
+  async categoriasDaLoja(slug) {
+    return slug === DEMO.clube.slug ? CATEGORIAS_DA_LOJA : [];
   },
   async socios() {
     return ADESAO_DEMO;
@@ -107,7 +110,14 @@ const api: Fonte = {
   jogo: (slug, id) => pedir<Jogo | null>(slug, `/jogos/${id}`, null),
   eventos: (slug) => pedir<Evento[]>(slug, "/eventos", []),
   produtos: (slug) => pedir<Produto[]>(slug, "/produtos", []),
-  produto: (slug, id) => pedir<Produto | null>(slug, `/produtos/${id}`, null),
+  produto: (slug, id) => pedir<Produto | null>(slug, `/produtos/${encodeURIComponent(id)}`, null),
+  // Um servidor de antes das categorias geridas responde 404: o site tira-as dos produtos.
+  categoriasDaLoja: async (slug) => {
+    const lista = await pedir<CategoriaDaLoja[] | null>(slug, "/loja/categorias", null);
+    if (lista) return lista;
+    const produtos = await pedir<Produto[]>(slug, "/produtos", []);
+    return [...new Set(produtos.map((p) => p.category).filter(Boolean))].map((name) => ({ slug: name, name }));
+  },
   socios: (slug) => pedir<Adesao>(slug, "/socios", { headline: "Faz parte do clube.", intro: "", points: [], tiers: [] }),
 };
 

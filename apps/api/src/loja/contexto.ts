@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type { ScopedClient } from "../prisma/prisma.service";
 import { stockValido, tamanhosDoProduto } from "../site/site.tipos";
 import type { ProdutoParaVenda } from "./regras";
+import { caixaDoEmail } from "../platform/ficha-do-site";
 
 /**
  * As perguntas à base que a compra, o webhook e a loja pública fazem todas:
@@ -55,6 +56,8 @@ export const SELECT_PRODUTO_PARA_VENDA = {
   sizes: true,
   soldOut: true,
   stock: true,
+  categoryId: true,
+  compareAtPriceCents: true,
   inventoryItem: {
     select: {
       archivedAt: true,
@@ -76,6 +79,8 @@ export type ProdutoLido = {
   sizes: string;
   soldOut: boolean;
   stock: unknown;
+  categoryId?: string | null;
+  compareAtPriceCents?: number | null;
   inventoryItem?: { archivedAt: Date | null; variants: { id: string; label: string; totalQuantity: number; assignedQuantity: number }[] } | null;
 };
 
@@ -86,6 +91,7 @@ export type ProdutoLido = {
  * disponível de cada uma; sem artigo, vale o que o clube escreveu no produto.
  */
 export function produtoParaVenda(p: ProdutoLido, reservados: Map<string, number>): ProdutoParaVenda {
+  const extra = { categoryId: p.categoryId ?? null, emPromocao: emPromocao(p) };
   const menosReservados = (tamanho: string, n: number | null) => (n === null ? null : Math.max(0, n - (reservados.get(`${p.id}\u0000${tamanho}`) ?? 0)));
   const disponivel: Record<string, number | null> = {};
   const variantId: Record<string, string> = {};
@@ -106,7 +112,7 @@ export function produtoParaVenda(p: ProdutoLido, reservados: Map<string, number>
       disponivel[""] = menosReservados("", !v || arquivado ? 0 : Math.max(0, v.totalQuantity - v.assignedQuantity));
       if (v) variantId[""] = v.id;
     }
-    return { id: p.id, nome: p.name, precoCents: p.priceCents, imageUrl: p.imageUrl, visivel: p.visible && !arquivado, tamanhos, disponivel, variantId };
+    return { id: p.id, nome: p.name, precoCents: p.priceCents, imageUrl: p.imageUrl, visivel: p.visible && !arquivado, tamanhos, disponivel, variantId, ...extra };
   }
 
   const stock = stockValido(p.stock);
@@ -116,7 +122,7 @@ export function produtoParaVenda(p: ProdutoLido, reservados: Map<string, number>
     const contado = t in stock ? stock[t] : null;
     disponivel[t] = p.soldOut ? 0 : menosReservados(t, contado);
   }
-  return { id: p.id, nome: p.name, precoCents: p.priceCents, imageUrl: p.imageUrl, visivel: p.visible, tamanhos, disponivel, variantId };
+  return { id: p.id, nome: p.name, precoCents: p.priceCents, imageUrl: p.imageUrl, visivel: p.visible, tamanhos, disponivel, variantId, ...extra };
 }
 
 /** Os produtos destes ids como a venda os vê, já com o guardado descontado. */
@@ -146,4 +152,34 @@ export async function aindaHaStock(db: ScopedClient, encomenda: { id: string; it
     if (livre !== null && livre < n) return false;
   }
   return true;
+}
+
+/** O produto está em promoção: tem um preço de antes maior do que o de agora. */
+export function emPromocao(p: { priceCents: number; compareAtPriceCents?: number | null }): boolean {
+  return typeof p.compareAtPriceCents === "number" && p.compareAtPriceCents > p.priceCents;
+}
+
+/**
+ * Um código promocional do clube e quantas vezes já foi usado: no total e
+ * por esta caixa de correio. Contam as encomendas pagas (e as que seguiram
+ * daí) e as guardadas dentro do prazo; as caducadas e as anuladas não.
+ * `semEncomenda` deixa de fora a que está a ser escrita.
+ */
+export async function codigoComUsos(db: ScopedClient, codigo: string, caixa: string | null, agora: Date) {
+  const c = await db.siteDiscountCode.findFirst({ where: { code: codigo } });
+  if (!c) return { codigo: null, usos: 0, usosDaPessoa: 0 };
+  // Tipado como o filtro do Prisma: um `as const` aqui dava uma lista só de leitura, que o `in` recusa.
+  const contam: Prisma.SiteOrderWhereInput = {
+    discountCodeId: c.id,
+    OR: [{ status: { in: ["PAID", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }],
+  };
+  const [usos, daPessoa] = await Promise.all([
+    db.siteOrder.count({ where: contam }),
+    c.oncePerCustomer && caixa ? db.siteOrder.findMany({ where: contam, select: { buyerEmail: true } }) : Promise.resolve([] as { buyerEmail: string }[]),
+  ]);
+  return {
+    codigo: { ...c, kind: c.kind as "PERCENT" | "FIXED" },
+    usos,
+    usosDaPessoa: caixa ? daPessoa.filter((o) => caixaDoEmail(o.buyerEmail) === caixa).length : 0,
+  };
 }

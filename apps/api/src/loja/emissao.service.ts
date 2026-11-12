@@ -202,6 +202,7 @@ export class LojaEmissao {
       linhas: this.linhasParaEmail(d.encomenda),
       envioCents: d.encomenda.shippingCents,
       totalCents: d.encomenda.totalCents,
+      desconto: d.encomenda.discountCents > 0 ? { codigo: d.encomenda.discountCode, cents: d.encomenda.discountCents } : null,
       entrega: this.entregaParaEmail(d.encomenda, d.loja),
       link: this.enderecoDaEncomenda(d.a, d.encomenda.accessToken),
     });
@@ -221,6 +222,7 @@ export class LojaEmissao {
       linhas: this.linhasParaEmail(d.encomenda),
       envioCents: d.encomenda.shippingCents,
       totalCents: d.encomenda.totalCents,
+      desconto: d.encomenda.discountCents > 0 ? { codigo: d.encomenda.discountCode, cents: d.encomenda.discountCents } : null,
       entrega: this.entregaParaEmail(d.encomenda, d.loja),
       nota: d.encomenda.note,
       link: this.enderecoDaConsola(d.a.slug),

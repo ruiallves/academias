@@ -6,7 +6,7 @@
  * Datas relativas a hoje, para o "próximo jogo" ser sempre próximo.
  */
 
-import { INICIO_POR_OMISSAO, type Clube, type Equipa, type Evento, type Jogo, type Noticia, type Produto } from "../tipos";
+import { INICIO_POR_OMISSAO, type Clube, type Equipa, type Evento, type Jogo, type Noticia, type Produto, type CategoriaDaLoja } from "../tipos";
 
 const foto = (seed: string, w = 1200, h = 800) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
@@ -589,6 +589,13 @@ const NOTICIAS: Noticia[] = [
 
 export const DEMO = { clube: CLUBE, equipas: EQUIPAS, jogos: JOGOS, eventos: EVENTOS, noticias: NOTICIAS };
 
+export const CATEGORIAS_DA_LOJA: CategoriaDaLoja[] = [
+  { slug: "equipamento", name: "Equipamento" },
+  { slug: "treino", name: "Treino" },
+  { slug: "roupa", name: "Roupa" },
+  { slug: "adeptos", name: "Adeptos" },
+];
+
 export const PRODUTOS: Produto[] = [
   {
     id: "p1",
@@ -597,6 +604,8 @@ export const PRODUTOS: Produto[] = [
     price: 39.9,
     image: foto("camisola", 900, 1100),
     category: "Equipamento",
+    categorySlug: "equipamento",
+    isNew: true,
     description:
       "A camisola de jogo desta época. Verde e azul do clube, padrão da bancada central, tecido respirável. Corte regular.",
     variants: { name: "Tamanho", options: ["6 anos", "8 anos", "10 anos", "12 anos", "XS", "S", "M", "L", "XL", "XXL"] },
@@ -608,6 +617,8 @@ export const PRODUTOS: Produto[] = [
     price: 39.9,
     image: foto("alternativa", 900, 1100),
     category: "Equipamento",
+    categorySlug: "equipamento",
+    isNew: true,
     description: "Branca, com os detalhes em verde. A que a equipa usa fora de casa.",
     variants: { name: "Tamanho", options: ["XS", "S", "M", "L", "XL", "XXL"] },
     // Para se ver um tamanho com poucas unidades e outro esgotado.
@@ -617,9 +628,11 @@ export const PRODUTOS: Produto[] = [
     id: "p3",
     slug: "cachecol-monte-verde",
     name: "Cachecol",
-    price: 12,
+    price: 9.6,
+    compareAtPrice: 12,
     image: foto("cachecol", 900, 1100),
     category: "Adeptos",
+    categorySlug: "adeptos",
     description: "Cachecol de lã em verde e azul, com o emblema bordado nas duas pontas.",
   },
   {
@@ -629,6 +642,7 @@ export const PRODUTOS: Produto[] = [
     price: 34.9,
     image: foto("sweat", 900, 1100),
     category: "Roupa",
+    categorySlug: "roupa",
     description: "Sweat de algodão grosso, verde escuro, com o emblema ao peito e o nome do clube nas costas.",
     variants: { name: "Tamanho", options: ["S", "M", "L", "XL", "XXL"] },
   },
@@ -639,6 +653,7 @@ export const PRODUTOS: Produto[] = [
     price: 15,
     image: foto("bone", 900, 1100),
     category: "Adeptos",
+    categorySlug: "adeptos",
     description: "Boné de pala curva, ajustável, com o emblema bordado.",
     stock: { "": 1 },
   },
@@ -646,9 +661,11 @@ export const PRODUTOS: Produto[] = [
     id: "p6",
     slug: "casaco-de-treino",
     name: "Casaco de treino",
-    price: 44.9,
+    price: 35.9,
+    compareAtPrice: 44.9,
     image: foto("casaco", 900, 1100),
-    category: "Roupa",
+    category: "Treino",
+    categorySlug: "treino",
     description: "O casaco que a equipa técnica usa no banco. Corta-vento, forrado, com fecho até ao queixo.",
     variants: { name: "Tamanho", options: ["S", "M", "L", "XL"] },
   },
@@ -658,7 +675,8 @@ export const PRODUTOS: Produto[] = [
     name: "Garrafa 750 ml",
     price: 9,
     image: foto("garrafa", 900, 1100),
-    category: "Adeptos",
+    category: "Treino",
+    categorySlug: "treino",
     description: "Garrafa de alumínio com o emblema. Vai para o treino e para a escola.",
   },
   {
@@ -668,6 +686,7 @@ export const PRODUTOS: Produto[] = [
     price: 19.9,
     image: foto("calcoes", 900, 1100),
     category: "Equipamento",
+    categorySlug: "equipamento",
     description: "Os calções do equipamento principal.",
     variants: { name: "Tamanho", options: ["6 anos", "8 anos", "10 anos", "12 anos", "S", "M", "L", "XL"] },
     soldOut: true,

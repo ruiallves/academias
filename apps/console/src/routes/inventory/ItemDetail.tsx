@@ -19,7 +19,7 @@ import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { useStore } from "@/lib/store";
 import { mostrarOk } from "@/lib/avisos";
-import type { ProdutoDoSite } from "@/lib/website";
+import { useSite, type ProdutoDoSite } from "@/lib/website";
 import {
   MOVEMENT_LABEL,
   addVariant,
@@ -412,7 +412,6 @@ function Mosaico({
 
 const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
 
-const CATEGORIAS_DA_LOJA = ["Equipamento", "Roupa", "Adeptos"];
 
 /**
  * O artigo na loja do site do clube.
@@ -562,7 +561,9 @@ function ProdutoDoSiteDialog({
   onDone: () => void;
 }) {
   const [preco, setPreco] = useState(produto ? String(produto.preco).replace(".", ",") : "");
-  const [categoria, setCategoria] = useState(produto?.categoria ?? CATEGORIAS_DA_LOJA[0]);
+  // As categorias da loja do clube (Website › Loja › Categorias). Vazio = sem categoria.
+  const categorias = useSite(useStore().academy.slug).categorias;
+  const [categoriaId, setCategoriaId] = useState<string>(produto?.categoriaId ?? "");
   // A descrição começa pela do artigo: é quase sempre a mesma frase.
   const [descricao, setDescricao] = useState(produto?.descricao ?? item.description ?? "");
   const [busy, setBusy] = useState(false);
@@ -579,7 +580,7 @@ function ProdutoDoSiteDialog({
     try {
       await porAVendaNoSite(item.id, {
         preco: Math.round(valor * 100) / 100,
-        categoria,
+        categoriaId: categoriaId || null,
         descricao: descricao.trim(),
         ...(produto ? { visivel: produto.visivel } : {}),
       });
@@ -616,9 +617,12 @@ function ProdutoDoSiteDialog({
             <input inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} className={cx(dialogInputClass, "tabular")} autoFocus />
           </DialogField>
           <DialogField label="Categoria">
-            <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className={dialogInputClass}>
-              {[...new Set([...CATEGORIAS_DA_LOJA, categoria])].map((c) => (
-                <option key={c}>{c}</option>
+            <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={dialogInputClass}>
+              <option value="">Sem categoria</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
               ))}
             </select>
           </DialogField>

@@ -362,7 +362,7 @@ export const removeItemImage = (itemId: string, key: string) =>
  * descrição ou se está visível. Os tamanhos e o esgotado não se mandam: saem
  * do stock disponível. Exige `website:write` e `inventory:read`.
  */
-export const porAVendaNoSite = (id: string, body: { preco: number; categoria?: string; descricao?: string; visivel?: boolean }) =>
+export const porAVendaNoSite = (id: string, body: { preco: number; categoria?: string; categoriaId?: string | null; descricao?: string; visivel?: boolean }) =>
   apiPut<ProdutoDoSite>(`/api/inventory/items/${id}/site`, body);
 
 export const tirarDoSite = (id: string) => apiDelete<{ ok: true }>(`/api/inventory/items/${id}/site`);

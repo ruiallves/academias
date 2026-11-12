@@ -707,7 +707,7 @@ export class AthletesService {
   async importMany(
     ctx: RequestContext,
     rows: AthleteInputDto[],
-    opts: { sobrescrever?: boolean; enviarConvites?: boolean } = {},
+    opts: { sobrescrever?: boolean; enviarConvites?: boolean; ensaio?: boolean } = {},
   ) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para inscrever atletas");
 
@@ -963,6 +963,31 @@ export class AthletesService {
        * segunda passagem já não os contava como inscritos. `athletes` vazio
        * para que nenhum convite saia. Ver o fim do método.
        */
+      /*
+       * O ensaio: tudo corrido, nada escrito.
+       *
+       * O Adjunto mostra "157 entram, 41 já existiam, 14 com problemas" antes
+       * de a pessoa carregar em Importar. É a mesma passagem, com a transação
+       * desfeita no fim e as contas devolvidas; `athletes` vazio para nenhum
+       * convite sair.
+       */
+      if (opts.ensaio) {
+        throw new PerguntaAntesDeEscrever({
+          ...semNada(),
+          ensaio: true,
+          created: created.length,
+          updated: updated.length,
+          equipasJuntadas,
+          errors,
+          existing: existing.slice(0, 200),
+          existingTotal: existing.length,
+          telefones: encarregados.telefones.slice(0, 200),
+          telefonesTotal: encarregados.telefones.length,
+          encarregadosDeFora: encarregados.deFora.slice(0, 200),
+          encarregadosDeForaTotal: encarregados.deFora.length,
+        });
+      }
+
       if ((existing.length > 0 || encarregados.telefones.length > 0) && !opts.sobrescrever) {
         throw new PerguntaAntesDeEscrever({
           ...semNada(),
@@ -1425,7 +1450,9 @@ function listar(itens: { n: number; um: string; muitos: string }[]): string {
 type ExistenteNaFolha = { line: number; name: string; matchedName: string; taxId: string; changes: string[] };
 
 /** O que `importMany` devolve, na pergunta e no fim. */
-type ResultadoDaImportacao = {
+export type ResultadoDaImportacao = {
+  /** Verdadeiro quando foi um ensaio: as contas são as que seriam, e nada ficou gravado. */
+  ensaio?: boolean;
   created: number;
   updated: number;
   equipasJuntadas: number;

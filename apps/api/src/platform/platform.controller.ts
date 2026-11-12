@@ -114,6 +114,11 @@ class ConfirmLogoDto {
 }
 
 /** Fechar ou reabrir um clube. Ver `setAcademyActive`. */
+/** Ligar ou desligar o Assistente IA de um clube. Ver `setAssistente`. */
+class SetAssistenteDto {
+  @IsBoolean() ligado!: boolean;
+}
+
 class SetAcademyActiveDto {
   @IsBoolean() active!: boolean;
 }
@@ -327,6 +332,13 @@ export class PlatformController {
   @PlatformRoles("OWNER", "ADMIN")
   setFaturacao(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetFaturacaoDto) {
     return this.platform.setFaturacao(req.admin, id, body, ip);
+  }
+
+  /** O Assistente IA: `OWNER`/`ADMIN`, como o espaço e o plano (é um extra pago). */
+  @Patch("academies/:id/assistente")
+  @PlatformRoles("OWNER", "ADMIN")
+  setAssistente(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetAssistenteDto) {
+    return this.platform.setAssistente(req.admin, id, body.ligado, ip);
   }
 
   @Patch("academies/:id/espaco")

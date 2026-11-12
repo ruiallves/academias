@@ -11,10 +11,12 @@ import { TurnstileService } from "../common/turnstile.service";
 import { siteIncluido, SEM_PLANO } from "../site/plano";
 import { SELECT_VENDAS, vendeOnline } from "../common/vendas-online";
 import { lojaParaConsola, lojaValida, type Loja } from "../site/site.tipos";
-import { bloquearLoja, produtosParaVenda } from "./contexto";
+import { bloquearLoja, codigoComUsos, produtosParaVenda } from "./contexto";
 import { LojaEmissao } from "./emissao.service";
 import {
   RESERVA_MINUTOS,
+  avaliarCodigo,
+  codigoNormalizado,
   custoDeEnvio,
   entregaPossivel,
   juntarLinhas,
@@ -22,6 +24,8 @@ import {
   moradaValida,
   proximoNumero,
   verificarCarrinho,
+  type CarrinhoAceite,
+  type DescontoAceite,
   type Entrega,
   type LinhaDoCarrinho,
 } from "./regras";
@@ -59,6 +63,13 @@ const GUARDADAS_POR_CLUBE = 150;
 const FILA_POR_CLUBE = 60;
 /** Quantas encomendas a consola lista. As mais antigas ficam entregues ou anuladas. */
 const LISTA_MAX = 500;
+/**
+ * Códigos errados por clube em 10 minutos. Um robô a adivinhar códigos
+ * ("NATAL10", "NATAL15"...) bate aqui e passa a ouvir "tenta daqui a pouco";
+ * quem escreve um código mal duas ou três vezes nunca lá chega.
+ */
+const CODIGOS_ERRADOS_POR_CLUBE = 120;
+const JANELA_DOS_CODIGOS_MS = 10 * 60_000;
 
 @Injectable()
 export class LojaService {
@@ -66,6 +77,8 @@ export class LojaService {
   private readonly ficha: FichaDoSite;
   /** Uma fila por clube, na memória da API. Ver `BilheteiraService.naFila`. */
   private readonly filas = new Map<string, { cauda: Promise<unknown>; aEspera: number }>();
+  /** Códigos errados por clube, na janela de 10 minutos. Ver `CODIGOS_ERRADOS_POR_CLUBE`. */
+  private readonly codigosErrados = new Map<string, { desde: number; n: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -144,13 +157,20 @@ export class LojaService {
       const [{ loja, vende }, produtos] = await Promise.all([this.lojaDoClube(db, academyId), produtosParaVenda(db, linhas.map((l) => l.productId), new Date())]);
       const porId = new Map(produtos.map((p) => [p.id, p]));
       const r = verificarCarrinho({ linhas, produtos });
+      const codigo = r.ok && dto.codigo?.trim() ? await this.aplicarCodigo(db, academyId, dto.codigo, r, null, new Date()) : null;
+      const desconto = codigo?.ok ? codigo : null;
+      const descontoCents = desconto?.descontoCents ?? 0;
       return {
         vende,
         entrega: lojaParaConsola(loja),
         ok: r.ok,
         erro: r.ok ? null : r.erro,
         itemsCents: r.ok ? r.itemsCents : null,
-        envio: r.ok && loja.envio.ativo ? custoDeEnvio(loja, "SHIPPING", r.itemsCents) : null,
+        envio: r.ok && loja.envio.ativo ? (desconto?.envioGratis ? 0 : custoDeEnvio(loja, "SHIPPING", r.itemsCents - descontoCents)) : null,
+        /** O código aceite e o que tira. Nulo sem código ou com um recusado (ver `erroCodigo`). */
+        desconto: desconto ? { codigo: desconto.codigo, descontoCents, envioGratis: desconto.envioGratis } : null,
+        /** Porque é que o código escrito não serve, dito para quem compra. */
+        erroCodigo: codigo && !codigo.ok ? codigo.erro : null,
         linhas: linhas.map((l) => {
           const p = porId.get(l.productId);
           const tamanhoValido = !p || p.tamanhos.length === 0 ? l.tamanho === "" : p.tamanhos.includes(l.tamanho);
@@ -199,6 +219,7 @@ export class LojaService {
       morada,
       nota: dto.nota?.trim() || null,
       metodo: dto.metodo,
+      codigo: dto.codigo?.trim() || null,
     });
 
     if (encomenda.totalCents === 0) {
@@ -233,7 +254,7 @@ export class LojaService {
    */
   private async criarEncomenda(
     academyId: string,
-    p: { linhas: LinhaDoCarrinho[]; nome: string; email: string; telefone: string | null; nif: string | null; entrega: Entrega; morada: ReturnType<typeof moradaValida>; nota: string | null; metodo: "MBWAY" | "MULTIBANCO" },
+    p: { linhas: LinhaDoCarrinho[]; nome: string; email: string; telefone: string | null; nif: string | null; entrega: Entrega; morada: ReturnType<typeof moradaValida>; nota: string | null; metodo: "MBWAY" | "MULTIBANCO"; codigo: string | null },
   ) {
     return this.naFila(academyId, () =>
       this.prisma.runAs(academyId, async (db) => {
@@ -271,8 +292,16 @@ export class LojaService {
         const r = verificarCarrinho({ linhas: p.linhas, produtos });
         if (!r.ok) throw new BadRequestException(r.erro);
 
-        const shippingCents = custoDeEnvio(loja, p.entrega, r.itemsCents);
-        const totalCents = r.itemsCents + shippingCents;
+        // O código volta a contar-se aqui, com a loja bloqueada: dois carrinhos não gastam o último uso.
+        let desconto: DescontoAceite | null = null;
+        if (p.codigo) {
+          const c = await this.aplicarCodigo(db, academyId, p.codigo, r, p.email, agora);
+          if (!c.ok) throw new BadRequestException(c.erro);
+          desconto = c;
+        }
+        const descontoCents = desconto?.descontoCents ?? 0;
+        const shippingCents = desconto?.envioGratis ? 0 : custoDeEnvio(loja, p.entrega, r.itemsCents - descontoCents);
+        const totalCents = r.itemsCents - descontoCents + shippingCents;
         const maior = await db.siteOrder.aggregate({ _max: { number: true } });
         const gratis = totalCents === 0;
 
@@ -293,11 +322,15 @@ export class LojaService {
             itemsCents: r.itemsCents,
             shippingCents,
             totalCents,
+            discountCents: descontoCents,
+            discountCode: desconto?.codigo ?? null,
+            discountCodeId: desconto?.codigoId ?? null,
             reservedUntil: new Date(agora.getTime() + (gratis ? 60 * 60_000 : RESERVA_MINUTOS * 60_000)),
             accessToken: this.emissao.novoAcesso(),
             items: {
-              create: r.linhas.map((l) => ({
+              create: r.linhas.map((l, i) => ({
                 academyId,
+                discountCents: desconto?.porLinha[i] ?? 0,
                 productId: l.productId,
                 variantId: l.variantId,
                 productName: l.productName,
@@ -312,6 +345,25 @@ export class LojaService {
         return encomenda;
       }),
     );
+  }
+
+  /**
+   * Um código escrito por quem compra, contra o carrinho já aceite. Com
+   * `email`, conta também "uma vez por pessoa" (no carrinho ainda não se sabe
+   * quem é; volta a ver-se ao encomendar).
+   */
+  private async aplicarCodigo(db: ScopedClient, academyId: string, escrito: string, r: CarrinhoAceite, email: string | null, agora: Date) {
+    const codigo = codigoNormalizado(escrito);
+    const errados = this.codigosErrados.get(academyId);
+    const naJanela = errados && agora.getTime() - errados.desde < JANELA_DOS_CODIGOS_MS ? errados : null;
+    if (naJanela && naJanela.n >= CODIGOS_ERRADOS_POR_CLUBE) {
+      return { ok: false as const, erro: "Houve muitos códigos errados nesta loja. Tenta outra vez daqui a alguns minutos." };
+    }
+    const lido = codigo ? await codigoComUsos(db, codigo, email ? caixaDoEmail(email) : null, agora) : { codigo: null, usos: 0, usosDaPessoa: 0 };
+    if (!lido.codigo) {
+      this.codigosErrados.set(academyId, naJanela ? { desde: naJanela.desde, n: naJanela.n + 1 } : { desde: agora.getTime(), n: 1 });
+    }
+    return avaliarCodigo({ codigo: lido.codigo, linhas: r.linhas, itemsCents: r.itemsCents, agora, usos: lido.usos, usosDaPessoa: lido.usosDaPessoa });
   }
 
   /** As encomendas guardadas cujo prazo passou: deixam de contar para o stock. */
@@ -371,6 +423,8 @@ export class LojaService {
       reservadoAte: e.reservedUntil.toISOString(),
       itemsCents: e.itemsCents,
       envioCents: e.shippingCents,
+      descontoCents: e.discountCents,
+      codigo: e.discountCode,
       totalCents: pag?.amountCents ?? e.totalCents,
       pagamento: estado === "a-pagar" && pag ? { metodo: pag.method, entidade: pag.entity, referencia: pag.reference, valorCents: pag.amountCents, estado: pag.status } : null,
       reembolso: e.refundDueCents ? { valorCents: e.refundDueCents, feito: !!e.refundedAt } : null,
@@ -427,6 +481,8 @@ export class LojaService {
           linhas: e.items.map((i) => ({ nome: i.productName, tamanho: i.size, quantidade: i.quantity, unitPriceCents: i.unitPriceCents, imageUrl: i.imageUrl, productId: i.productId })),
           itemsCents: e.itemsCents,
           envioCents: e.shippingCents,
+          descontoCents: e.discountCents,
+          codigo: e.discountCode,
           totalCents: e.totalCents,
           pagoCents: e.payments.reduce((n, x) => n + x.amountCents, 0),
           rastreio: e.trackingCode,

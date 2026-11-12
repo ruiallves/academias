@@ -6,6 +6,7 @@ import { BusyProvider, BusyScreen } from "./Busy";
 import { usePresence } from "@/lib/presence";
 import { useStore } from "@/lib/store";
 import { MobileTabBar, MobileTopBar } from "./MobileNav";
+import { AdjuntoFlutuante } from "./adjunto/Botao";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
@@ -106,6 +107,8 @@ export function Shell() {
       {/* Ao canto e em todas as páginas: acompanha quem está a montar a academia
           sem lhe tomar o ecrã. Desaparece sozinho quando não houver passos a dar. */}
       <Onboarding />
+      {/* O robô do Adjunto, em baixo à direita em todas as páginas. Ver `adjunto/Botao.tsx`. */}
+      <AdjuntoFlutuante />
       <MobileTabBar />
     </div>
   );

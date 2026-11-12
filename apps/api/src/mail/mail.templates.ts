@@ -1445,6 +1445,9 @@ export function bilhetesAnuladosEmail(input: {
 
 export type LinhaDaEncomendaEmail = { nome: string; tamanho: string; quantidade: number; totalCents: number };
 
+/** O desconto de um código promocional, quando a encomenda o teve. */
+export type DescontoEmail = { codigo: string | null; cents: number } | null;
+
 export type EntregaEmail =
   | { tipo: "PICKUP"; local: string; nota: string }
   | { tipo: "SHIPPING"; morada: string[]; nota: string };
@@ -1452,25 +1455,31 @@ export type EntregaEmail =
 const eurosDeCents = (c: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(c / 100);
 
 /** A tabela dos artigos e dos totais, em HTML de email (só tabelas e estilos em linha). */
-function tabelaDaEncomenda(linhas: LinhaDaEncomendaEmail[], envioCents: number, totalCents: number): string {
+function tabelaDaEncomenda(linhas: LinhaDaEncomendaEmail[], envioCents: number, totalCents: number, desconto: DescontoEmail = null): string {
   const celula = (texto: string, extra = "") =>
     '<td style="padding:5px 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#1a1917;vertical-align:top;' + extra + '">' + texto + "</td>";
   const direita = "text-align:right;white-space:nowrap;padding-left:12px;";
   const corpo = linhas
     .map((l) => "<tr>" + celula(esc(`${l.quantidade} × ${l.nome}`) + (l.tamanho ? ' <span style="color:#8a867c">· ' + esc(l.tamanho) + "</span>" : "")) + celula(esc(eurosDeCents(l.totalCents)), direita) + "</tr>")
     .join("");
+  const extras: [string, string][] = [
+    ...(desconto && desconto.cents > 0 ? [["Desconto" + (desconto.codigo ? " (" + esc(desconto.codigo) + ")" : ""), "−" + esc(eurosDeCents(desconto.cents))] as [string, string]] : []),
+    ...(envioCents > 0 ? [["Envio", esc(eurosDeCents(envioCents))] as [string, string]] : []),
+  ];
+  const traco = "border-top:1px solid #e6e4df;";
   const rodape =
-    (envioCents > 0 ? "<tr>" + celula("Envio", "color:#8a867c;border-top:1px solid #e6e4df;") + celula(esc(eurosDeCents(envioCents)), direita + "border-top:1px solid #e6e4df;") + "</tr>" : "") +
+    extras.map(([a, b], i) => "<tr>" + celula(a, "color:#8a867c;" + (i === 0 ? traco : "")) + celula(b, direita + (i === 0 ? traco : "")) + "</tr>").join("") +
     "<tr>" +
-    celula("<strong>Total</strong>", envioCents > 0 ? "" : "border-top:1px solid #e6e4df;") +
-    celula("<strong>" + esc(eurosDeCents(totalCents)) + "</strong>", direita + (envioCents > 0 ? "" : "border-top:1px solid #e6e4df;")) +
+    celula("<strong>Total</strong>", extras.length ? "" : traco) +
+    celula("<strong>" + esc(eurosDeCents(totalCents)) + "</strong>", direita + (extras.length ? "" : traco)) +
     "</tr>";
   return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse">' + corpo + rodape + "</table>";
 }
 
-function linhasEmTexto(linhas: LinhaDaEncomendaEmail[], envioCents: number, totalCents: number): string[] {
+function linhasEmTexto(linhas: LinhaDaEncomendaEmail[], envioCents: number, totalCents: number, desconto: DescontoEmail = null): string[] {
   return [
     ...linhas.map((l) => `${l.quantidade} × ${l.nome}${l.tamanho ? ` · ${l.tamanho}` : ""} — ${eurosDeCents(l.totalCents)}`),
+    ...(desconto && desconto.cents > 0 ? [`Desconto${desconto.codigo ? ` (${desconto.codigo})` : ""} — −${eurosDeCents(desconto.cents)}`] : []),
     ...(envioCents > 0 ? [`Envio — ${eurosDeCents(envioCents)}`] : []),
     `Total — ${eurosDeCents(totalCents)}`,
   ];
@@ -1494,6 +1503,7 @@ export function encomendaEmail(input: {
   linhas: LinhaDaEncomendaEmail[];
   envioCents: number;
   totalCents: number;
+  desconto?: DescontoEmail;
   entrega: EntregaEmail;
   link: string;
 }): { subject: string; html: string; text: string } {
@@ -1507,13 +1517,13 @@ export function encomendaEmail(input: {
       greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",",
       heading,
       paragraphs: ["Recebemos o teu pagamento. Isto é o que encomendaste:"],
-      blocks: [tabelaDaEncomenda(input.linhas, input.envioCents, input.totalCents), ...entrega.map((f) => '<p style="margin:12px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#1a1917">' + esc(f) + "</p>")],
+      blocks: [tabelaDaEncomenda(input.linhas, input.envioCents, input.totalCents, input.desconto), ...entrega.map((f) => '<p style="margin:12px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#1a1917">' + esc(f) + "</p>")],
       cta: { label: "Ver a encomenda", url: input.link },
       notes,
     }),
     text: plain(
       "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",",
-      [heading, "", ...linhasEmTexto(input.linhas, input.envioCents, input.totalCents), "", ...entrega],
+      [heading, "", ...linhasEmTexto(input.linhas, input.envioCents, input.totalCents, input.desconto), "", ...entrega],
       { label: "Ver a encomenda", url: input.link },
       notes,
     ),
@@ -1585,6 +1595,7 @@ export function encomendaParaOClubeEmail(input: {
   linhas: LinhaDaEncomendaEmail[];
   envioCents: number;
   totalCents: number;
+  desconto?: DescontoEmail;
   entrega: EntregaEmail;
   nota: string | null;
   link: string;
@@ -1600,11 +1611,11 @@ export function encomendaParaOClubeEmail(input: {
       brand: input.brand,
       heading,
       paragraphs: ["<strong>" + esc(quem) + "</strong>", esc(entrega)],
-      blocks: [tabelaDaEncomenda(input.linhas, input.envioCents, input.totalCents), ...nota],
+      blocks: [tabelaDaEncomenda(input.linhas, input.envioCents, input.totalCents, input.desconto), ...nota],
       cta: { label: "Abrir na consola", url: input.link },
       notes,
     }),
-    text: plain(heading, [quem, entrega, "", ...linhasEmTexto(input.linhas, input.envioCents, input.totalCents), ...(input.nota ? ["", input.nota] : [])], { label: "Abrir na consola", url: input.link }, notes),
+    text: plain(heading, [quem, entrega, "", ...linhasEmTexto(input.linhas, input.envioCents, input.totalCents, input.desconto), ...(input.nota ? ["", input.nota] : [])], { label: "Abrir na consola", url: input.link }, notes),
   };
 }
 

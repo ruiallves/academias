@@ -28,8 +28,12 @@ export type CarrinhoVerificado = {
   ok: boolean;
   erro: string | null;
   itemsCents: number | null;
-  /** O custo do envio para este carrinho, em cêntimos. Nulo sem envio. */
+  /** O custo do envio para este carrinho, em cêntimos (já com o código, se der envio grátis). Nulo sem envio. */
   envio: number | null;
+  /** O código aceite e o que tira. Ausente num servidor antigo. */
+  desconto?: { codigo: string; descontoCents: number; envioGratis: boolean } | null;
+  /** Porque é que o código escrito não serve. */
+  erroCodigo?: string | null;
   linhas: {
     productId: string;
     tamanho: string;
@@ -64,6 +68,9 @@ export type Encomenda = {
   reservadoAte: string;
   itemsCents: number;
   envioCents: number;
+  /** O desconto do código promocional. Ausente num servidor antigo. */
+  descontoCents?: number;
+  codigo?: string | null;
   totalCents: number;
   pagamento: { metodo: Metodo; entidade: string | null; referencia: string | null; valorCents: number; estado: string } | null;
   reembolso: { valorCents: number; feito: boolean } | null;
@@ -222,6 +229,13 @@ export function poucasUnidades(p: Produto): boolean {
   if (valores.length === 0 || valores.some((n) => n === null)) return false;
   const total = valores.reduce<number>((s, n) => s + Math.max(0, n ?? 0), 0);
   return total > 0 && total < POUCAS_UNIDADES;
+}
+
+/** O desconto da promoção em percentagem ("-20 %"), ou nulo sem preço riscado. */
+export function percentagemDePromocao(p: Pick<Produto, "price" | "compareAtPrice">): number | null {
+  if (!p.compareAtPrice || p.compareAtPrice <= p.price) return null;
+  const pct = Math.round((1 - p.price / p.compareAtPrice) * 100);
+  return pct > 0 ? pct : null;
 }
 
 /** As fotografias de um produto, a principal primeiro e sem repetidas. */

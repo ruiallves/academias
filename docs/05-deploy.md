@@ -140,6 +140,9 @@ SITE_ORIGIN=https://academias.pt
 MAIL_API_KEY=re_...
 MAIL_FROM=noreply@academias.pt
 MAIL_FROM_NAME=Academias
+
+OPENAI_API_KEY=sk-...                        # o Adjunto; sem ela fica desligado em todos os clubes
+OPENAI_BASE_URL=https://eu.api.openai.com/v1 # opcional: a rota europeia (ver docs/12-adjunto.md)
 ```
 
 ### Email

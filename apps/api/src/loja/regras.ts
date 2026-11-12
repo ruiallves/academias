@@ -53,6 +53,10 @@ export type ProdutoParaVenda = {
   disponivel: Record<string, number | null>;
   /** A variante do Inventário de cada tamanho, quando o produto vem de lá. */
   variantId: Record<string, string>;
+  /** A categoria da loja, para os códigos só de algumas categorias. */
+  categoryId?: string | null;
+  /** Tem preço riscado (promoção): os códigos que não juntam com promoções saltam-no. */
+  emPromocao?: boolean;
 };
 
 export type LinhaAceite = {
@@ -63,6 +67,8 @@ export type LinhaAceite = {
   unitPriceCents: number;
   imageUrl: string | null;
   variantId: string | null;
+  categoryId: string | null;
+  emPromocao: boolean;
 };
 
 export type CarrinhoAceite = { ok: true; linhas: LinhaAceite[]; itemsCents: number };
@@ -122,6 +128,8 @@ export function verificarCarrinho(input: { linhas: LinhaDoCarrinho[]; produtos: 
       unitPriceCents: p.precoCents,
       imageUrl: p.imageUrl,
       variantId: p.variantId[l.tamanho] ?? null,
+      categoryId: p.categoryId ?? null,
+      emPromocao: p.emPromocao === true,
     });
   }
   return { ok: true, linhas: aceites, itemsCents: aceites.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0) };
@@ -193,4 +201,178 @@ export function estaGuardada(o: { status: string; reservedUntil: Date }, agora: 
 /** O número da próxima encomenda do clube. Seguido, a partir de 1. */
 export function proximoNumero(maior: number | null): number {
   return (maior ?? 0) + 1;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Endereços (slugs)                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O endereço de um nome: minúsculas, sem acentos, só letras, algarismos e
+ * hífenes ("Camisola Principal 2026/27" → "camisola-principal-2026-27").
+ * Vazio quando não sobra nada. A migração de 11/11/2026 fez o mesmo em SQL.
+ */
+export function slugDoTexto(texto: string, max = 80): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, max)
+    .replace(/-+$/g, "");
+}
+
+/** O primeiro endereço livre a partir de `base`: `base`, `base-2`, `base-3`… */
+export function slugLivre(base: string, ocupados: Set<string>): string {
+  const limpo = slugDoTexto(base) || "artigo";
+  if (!ocupados.has(limpo)) return limpo;
+  for (let i = 2; i < 1000; i++) {
+    const s = `${limpo.slice(0, 75)}-${i}`;
+    if (!ocupados.has(s)) return s;
+  }
+  return `${limpo.slice(0, 70)}-${Date.now().toString(36)}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Códigos promocionais                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** O código como se guarda e compara: maiúsculas, sem espaços nem acentos. */
+export function codigoNormalizado(v: string): string {
+  return v
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, "")
+    .slice(0, 30);
+}
+
+export type CodigoPromocional = {
+  id: string;
+  code: string;
+  kind: "PERCENT" | "FIXED";
+  /** PERCENT: 1 a 100. FIXED: cêntimos. */
+  value: number;
+  freeShipping: boolean;
+  minOrderCents: number | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  maxUses: number | null;
+  oncePerCustomer: boolean;
+  categoryIds: string[];
+  excludeOnSale: boolean;
+  active: boolean;
+};
+
+export type DescontoAceite = {
+  ok: true;
+  codigoId: string;
+  codigo: string;
+  /** O desconto dos artigos, em cêntimos (pode ser 0 num código só de envio grátis). */
+  descontoCents: number;
+  /** A parte do desconto de cada linha, pela ordem das linhas. */
+  porLinha: number[];
+  envioGratis: boolean;
+};
+export type DescontoRecusado = { ok: false; erro: string };
+
+const dataCurta = (d: Date) => new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "long", timeZone: "Europe/Lisbon" }).format(d);
+const euros = (c: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(c / 100);
+
+/**
+ * Um código contra um carrinho já aceite.
+ *
+ * As regras (11/11/2026): ligado; dentro das datas; os artigos somam o
+ * mínimo; ainda há usos (`usos` conta as encomendas pagas e as guardadas
+ * dentro do prazo); uma vez por pessoa quando o clube o pediu (`usosDaPessoa`,
+ * pela caixa de correio); e há pelo menos um artigo a que se aplica (as
+ * categorias do código, sem os em promoção se o código não junta com elas).
+ *
+ * A percentagem conta-se sobre os artigos a que se aplica e arredonda ao
+ * cêntimo; o valor fixo nunca passa desses artigos. O desconto reparte-se
+ * pelas linhas (`repartirDesconto`), que é o que a fatura usa.
+ */
+export function avaliarCodigo(input: {
+  codigo: CodigoPromocional | null;
+  linhas: Pick<LinhaAceite, "quantity" | "unitPriceCents" | "categoryId" | "emPromocao">[];
+  itemsCents: number;
+  agora: Date;
+  usos: number;
+  usosDaPessoa: number;
+}): DescontoAceite | DescontoRecusado {
+  const c = input.codigo;
+  if (!c || !c.active) return { ok: false, erro: "Este código não existe ou já não está ativo." };
+  if (c.startsAt && input.agora < c.startsAt) return { ok: false, erro: `Este código só vale a partir de ${dataCurta(c.startsAt)}.` };
+  if (c.endsAt && input.agora > c.endsAt) return { ok: false, erro: "Este código já expirou." };
+  if (c.maxUses !== null && input.usos >= c.maxUses) return { ok: false, erro: "Este código já foi usado as vezes todas." };
+  if (c.oncePerCustomer && input.usosDaPessoa > 0) return { ok: false, erro: "Já usaste este código numa encomenda." };
+  if (c.minOrderCents !== null && input.itemsCents < c.minOrderCents) {
+    return { ok: false, erro: `Este código vale em compras a partir de ${euros(c.minOrderCents)}.` };
+  }
+
+  const aplica = input.linhas.map((l) => (c.categoryIds.length === 0 || (l.categoryId !== null && c.categoryIds.includes(l.categoryId))) && !(c.excludeOnSale && l.emPromocao));
+  const valores = input.linhas.map((l, i) => (aplica[i] ? l.quantity * l.unitPriceCents : 0));
+  const base = valores.reduce((n, v) => n + v, 0);
+  const temDesconto = c.value > 0;
+  if (temDesconto && base === 0) {
+    return {
+      ok: false,
+      erro: c.excludeOnSale && c.categoryIds.length === 0 ? "Este código não se junta a artigos em promoção." : "Este código não vale para os artigos do carrinho.",
+    };
+  }
+
+  const pct = Math.max(0, Math.min(100, c.value));
+  const desconto = !temDesconto ? 0 : c.kind === "PERCENT" ? Math.round((base * pct) / 100) : Math.min(c.value, base);
+  return { ok: true, codigoId: c.id, codigo: c.code, descontoCents: desconto, porLinha: repartirDesconto(valores, desconto), envioGratis: c.freeShipping };
+}
+
+/**
+ * Reparte um desconto pelas linhas, na proporção do que cada uma vale, sem
+ * perder cêntimos: arredonda para baixo e dá os que sobram às linhas com a
+ * maior parte decimal. Nenhuma linha leva mais do que vale.
+ */
+export function repartirDesconto(valores: number[], desconto: number): number[] {
+  const total = valores.reduce((n, v) => n + v, 0);
+  if (desconto <= 0 || total <= 0) return valores.map(() => 0);
+  const d = Math.min(desconto, total);
+  const exatos = valores.map((v) => (v * d) / total);
+  const partes = exatos.map(Math.floor);
+  let falta = d - partes.reduce((n, v) => n + v, 0);
+  const ordem = exatos.map((x, i) => ({ i, resto: x - Math.floor(x) })).sort((a, b) => b.resto - a.resto || a.i - b.i);
+  for (const { i } of ordem) {
+    if (falta <= 0) break;
+    if (partes[i] < valores[i]) {
+      partes[i]++;
+      falta--;
+    }
+  }
+  return partes;
+}
+
+/**
+ * Uma linha com desconto em linhas de fatura de preço inteiro. A fatura só
+ * aceita preço × quantidade, e 3 × 9,90 € com 2,97 € de desconto não dá um
+ * preço unitário certo: parte-se em duas linhas (o mesmo artigo, uma com mais
+ * um cêntimo), para a soma bater ao cêntimo com o que se pagou.
+ */
+export function linhaComDescontoParaFatura(quantidade: number, unitarioCents: number, descontoCents: number): { quantidade: number; unitarioCents: number }[] {
+  if (descontoCents <= 0 || quantidade <= 0) return [{ quantidade, unitarioCents }];
+  const total = Math.max(0, quantidade * unitarioCents - descontoCents);
+  const unit = Math.floor(total / quantidade);
+  const resto = total - unit * quantidade;
+  const linhas: { quantidade: number; unitarioCents: number }[] = [];
+  if (resto > 0) linhas.push({ quantidade: resto, unitarioCents: unit + 1 });
+  if (quantidade - resto > 0) linhas.push({ quantidade: quantidade - resto, unitarioCents: unit });
+  return linhas;
+}
+
+/** O código descrito numa linha, para a consola: "10 % · mín. 30 € · até 31 de dezembro". */
+export function resumoDoCodigo(c: Pick<CodigoPromocional, "kind" | "value" | "freeShipping" | "minOrderCents" | "endsAt">): string {
+  const partes: string[] = [];
+  if (c.value > 0) partes.push(c.kind === "PERCENT" ? `${c.value} %` : euros(c.value));
+  if (c.freeShipping) partes.push("envio grátis");
+  if (c.minOrderCents) partes.push(`mín. ${euros(c.minOrderCents)}`);
+  if (c.endsAt) partes.push(`até ${dataCurta(c.endsAt)}`);
+  return partes.join(" · ");
 }

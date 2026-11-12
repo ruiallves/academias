@@ -83,7 +83,7 @@ const SECOES: Secao[] = [
   { key: "patrocinadores", label: "Patrocinadores", grupo: "Conteúdo", icone: Handshake, descricao: "Quem apoia o clube. Aparecem no fundo de todas as páginas e na app dos sócios, com a vantagem de cada um. A mesma lista de Gestão → Patrocinadores." },
   { key: "estadio", label: "Estádio", grupo: "Vendas", icone: Recinto, descricao: "O recinto visto de cima, com as bancadas. Quem compra um bilhete vê no mapa onde vai ficar." },
   { key: "bilheteira", label: "Bilheteira", grupo: "Vendas", icone: Ticket, descricao: "Bilhetes para os jogos, em casa e fora: preços por bancada e público, quem compra e quando, as vendas e o leitor dos seguranças à porta. O bilhete chega com um código QR." },
-  { key: "loja", label: "Loja", grupo: "Vendas", icone: ShoppingBag, descricao: "Os produtos à venda no site, com tamanhos, stock e preço; as encomendas para preparar e entregar; e como o clube entrega (levantamento ou envio)." },
+  { key: "loja", label: "Loja", grupo: "Vendas", icone: ShoppingBag, descricao: "Os produtos à venda no site (preço, promoção, tamanhos e stock), as categorias e os códigos promocionais, as encomendas para preparar e entregar, e como o clube entrega." },
   { key: "mensagens", label: "Mensagens", grupo: "Contacto", icone: Inbox, descricao: "O que chega pelo formulário de contactos do site." },
 ];
 

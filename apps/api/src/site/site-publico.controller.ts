@@ -102,6 +102,14 @@ export class SitePublicoController {
     return this.site.produtos(slug);
   }
 
+  /** As categorias visíveis da loja, pela ordem do clube, só as que têm produtos à venda. */
+  @Get(":slug/loja/categorias")
+  @Header("Cache-Control", "public, max-age=60")
+  categorias(@Param("slug") slug: string) {
+    return this.site.categoriasDaLoja(slug);
+  }
+
+  /** Um produto pelo endereço (`slug`) ou pelo id (links antigos e o carrinho). */
   @Get(":slug/produtos/:id")
   @Header("Cache-Control", "public, max-age=60")
   produto(@Param("slug") slug: string, @Param("id") id: string) {

@@ -34,6 +34,9 @@ export type Encomenda = {
   linhas: { nome: string; tamanho: string; quantidade: number; unitPriceCents: number; imageUrl: string | null; productId: string | null }[];
   itemsCents: number;
   envioCents: number;
+  /** O desconto do código promocional (0 sem código). Ausente num servidor antigo. */
+  descontoCents?: number;
+  codigo?: string | null;
   totalCents: number;
   pagoCents: number;
   rastreio: string | null;

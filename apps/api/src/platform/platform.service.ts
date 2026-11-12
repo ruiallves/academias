@@ -310,6 +310,7 @@ export class PlatformService {
       select: {
         id: true, slug: true, name: true, shortName: true, status: true, createdAt: true, trialEndsAt: true, suspendedAt: true,
         logoUrl: true, signalColor: true,
+        adjuntoEnabled: true,
         /* Só para dizer se estão preenchidas — os valores nunca saem daqui. */
         eupagoApiKey: true, eupagoWebhookSecret: true,
         paymentsEnabled: true, invoicingSystem: true, invoicingConfirmedAt: true,
@@ -477,6 +478,8 @@ export class PlatformService {
       /** Fechado por falta de pagamento da mensalidade da plataforma. */
       suspendedAt: academy.suspendedAt,
       storage,
+      /** O Assistente IA: ligado neste clube, e se a API tem a chave da OpenAI (sem ela não aparece, mesmo ligado). */
+      assistente: { ligado: academy.adjuntoEnabled, chaveNaApi: Boolean(process.env.OPENAI_API_KEY?.trim()) },
       eupago: this.eupagoDoClube(academy),
       faturacao: this.faturacaoDoClube({ ...academy, siteNoPlano: academy.subscription?.plan.includesWebsite === true }),
       logoUrl: academy.logoUrl,
@@ -1453,6 +1456,21 @@ export class PlatformService {
       ip,
     );
     return this.eupagoDoClube(depois);
+  }
+
+  /**
+   * Ligar ou desligar o Assistente IA de um clube. Nasce desligado
+   * (`Academy.adjuntoEnabled`, 12/11/2026): é um extra pago, e só a Academias
+   * o liga. Fica no histórico de auditoria, como o espaço e o plano.
+   */
+  async setAssistente(admin: PlatformAdminContext, id: string, ligado: boolean, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({ where: { id }, select: { id: true, slug: true, adjuntoEnabled: true } });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+    if (academy.adjuntoEnabled !== ligado) {
+      await this.prisma.academy.update({ where: { id }, data: { adjuntoEnabled: ligado } });
+      await this.audit(admin, "academy.assistente", "academy", id, { slug: academy.slug, de: academy.adjuntoEnabled, para: ligado }, ip);
+    }
+    return { ligado, chaveNaApi: Boolean(process.env.OPENAI_API_KEY?.trim()) };
   }
 
   async setStorageLimit(admin: PlatformAdminContext, id: string, limitMb: number, ip?: string) {

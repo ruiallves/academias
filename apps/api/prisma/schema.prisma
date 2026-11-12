@@ -122,6 +122,15 @@ model Academy {
   /// fica em `Payment.surchargeCents`.
   feesOnPayer Boolean @default(false)
 
+  /// ## O Assistente IA da consola (pasta `adjunto/`)
+  ///
+  /// Desligado, o botão e o menu não aparecem a ninguém do clube e a API recusa
+  /// as rotas `/api/adjunto`. **Nasce desligado** e liga-se clube a clube no
+  /// painel da plataforma (ficha do clube, "Assistente IA"): é um extra pago,
+  /// e nenhum clube o recebe sem a Academias decidir (12/11/2026). Mesmo
+  /// ligado, sem a chave `OPENAI_API_KEY` na API não aparece.
+  adjuntoEnabled Boolean @default(false)
+
   /// ## A faturação das vendas do site
   ///
   /// Quem fatura uma venda do site (um bilhete pago, uma encomenda da loja) é
@@ -358,6 +367,8 @@ model Academy {
   siteNews           SiteNews[]
   siteSponsors       SiteSponsor[]
   siteProducts       SiteProduct[]
+  siteProductCategories SiteProductCategory[]
+  siteDiscountCodes  SiteDiscountCode[]
   siteMatchTickets   SiteMatchTickets[]
   siteMessages       SiteMessage[]
   ticketOrders       TicketOrder[]
@@ -367,6 +378,12 @@ model Academy {
   ticketScans        TicketScan[]
   siteOrders         SiteOrder[]
   siteOrderItems     SiteOrderItem[]
+
+  adjuntoConversations AdjuntoConversation[]
+  adjuntoMessages      AdjuntoMessage[]
+  adjuntoProposals     AdjuntoProposal[]
+  adjuntoUsage         AdjuntoUsage[]
+  adjuntoImports       AdjuntoImport[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -7433,10 +7450,100 @@ model SiteProduct {
   /// apaga: ficam com o nome e o preço de então (`SetNull`).
   orderItems SiteOrderItem[]
 
+  /// O endereço do produto no site (`/loja/<slug>`), único no clube. Nasce do
+  /// nome e o clube pode mudá-lo. Nulo num produto antigo: o site usa o `id`.
+  slug       String?
+  /// A categoria da loja, gerida em Website › Loja › Categorias. `category`
+  /// fica com o nome dela, para quem ainda lê o texto (emails, consolas antigas).
+  categoryId String?
+  categoryRef SiteProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// O preço de antes, riscado no site. Maior do que `priceCents` = o produto
+  /// está em promoção ("-20 %"); nulo ou menor = sem promoção.
+  compareAtPriceCents Int?
+  /// Marcado como novidade: filtro "Novidades" e a nota no cartão.
+  isNew      Boolean @default(false)
+  /// Título e descrição para o Google e para as partilhas. Vazios = o nome e a descrição.
+  seoTitle       String @default("")
+  seoDescription String @default("")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([academyId, slug])
   @@index([academyId, position])
+  @@index([categoryId])
+}
+
+/// Uma categoria da loja do site ("Camisolas", "Treino", "Adeptos").
+///
+/// O clube cria-as, ordena-as e escolhe o endereço (`/loja?categoria=<slug>`).
+/// Escondida, sai do filtro do site mas os produtos dela continuam à venda.
+/// Apagar uma categoria deixa os produtos sem categoria (`SetNull`).
+model SiteProductCategory {
+  id          String  @id @default(cuid())
+  academyId   String
+  academy     Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String  @default("")
+  visible     Boolean @default(true)
+  position    Int     @default(0)
+
+  products SiteProduct[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, slug])
+  @@index([academyId, position])
+}
+
+enum SiteDiscountKind {
+  /// Uma percentagem dos artigos (1 a 100).
+  PERCENT
+  /// Um valor fixo em cêntimos, até ao valor dos artigos.
+  FIXED
+}
+
+/// Um código promocional da loja do site ("NATAL10").
+///
+/// Quem compra escreve-o no carrinho. As regras (datas, mínimo, usos,
+/// categorias, juntar com promoções) estão em `loja/regras.ts`
+/// (`avaliarCodigo`); os usos contam-se nas encomendas pagas e nas que estão
+/// guardadas à espera de pagamento, com a loja do clube bloqueada.
+model SiteDiscountCode {
+  id          String           @id @default(cuid())
+  academyId   String
+  academy     Academy          @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  /// Em maiúsculas, sem espaços. Único no clube.
+  code        String
+  /// Uma nota para o clube ("Campanha de Natal, Instagram"). Não aparece no site.
+  description String           @default("")
+  kind        SiteDiscountKind @default(PERCENT)
+  /// PERCENT: 1 a 100. FIXED: cêntimos.
+  value       Int
+  /// O envio sai grátis com este código (além do desconto, que pode ser 0).
+  freeShipping Boolean @default(false)
+  /// Os artigos têm de somar pelo menos isto. Nulo = sem mínimo.
+  minOrderCents Int?
+  startsAt      DateTime?
+  endsAt        DateTime?
+  /// Quantas encomendas o podem usar, no total. Nulo = sem limite.
+  maxUses       Int?
+  /// Uma vez por email (a caixa de correio, sem `+etiquetas`).
+  oncePerCustomer Boolean @default(false)
+  /// Só os artigos destas categorias. Vazio = todos.
+  categoryIds   String[] @default([])
+  /// Os produtos em promoção (com preço riscado) ficam de fora do desconto.
+  excludeOnSale Boolean  @default(false)
+  active        Boolean  @default(true)
+
+  orders SiteOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, code])
 }
 
 /// Uma mensagem enviada pelo formulário de contactos do site do clube.
@@ -7902,6 +8009,13 @@ model SiteOrder {
   itemsCents    Int
   shippingCents Int @default(0)
   totalCents    Int
+  /// O desconto do código promocional, já tirado do total:
+  /// `totalCents = itemsCents − discountCents + shippingCents`.
+  discountCents Int @default(0)
+  /// O código como quem comprou o escreveu (fica mesmo que o código se apague).
+  discountCode  String?
+  discountCodeId String?
+  discountCodeRef SiteDiscountCode? @relation(fields: [discountCodeId], references: [id], onDelete: SetNull)
 
   /// Até quando os artigos estão guardados à espera do pagamento.
   reservedUntil DateTime
@@ -7987,10 +8101,203 @@ model SiteOrderItem {
   quantity       Int
   unitPriceCents Int
   imageUrl       String?
+  /// A parte do desconto do código promocional que coube a esta linha (no
+  /// total da linha, não por unidade). A fatura parte a linha por aqui.
+  discountCents  Int     @default(0)
 
   createdAt DateTime @default(now())
 
   @@index([orderId])
   @@index([productId, size])
   @@index([academyId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* O Adjunto: o assistente com IA da consola                                   */
+/* -------------------------------------------------------------------------- */
+
+/// Uma conversa com o Adjunto: de uma pessoa do clube, com as mensagens e as
+/// propostas que nasceram nela. Vive no servidor para a pessoa a retomar no
+/// telemóvel e para ficar o registo do que a IA viu e do que foi confirmado.
+model AdjuntoConversation {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  /// Quem fala. O vínculo, não a pessoa: a mesma conta pode ser treinadora e
+  /// diretora em clubes diferentes, e a conversa é de um só.
+  membershipId String
+
+  /// O título, tirado da primeira mensagem. Vazio até haver uma.
+  title String @default("")
+  /// Onde na consola a conversa nasceu (rota, treino, jogo, equipa), para as
+  /// sugestões e para o modelo saber de que se fala sem perguntar.
+  context Json?
+  /// Um pedido recusado sobe a conversa um nível de modelo no pedido seguinte.
+  /// Ver `rotas.ts`.
+  escalated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages  AdjuntoMessage[]
+  proposals AdjuntoProposal[]
+  imports   AdjuntoImport[]
+
+  @@index([academyId, membershipId, updatedAt])
+}
+
+enum AdjuntoRole {
+  USER
+  ASSISTANT
+}
+
+/// Uma mensagem da conversa. `text` e `blocks` são o que se mostra; `items`
+/// são os itens que foram ou vieram do modelo (a entrada da pessoa, as
+/// chamadas a ferramentas e os seus resultados), já só com os dados mínimos:
+/// é com eles que a conversa se reconstrói no pedido seguinte.
+model AdjuntoMessage {
+  id             String              @id @default(cuid())
+  academyId      String
+  academy        Academy             @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   AdjuntoConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role   AdjuntoRole
+  text   String      @default("")
+  /// Blocos além do texto: `{ type: "proposta", id }`, `{ type: "pergunta", ... }`,
+  /// `{ type: "importacao", id }`, `{ type: "audio" }`.
+  blocks Json        @default("[]")
+  items  Json        @default("[]")
+
+  /// O modelo que respondeu e o que custou. Só nas do assistente.
+  model        String?
+  inputTokens  Int     @default(0)
+  cachedTokens Int     @default(0)
+  outputTokens Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([academyId])
+}
+
+enum AdjuntoProposalKind {
+  /// A folha de presenças de um treino.
+  ATTENDANCE
+  /// Um registo no boletim clínico.
+  CLINICAL
+  /// A convocatória de um jogo.
+  CALLUPS
+  /// Marcar, desmarcar ou reativar um treino, um jogo ou um evento do calendário.
+  EVENT
+  /// Inscrever um atleta.
+  ATHLETE
+  /// Publicar um comunicado.
+  ANNOUNCEMENT
+  /// O plano de um treino (sessão e blocos), com os exercícios novos que ele cria.
+  TRAINING_PLAN
+  /// Uma notícia no site do clube.
+  SITE_NEWS
+  /// O resto do site: página de início, layout, loja, patrocinadores, bilheteira.
+  SITE
+  /// Um exercício novo na biblioteca da Área técnica, com o desenho, sem treino.
+  EXERCISE
+}
+
+enum AdjuntoProposalStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  UNDONE
+  EXPIRED
+}
+
+/// O que o Adjunto propõe escrever. **Nada se grava sem confirmação**: a IA
+/// enche a proposta, a pessoa confirma, e só então se chama o serviço de
+/// sempre, com a sessão de quem carregou no botão. `undo` guarda o estado de
+/// antes para o "Desfazer".
+model AdjuntoProposal {
+  id             String              @id @default(cuid())
+  academyId      String
+  academy        Academy             @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   AdjuntoConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  membershipId   String
+
+  kind    AdjuntoProposalKind
+  status  AdjuntoProposalStatus @default(PENDING)
+  title   String
+  summary String                @default("")
+  /// O que se vai escrever, na forma do serviço que vai escrever.
+  payload Json
+  /// O que lá estava antes, para desfazer. Preenchido ao confirmar.
+  undo    Json?
+  /// O que o serviço devolveu ao confirmar.
+  result  Json?
+
+  confirmedAt DateTime?
+  undoneAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([academyId, conversationId])
+  @@index([academyId, status, createdAt])
+}
+
+/// Quanto cada clube gastou de IA, por mês e por modelo. É o que permite um
+/// limite por plano e saber o custo real por clube.
+model AdjuntoUsage {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  /// `AAAA-MM`.
+  month String
+  model String
+
+  requests     Int @default(0)
+  inputTokens  Int @default(0)
+  cachedTokens Int @default(0)
+  outputTokens Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, month, model])
+}
+
+enum AdjuntoImportStatus {
+  /// O ficheiro foi lido e as colunas mapeadas; o ensaio está pronto.
+  REHEARSED
+  /// Já foi gravado.
+  IMPORTED
+  /// Não deu para ler ou mapear.
+  FAILED
+}
+
+/// Um ficheiro largado no Adjunto para importar. Guarda as folhas lidas, o
+/// mapeamento que a IA propôs (e a pessoa corrigiu) e o resultado do ensaio,
+/// para a pessoa confirmar sem voltar a carregar o ficheiro.
+model AdjuntoImport {
+  id             String              @id @default(cuid())
+  academyId      String
+  academy        Academy             @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   AdjuntoConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  membershipId   String
+
+  fileName String
+  fileType String
+  status   AdjuntoImportStatus @default(REHEARSED)
+
+  /// As folhas: `[{ name, headers, rows }]`, com as linhas em bruto.
+  sheets    Json
+  /// O mapeamento por folha: entidade, coluna → campo, transformações, dúvidas.
+  mapping   Json?
+  /// O ensaio por folha: quantos entram, quantos já existem, erros.
+  rehearsal Json?
+  result    Json?
+  error     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, conversationId])
 }

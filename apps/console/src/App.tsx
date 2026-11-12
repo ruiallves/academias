@@ -60,6 +60,7 @@ import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import Soon from "@/routes/Soon";
 import Website from "@/routes/website/Website";
 import Patrocinadores from "@/routes/director/Patrocinadores";
+import Adjunto from "@/routes/adjunto/Adjunto";
 
 /**
  * A mesma árvore de rotas serve os dois perfis.
@@ -73,6 +74,11 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Overview />} />
+
+        {/* O Adjunto: a página inteira do assistente. O robô ao canto vive no `Shell`. */}
+        <Route path="assistente" element={<Allow p="academy:read"><Adjunto /></Allow>} />
+        {/* O endereço antigo (até 12/11/2026): ligações guardadas continuam a abrir. */}
+        <Route path="adjunto" element={<Navigate to="/assistente" replace />} />
 
         <Route path="atletas" element={<Allow p="athlete:read"><Athletes /></Allow>} />
         <Route path="atletas/:id" element={<Allow p="athlete:read"><AthleteDetail /></Allow>} />

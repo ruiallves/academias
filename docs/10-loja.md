@@ -27,6 +27,30 @@ preparar) → `READY` (pronta para levantar) ou `SHIPPED` (enviada) →
 `DELIVERED`. À parte: `EXPIRED` (caducou sem pagar), `LATE_PAYMENT` (pago
 tarde e já sem stock, reembolso por fazer), `CANCELLED` (anulada pelo clube).
 
+### Catálogo e códigos (11/11/2026)
+
+Migração `20261111210000_loja_categorias_e_codigos`, **aplicada em produção a 11/11/2026** (aditiva; ensaio com ROLLBACK e depois COMMIT, `migrate resolve --applied` só desta).
+
+| Tabela / campo | O que é |
+| --- | --- |
+| `SiteProductCategory` | As categorias da loja: nome, `slug` (único no clube), descrição, ordem, `visible` (escondida sai do filtro do site, os produtos continuam à venda). |
+| `SiteProduct.slug` | O endereço `/loja/<slug>`, único no clube, nasce do nome (`slugLivre`). O site procura pelo slug e depois pelo id (links antigos e o carrinho). |
+| `SiteProduct.categoryId` | A categoria. `category` continua com o nome dela (emails, consolas antigas); renomear a categoria atualiza-o. |
+| `SiteProduct.compareAtPriceCents` | O preço riscado. Só conta se for maior do que o preço (`emPromocao`). |
+| `SiteProduct.isNew`, `seoTitle`, `seoDescription` | Novidade (etiqueta e filtro) e o que vai para o Google e as partilhas. |
+| `SiteDiscountCode` | Os códigos promocionais: percentagem ou valor fixo, envio grátis, mínimo, datas, máximo de usos, uma vez por pessoa (pela caixa de correio), só algumas categorias, não juntar com promoções, ligado. |
+| `SiteOrder.discountCents/discountCode/discountCodeId` | O desconto da encomenda: `totalCents = itemsCents − discountCents + shippingCents`. |
+| `SiteOrderItem.discountCents` | A parte do desconto de cada linha (`repartirDesconto`). A fatura parte a linha por aqui (`linhaComDescontoParaFatura`), para a soma bater com o pago. |
+
+Regras do código (`avaliarCodigo`, em `regras.ts`): ligado, dentro das datas,
+artigos ≥ mínimo, usos < máximo (contam as pagas e as guardadas no prazo),
+uma vez por pessoa, e pelo menos um artigo a que se aplica. A percentagem
+arredonda ao cêntimo sobre os artigos elegíveis; o valor fixo nunca passa
+deles. O envio grátis a partir de X conta sobre os artigos já com desconto.
+O carrinho avalia sem saber o email; a encomenda volta a avaliar tudo com a
+loja bloqueada. Códigos errados: tecto de 120 por clube em 10 minutos, em
+memória (`CODIGOS_ERRADOS_POR_CLUBE`).
+
 ## As regras
 
 - **Só vende com a faturação configurada** (desde 25/10/2026): a loja vende
@@ -80,6 +104,17 @@ POST /encomendas                 { linhas, nome, email, telefone?, entrega: "PIC
                                  → { token, numero, estado: "a-pagar" | "paga", totalCents, reservadoAte, pagamento }
 GET  /encomendas/:token          → Encomenda
 ```
+
+Desde 11/11/2026 o carrinho e a encomenda aceitam `codigo`; o carrinho
+devolve também `desconto: { codigo, descontoCents, envioGratis } | null` e
+`erroCodigo`, e a encomenda traz `descontoCents` e `codigo`. Público novo:
+`GET /public/sites/:slug/loja/categorias` (as visíveis, pela ordem do
+clube); cada produto traz `slug`, `categorySlug`, `compareAtPrice`, `isNew`,
+`seoTitle`, `seoDescription`, `createdAt`. Consola: `GET /api/site` traz
+`categorias` e `codigos`; `POST/PATCH/DELETE /api/site/categorias[/:id]`,
+`PUT /api/site/categorias-ordem { ids }`, `POST/PATCH/DELETE /api/site/codigos[/:id]`
+(`CatalogoService`); os produtos aceitam `categoriaId`, `slug`, `precoAntes`,
+`novidade`, `seoTitulo`, `seoDescricao`.
 
 ```ts
 type Encomenda = {
@@ -136,7 +171,7 @@ no plano.
 
 ## A consola
 
-Website › Loja, em três vistas (`?vista=`): **Produtos** (galeria até 8 fotos,
+Website › Loja, em cinco vistas (`?vista=`): **Categorias**, **Códigos** (desde 11/11/2026), **Produtos** (galeria até 8 fotos,
 stock por tamanho num produto sem artigo), **Encomendas** (por preparar,
 prontas e enviadas, entregues, reembolsos por fazer, todas; cada uma abre-se
 com os artigos, a morada e as ações) e **Entrega** (levantamento, envio e o

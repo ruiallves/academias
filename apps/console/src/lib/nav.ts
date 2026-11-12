@@ -1,4 +1,6 @@
+import { adjuntoLigado } from "@/lib/adjunto";
 import {
+  Bot,
   LayoutGrid,
   Users,
   Home,
@@ -189,7 +191,12 @@ const GRUPO_WEBSITE: NavGroup = {
 
 export const NAV_CATALOG: NavGroup[] = [
   {
-    items: [{ key: "overview", label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
+    items: [
+      // O Adjunto em cima de tudo: é a entrada mais curta para fazer qualquer coisa.
+      // Escondido pelo `navFor` quando o clube o tem desligado (ver `storeAcademy.adjuntoEnabled`).
+      { key: "adjunto", label: "Assistente IA", to: "/assistente", icon: Bot, requires: "academy:read" },
+      { key: "overview", label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" },
+    ],
   },
   {
     label: "Pessoas",
@@ -438,6 +445,13 @@ export function navFor(session: Session): NavGroup[] {
       .filter((i) => i.key !== "registrations" || INSCRICOES_FPF)
       // O site do clube é do plano Connect Pro. Ver `GRUPO_WEBSITE`.
       .filter((i) => i.key !== "website" || storeAcademy.websiteIncluido)
+      /*
+       * O Assistente IA só aparece quando o servidor diz que está ligado neste
+       * clube. `=== true` e não `!== false`: enquanto a resposta não chega (ou
+       * se o pedido falhar) o estado é `null`, e com `!== false` a entrada
+       * aparecia no menu a todos os clubes durante esse tempo.
+       */
+      .filter((i) => i.key !== "adjunto" || adjuntoLigado() === true)
       .filter((i) => !i.discipline || [i.discipline].flat().some((d) => hasDiscipline(d)))
       .flatMap((i) => (i.dynamic === "sports" ? sportItems(i) : [i])),
   })).filter((group) => group.items.length > 0);

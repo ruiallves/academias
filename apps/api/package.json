@@ -119,7 +119,8 @@
     "test:ficha-de-socio-da-conta": "esbuild scripts/test-ficha-de-socio-da-conta.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-ficha-de-socio-da-conta.mjs --log-level=warning && node node_modules/.cache/test-ficha-de-socio-da-conta.mjs",
     "test:ficha-unica": "esbuild scripts/test-ficha-unica.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-ficha-unica.mjs --log-level=warning --packages=external && node node_modules/.cache/test-ficha-unica.mjs",
     "test:aviso-ao-treinador": "esbuild scripts/test-aviso-ao-treinador.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-aviso-ao-treinador.mjs --log-level=warning && node node_modules/.cache/test-aviso-ao-treinador.mjs",
-    "test:precos-em-lote": "esbuild scripts/test-precos-em-lote.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-precos-em-lote.mjs --log-level=warning && node node_modules/.cache/test-precos-em-lote.mjs"
+    "test:precos-em-lote": "esbuild scripts/test-precos-em-lote.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-precos-em-lote.mjs --log-level=warning && node node_modules/.cache/test-precos-em-lote.mjs",
+    "test:adjunto": "esbuild scripts/test-adjunto.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/test-adjunto.mjs --log-level=warning && node node_modules/.cache/test-adjunto.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -133,13 +134,15 @@
     "helmet": "^8.3.0",
     "jose": "^5.9.6",
     "jspdf": "^4.2.1",
+    "openai": "^7.55.0",
     "pdf-lib": "^1.17.1",
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "^0.35.4",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.5",

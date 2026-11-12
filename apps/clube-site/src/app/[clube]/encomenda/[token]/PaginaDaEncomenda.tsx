@@ -208,6 +208,12 @@ function Artigos({ encomenda: e }: { encomenda: Encomenda }) {
         ))}
       </ul>
       <dl className="mt-4 space-y-1 border-t border-line pt-4">
+        {(e.descontoCents ?? 0) > 0 && (
+          <div className="flex items-baseline justify-between gap-4 text-ink-2">
+            <dt>Desconto{e.codigo ? ` (${e.codigo})` : ""}</dt>
+            <dd className="tabular text-signal-ink">−{euroDeCents(e.descontoCents ?? 0)}</dd>
+          </div>
+        )}
         {e.envioCents > 0 && (
           <div className="flex items-baseline justify-between gap-4 text-ink-2">
             <dt>Envio</dt>

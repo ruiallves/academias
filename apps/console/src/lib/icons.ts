@@ -8,6 +8,14 @@
  * Traço: 1.5px em toda a app (ver <Icon>), para casar com as hairlines de 1px.
  */
 export {
+  /* O Adjunto: o robô ao canto, o microfone, a seta de enviar, abrir em página inteira. */
+  Bot,
+  Mic,
+  AudioLines,
+  ArrowUp,
+  Maximize2,
+  MessageSquarePlus,
+  Square,
   SquarePen as Pencil,
   UserPlus,
   /* A ficha de sócio no perfil do atleta: o número e a última quota paga. */
@@ -198,3 +206,6 @@ export const Basketball = createLucideIcon("Basketball", [
 ]);
 
 export const Futsal = GoalIcon;
+
+/* A loja do site: as setas de ordenar as categorias e os códigos promocionais. */
+export { ArrowDown, Percent, Tags } from "lucide-react";

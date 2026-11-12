@@ -469,9 +469,28 @@ export class SitePublicoService {
 
   async produto(slug: string, id: string) {
     return this.comClube(slug, async (db) => {
-      const p = await db.siteProduct.findFirst({ where: { id, visible: true }, select: SELECT_PRODUTO_PUBLICO });
+      const chave = id.slice(0, 100);
+      const p =
+        (await db.siteProduct.findFirst({ where: { slug: chave, visible: true }, select: SELECT_PRODUTO_PUBLICO })) ??
+        (await db.siteProduct.findFirst({ where: { id: chave, visible: true }, select: SELECT_PRODUTO_PUBLICO }));
       if (!p || p.inventoryItem?.archivedAt) throw new NotFoundException();
       return produtoPublico(p, await reservadosPorLinha(db, [p.id], new Date()));
+    });
+  }
+
+  /**
+   * As categorias da loja que o site mostra no filtro: as visíveis, pela
+   * ordem do clube. Uma categoria escondida sai do filtro, mas os produtos
+   * dela continuam na loja (e no "Todas").
+   */
+  async categoriasDaLoja(slug: string) {
+    return this.comClube(slug, async (db) => {
+      const lista = await db.siteProductCategory.findMany({
+        where: { visible: true },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        select: { slug: true, name: true, description: true },
+      });
+      return lista.map((c) => ({ slug: c.slug, name: c.name, description: c.description || undefined }));
     });
   }
 
@@ -734,7 +753,18 @@ function jogoPublico(j: {
 }
 
 /** O que a loja pública lê de um produto: o da venda (`contexto.ts`) mais a descrição e a galeria. */
-const SELECT_PRODUTO_PUBLICO = { ...SELECT_PRODUTO_PARA_VENDA, category: true, description: true, images: true } satisfies Prisma.SiteProductSelect;
+const SELECT_PRODUTO_PUBLICO = {
+  ...SELECT_PRODUTO_PARA_VENDA,
+  category: true,
+  description: true,
+  images: true,
+  slug: true,
+  isNew: true,
+  seoTitle: true,
+  seoDescription: true,
+  createdAt: true,
+  categoryRef: { select: { slug: true, name: true } },
+} satisfies Prisma.SiteProductSelect;
 
 /**
  * Um produto como o site o vê.
@@ -747,17 +777,37 @@ const SELECT_PRODUTO_PUBLICO = { ...SELECT_PRODUTO_PARA_VENDA, category: true, d
  * nenhum tamanho com stock. Os tamanhos esgotados continuam na lista, para o
  * site os mostrar riscados em vez de os fazer desaparecer.
  */
-function produtoPublico(p: ProdutoLido & { category: string; description: string; images: string[] }, reservados: Map<string, number>) {
+function produtoPublico(
+  p: ProdutoLido & {
+    category: string;
+    description: string;
+    images: string[];
+    slug: string | null;
+    isNew: boolean;
+    seoTitle: string;
+    seoDescription: string;
+    createdAt: Date;
+    categoryRef: { slug: string; name: string } | null;
+  },
+  reservados: Map<string, number>,
+) {
   const v = produtoParaVenda(p, reservados);
   const esgotado = !v.visivel || Object.values(v.disponivel).every((n) => n !== null && n <= 0);
   return {
     id: p.id,
-    slug: p.id,
+    slug: p.slug ?? p.id,
     name: p.name,
     price: p.priceCents / 100,
+    /** O preço de antes, riscado. Só quando é maior do que o de agora. */
+    compareAtPrice: v.emPromocao && p.compareAtPriceCents ? p.compareAtPriceCents / 100 : undefined,
+    isNew: p.isNew || undefined,
     image: p.imageUrl ?? undefined,
     images: [p.imageUrl, ...p.images].filter((x): x is string => !!x),
-    category: p.category,
+    category: p.categoryRef?.name ?? p.category,
+    categorySlug: p.categoryRef?.slug,
+    seoTitle: p.seoTitle || undefined,
+    seoDescription: p.seoDescription || undefined,
+    createdAt: p.createdAt.toISOString(),
     description: p.description,
     variants: v.tamanhos.length ? { name: "Tamanho", options: v.tamanhos } : undefined,
     stock: v.disponivel,

@@ -5,7 +5,8 @@ import { ChevronDown } from "lucide-react";
 import { fonte } from "@/dados/fonte";
 import { clubeOu404 } from "@/lib/clube";
 import { euro } from "@/lib/formatar";
-import { esgotado, fotosDoProduto } from "@/lib/loja";
+import { esgotado, fotosDoProduto, percentagemDePromocao } from "@/lib/loja";
+import { categoriaDe } from "@/lib/montra";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
 import { servicosDaLoja } from "@/componentes/loja/servicos";
 import { Galeria } from "./Galeria";
@@ -18,7 +19,9 @@ type Props = { params: Promise<{ clube: string; slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { clube: slug, slug: id } = await params;
   const p = await fonte.produto(slug, id);
-  return p ? { title: p.name, description: p.description, openGraph: { images: p.image ? [{ url: p.image }] : undefined } } : {};
+  if (!p) return {};
+  const descricao = p.seoDescription || p.description.slice(0, 170);
+  return { title: p.seoTitle || p.name, description: descricao, openGraph: { title: p.seoTitle || p.name, description: descricao, images: p.image ? [{ url: p.image }] : undefined } };
 }
 
 /**
@@ -36,10 +39,11 @@ export default async function Produto({ params }: Props) {
   // Primeiro os da mesma categoria, depois os outros; os esgotados no fim.
   const outros = todos
     .filter((p) => p.id !== produto.id)
-    .map((p, i) => ({ p, chave: (esgotado(p) ? 2 : 0) + (p.category === produto.category ? 0 : 1), i }))
+    .map((p, i) => ({ p, chave: (esgotado(p) ? 2 : 0) + (categoriaDe(p) === categoriaDe(produto) ? 0 : 1), i }))
     .sort((a, b) => a.chave - b.chave || a.i - b.i)
     .slice(0, 8)
     .map((x) => x.p);
+  const promocao = percentagemDePromocao(produto);
   const loja = clube.loja;
   const compraOnline = loja?.compraOnline ?? false;
   const { entrega, pagamento } = servicosDaLoja(loja);
@@ -53,12 +57,16 @@ export default async function Produto({ params }: Props) {
               Loja
             </Link>
           </li>
-          <li aria-hidden>/</li>
-          <li>
-            <Link href={`/loja?categoria=${encodeURIComponent(produto.category)}`} className="inline-flex h-11 items-center font-medium hover:text-ink">
-              {produto.category}
-            </Link>
-          </li>
+          {produto.category && (
+            <>
+              <li aria-hidden>/</li>
+              <li>
+                <Link href={`/loja?categoria=${encodeURIComponent(categoriaDe(produto))}`} className="inline-flex h-11 items-center font-medium hover:text-ink">
+                  {produto.category}
+                </Link>
+              </li>
+            </>
+          )}
         </ol>
       </nav>
 
@@ -66,9 +74,22 @@ export default async function Produto({ params }: Props) {
         <Galeria imagens={fotosDoProduto(produto)} nome={produto.name} />
 
         <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--topo)+1.5rem)]">
-          <p className="text-sm font-semibold text-ink-3">{produto.category}</p>
+          <p className="text-sm font-semibold text-ink-3">
+            {[produto.isNew ? "Novidade" : "", produto.category].filter(Boolean).join(" · ")}
+          </p>
           <h1 className="titulo-loja mt-2 text-[clamp(2.5rem,5vw,3.75rem)]">{produto.name}</h1>
-          <p className="mt-5 text-2xl font-bold tabular text-ink">{euro(produto.price)}</p>
+          <p className="mt-5 flex flex-wrap items-baseline gap-x-3 tabular">
+            <span className={`text-2xl font-bold ${promocao ? "text-signal-ink" : "text-ink"}`}>{euro(produto.price)}</span>
+            {promocao && produto.compareAtPrice && (
+              <>
+                <s className="text-lg text-ink-3">
+                  <span className="sr-only">Antes </span>
+                  {euro(produto.compareAtPrice)}
+                </s>
+                <span className="text-sm font-bold text-signal-ink">−{promocao} %</span>
+              </>
+            )}
+          </p>
 
           <Comprar slug={clube.slug} produto={produto} compraOnline={compraOnline} />
 

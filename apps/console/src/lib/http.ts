@@ -82,7 +82,8 @@ async function readBody<T>(res: Response): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-function academySlug(): string {
+/** O slug do clube desta sessão. Exportado para quem faz pedidos fora de `pedir` (o streaming do Adjunto). */
+export function academySlug(): string {
   const stored = readSession()?.academySlug;
   if (stored) return stored;
 

@@ -15,6 +15,8 @@ export class LinhaDoCarrinhoDto {
 /** Ver o carrinho contra o stock de agora, sem guardar nada. */
 export class CarrinhoDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(12) @ValidateNested({ each: true }) @Type(() => LinhaDoCarrinhoDto) linhas!: LinhaDoCarrinhoDto[];
+  /** O código promocional escrito no carrinho, se houver. Ver `avaliarCodigo`. */
+  @IsOptional() @IsString() @MaxLength(40) codigo?: string;
 }
 
 /** Encomendar no site. */
@@ -31,6 +33,8 @@ export class EncomendarDto {
   /** O que quem compra quer dizer ao clube. */
   @IsOptional() @IsString() @MaxLength(500) nota?: string;
   @IsIn(["MBWAY", "MULTIBANCO"]) metodo!: "MBWAY" | "MULTIBANCO";
+  /** O código promocional, se houver. Volta a verificar-se aqui, com a loja bloqueada. */
+  @IsOptional() @IsString() @MaxLength(40) codigo?: string;
   /** O campo-armadilha. */
   @IsOptional() @IsString() @MaxLength(200) notaExtra?: string;
   /** A ficha que a página pediu ao abrir. Ver `FichaDoSite`. */

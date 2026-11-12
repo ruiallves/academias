@@ -251,6 +251,14 @@ function DetalheDaEncomenda({ encomenda: e, podeEscrever, onClose, onMudou }: { 
                 <span className="w-20 text-right text-body font-medium tabular-nums text-ink">{money(l.quantidade * l.unitPriceCents)}</span>
               </li>
             ))}
+            {(e.descontoCents ?? 0) > 0 && (
+              <li className="flex items-center justify-between gap-3 border-b border-line px-3 py-2 text-meta text-ink-2">
+                <span>
+                  Desconto{e.codigo ? <> · <span className="font-medium text-ink">{e.codigo}</span></> : null}
+                </span>
+                <span className="tabular-nums text-ok">−{money(e.descontoCents ?? 0)}</span>
+              </li>
+            )}
             {e.envioCents > 0 && (
               <li className="flex items-center justify-between gap-3 border-b border-line px-3 py-2 text-meta text-ink-2">
                 <span>Envio</span>
