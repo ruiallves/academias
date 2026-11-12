@@ -206,6 +206,19 @@ export function ligarModoVoz(ligado: boolean) {
 
 let carregouEstado = false;
 
+/**
+ * O estado que veio no arranque da consola (`/api/bootstrap`).
+ *
+ * Chega antes do primeiro desenho, e por isso a barra de baixo do telemóvel
+ * nasce já com o robô no meio. Antes só se perguntava em `carregarEstado`,
+ * depois de a barra estar no ecrã: aparecia o Calendário e o robô a seguir.
+ * Com isto o `carregarEstado` já não vai ao servidor.
+ */
+export function aplicarEstadoDoArranque(e: { ligado: boolean; voz: boolean; semChave: boolean }): void {
+  carregouEstado = true;
+  set({ ligado: e.ligado === true, voz: e.voz === true, semChave: e.semChave === true });
+}
+
 /** Pergunta uma vez ao servidor se o Adjunto está ligado neste clube. */
 export async function carregarEstado(): Promise<void> {
   if (carregouEstado) return;

@@ -145,7 +145,7 @@ export const SOLUCOES: Solucao[] = [
         a: "Ainda não. A integração está em curso e depende de licenciamento. Hoje o calendário de jogos importa-se por Excel ou cria-se na consola.",
       },
     ],
-    relacionadas: ["/gestao-clubes-futsal", "/mensalidades-clube", "/app-clube", "/gestao-academias-desportivas"],
+    relacionadas: ["/gestao-clubes-futsal", "/mensalidades-clube", "/app-clube", "/assistente-ia-clubes"],
   },
 
   /* ------------------------------------------------------------------------ */
@@ -695,7 +695,132 @@ export const SOLUCOES: Solucao[] = [
         a: "O plantel entra por Excel, com um modelo que damos. Nos primeiros 30 dias acompanhamos a montagem: equipas, atletas, mensalidades e o convite às famílias.",
       },
     ],
-    relacionadas: ["/gestao-clubes-futebol", "/mensalidades-clube", "/app-clube", "/gestao-clubes-basquetebol"],
+    relacionadas: ["/gestao-clubes-futebol", "/mensalidades-clube", "/app-clube", "/assistente-ia-clubes"],
+  },
+
+  /* ------------------------------------------------------------------------ */
+  {
+    path: "/assistente-ia-clubes",
+    nome: "Assistente IA",
+    title: "Assistente com IA para clubes desportivos | Academias",
+    description:
+      "O assistente com IA da Academias marca presenças, regista lesões, faz convocatórias, planeia treinos com exercícios desenhados e escreve comunicados a partir do que o treinador diz. Nada fica gravado sem confirmar. 14,99 € por mês em qualquer plano.",
+    rotulo: "Assistente com IA para clubes desportivos",
+    h1: "Diz ao assistente o que aconteceu, e ele trata do resto",
+    lede:
+      "Está em todas as páginas da consola. Escreve-se ou fala-se, como a um adjunto à beira do campo, e ele prepara as presenças, a lesão, a convocatória, o treino ou o comunicado. Uma pessoa do clube confirma, e só então fica gravado.",
+    captura: "con-assistente-mini",
+    tel: "con-assistente-tel",
+    blocos: [
+      {
+        titulo: "As presenças ditas numa frase",
+        texto:
+          "\"No treino de hoje faltou o Lourenço, a mãe avisou. O Salvador continua de baixa.\" O assistente abre a folha do treino com os 16 atletas no estado certo: a falta avisada pela família já justificada, o atleta de baixa assinalado, os outros presentes. Confirmar grava a folha como se tivesse sido feita à mão.",
+        itens: [
+          "Presenças, faltas, atrasos e justificações",
+          "Os nomes resolvem-se contra o plantel, com alcunhas e sem acentos",
+          "Dois atletas com o mesmo nome viram uma pergunta, nunca um palpite",
+          "Também por voz, no campo, com o telemóvel",
+        ],
+        captura: "con-assistente",
+        tel: "con-assistente-tel",
+      },
+      {
+        titulo: "Lesões, convocatórias e marcações",
+        texto:
+          "\"O Dinis saiu com dor no joelho\" regista a lesão ou avisa o departamento clínico, conforme quem fala pode ou não escrever no boletim. \"Convoca os mesmos do último jogo menos o Pedro\" monta a convocatória. \"Marca um jogo sábado às 16h contra o Vizela\" abre o formulário com as regras do clube: os campos de casa em lista, os balneários, a prova da equipa.",
+        itens: [
+          "Lesão ou aviso ao clínico, conforme as permissões de quem fala",
+          "Convocatória a partir da anterior, de uma lista ou de critérios",
+          "Marcar, mudar e desmarcar treinos, jogos e eventos",
+          "Inscrever um atleta novo",
+        ],
+        captura: "con-assistente-convocatoria",
+        tel: "con-assistente-convocatoria-tel",
+      },
+      {
+        titulo: "Treinos planeados em blocos",
+        texto:
+          "Pede um treino de passe e receção para os Sub-13, véspera de jogo, e recebe a sessão em quatro blocos com o tempo, a intensidade e os exercícios. Os exercícios que o clube já tem na biblioteca são reaproveitados; os novos vêm desenhados. Se quiseres, o assistente procura ideias na internet antes de planear.",
+        itens: [
+          "Blocos com duração, objetivo e intensidade",
+          "Exercícios da biblioteca do clube e exercícios novos",
+          "À medida do escalão e do número de atletas",
+          "Fica na Área técnica, no treino a que pertence",
+        ],
+        captura: "con-assistente-plano",
+        tel: "con-assistente-plano-tel",
+      },
+      {
+        titulo: "Exercícios desenhados no campo",
+        texto:
+          "\"Cria um exercício de saída de bola a três, com finalização, para 12 jogadores.\" O exercício nasce desenhado no campo da modalidade, em vários momentos animados, com os pontos-chave escritos. Ao confirmar entra na biblioteca do clube, pronto a usar num plano.",
+        itens: [
+          "Futebol de 11, 9, 7 e 5, futsal e basquetebol",
+          "Animação por momentos, como no editor tático",
+          "Edita-se depois no editor, como qualquer outro",
+          "Procura de ideias na internet, se o treinador pedir",
+        ],
+        captura: "con-assistente-exercicio",
+        tel: "con-assistente-exercicio-tel",
+      },
+      {
+        titulo: "Comunicados e notícias escritos por ele",
+        texto:
+          "\"Avisa os pais dos Sub-11 que não há treino amanhã por causa da chuva.\" O comunicado sai redigido com o tom de um clube a escrever às famílias, com o dia concreto em vez de \"amanhã\", para rever e mudar antes de enviar. Nos clubes com site, escreve também a notícia do jogo a partir do resultado e dos marcadores.",
+        itens: [
+          "Comunicados às famílias, por equipa ou escalão",
+          "Notícias do site do clube, no Connect Pro",
+          "Sempre para rever antes de sair",
+          "Sem envio agendado: sai ao confirmar",
+        ],
+        captura: "con-assistente-comunicado",
+        tel: "con-assistente-comunicado-tel",
+      },
+      {
+        titulo: "Perguntas aos dados do clube",
+        texto:
+          "\"Quando é o próximo jogo dos Sub-13?\", \"quem faltou mais aos treinos em outubro?\", \"quem está indisponível para sábado?\". O assistente lê o que está na plataforma e responde com os dados do clube, sem inventar. Um treinador só vê as equipas dele, como na consola.",
+        itens: [
+          "Treinos, jogos, convocatórias e indisponíveis",
+          "Com o âmbito e as permissões de quem pergunta",
+          "Sem dados clínicos além de indisponível, de baixa ou condicionado",
+          "Importa um Excel de atletas tal como está, sem gastar créditos",
+        ],
+        captura: "con-assistente-pergunta",
+      },
+    ],
+    perguntas: [
+      {
+        q: "O assistente grava alguma coisa sozinho?",
+        a: "Não. Tudo o que prepara é uma proposta num cartão, com o botão Confirmar. Quem grava é a pessoa do clube que carrega no botão, com as permissões dela. Depois de confirmar há dez minutos para desfazer.",
+      },
+      {
+        q: "Quanto custa?",
+        a: "É um extra de 14,99 € por mês, com IVA, em qualquer plano, com 4.000 créditos por mês. Marcar presenças, registar uma lesão ou fazer uma convocatória gasta cerca de 1 crédito. Um treino planeado com ideias da internet gasta perto de 100. Um clube com oito equipas usa cerca de metade do saldo.",
+      },
+      {
+        q: "O que acontece quando os créditos acabam?",
+        a: "O clube compra mais 4.000 créditos por 9,99 € ou espera pelo mês seguinte. Não há cobranças automáticas: a direção decide. A importação de ficheiros não gasta créditos.",
+      },
+      {
+        q: "Que dados saem da plataforma?",
+        a: "O que a pessoa escreve e os nomes dos atletas de que a resposta precisa vão ao fornecedor do modelo de linguagem, pela rota europeia, sem ficarem guardados nem servirem para treinar modelos. Datas de nascimento, contactos, NIF, moradas e diagnósticos clínicos não saem. O Acordo de Tratamento de Dados identifica o fornecedor.",
+      },
+      {
+        q: "O assistente pode errar?",
+        a: "Pode, como qualquer modelo de linguagem. Por isso nada fica gravado sem uma pessoa ver o cartão e confirmar, e por isso ele pergunta em vez de assumir o que não foi dito: o local do jogo, a prova, a hora de fim. O que fica gravado é responsabilidade de quem confirmou, como na consola.",
+      },
+      {
+        q: "Funciona por voz?",
+        a: "Funciona. Há um botão para ditar e um modo de conversa mãos-livres, em que o assistente responde em voz alta. Confirmar continua a ser um toque no cartão: dizer \"confirma\" não grava nada.",
+      },
+      {
+        q: "Está em todos os planos?",
+        a: "É um extra que se junta a qualquer plano, Consola, Connect ou Connect Pro, pelo mesmo preço. Nos 30 dias de experiência está incluído.",
+      },
+    ],
+    relacionadas: ["/gestao-clubes-futebol", "/gestao-academias-desportivas", "/app-clube", "/site-clube"],
   },
 ];
 

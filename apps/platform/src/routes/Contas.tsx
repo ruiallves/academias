@@ -31,7 +31,7 @@ import type { ContasResumo, GastoFixo, MensalidadeDoClube, Previsao, Transacao }
  * número que se lê de duas maneiras.
  */
 export default function Contas() {
-  const [sim, setSim] = useState({ ligada: false, novos: "2", valor: "24,99" });
+  const [sim, setSim] = useState({ ligada: false, novos: "2", valor: "29,99" });
   const q = sim.ligada ? `&novosPorMes=${Number(sim.novos) || 0}&valorNovoCents=${emCentimos(sim.valor)}` : "";
   const [estado, setEstado] = useState<"por-pagar" | "pagos" | "todos">("por-pagar");
   const [tipo, setTipo] = useState<"todos" | "INCOME" | "EXPENSE">("todos");

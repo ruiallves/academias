@@ -263,5 +263,92 @@
     "escala": 3,
     "descricao": "Leitor da porta: o mesmo bilhete outra vez, recusado",
     "focos": {}
+  },
+  "con-assistente": {
+    "ficheiro": "con-assistente-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O Assistente IA na página inteira: as presenças de quarta ditas numa frase e a folha pronta a confirmar",
+    "focos": {
+      "cartao": [
+        56.2,
+        311.2,
+        318.3,
+        667.8
+      ]
+    }
+  },
+  "con-assistente-plano": {
+    "ficheiro": "con-assistente-plano-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Um plano de treino pedido ao Assistente IA: quatro blocos e um exercício novo desenhado",
+    "focos": {
+      "cartao": [
+        56.2,
+        -303.4,
+        318.3,
+        897.8
+      ],
+      "blocos": [
+        225.4,
+        161.6,
+        134.6,
+        32.5
+      ]
+    }
+  },
+  "con-assistente-exercicio": {
+    "ficheiro": "con-assistente-exercicio-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Um exercício criado pelo Assistente IA, com o desenho no campo de futebol 9",
+    "focos": {
+      "cartao": [
+        56.2,
+        -57.4,
+        318.3,
+        651
+      ],
+      "desenho": [
+        70.8,
+        281.3,
+        289.2,
+        205.6
+      ]
+    }
+  },
+  "con-assistente-convocatoria": {
+    "ficheiro": "con-assistente-convocatoria-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Uma lesão dita e a convocatória de sábado montada a partir do último jogo, pronta a confirmar",
+    "focos": {
+      "cartao": [
+        56.2,
+        330.8,
+        318.3,
+        716.1
+      ]
+    }
+  },
+  "con-assistente-comunicado": {
+    "ficheiro": "con-assistente-comunicado-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Um comunicado às famílias escrito pelo Assistente IA, para rever antes de sair",
+    "focos": {
+      "cartao": [
+        56.2,
+        291.6,
+        318.3,
+        533.5
+      ]
+    }
   }
 }

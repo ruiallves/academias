@@ -59,7 +59,8 @@ const PLANOS = [
     id: "plan_clube",
     name: "Consola",
     tagline: "O clube por dentro. Tudo o que a direção e os treinadores precisam.",
-    cents: 1499,
+    // 19,99 € desde 12/11/2026 (migração 20261112120000); antes 14,99 €. Quem já estava fica com o preço que tinha.
+    cents: 1999,
     order: 1,
     recommended: false,
     features: [
@@ -78,8 +79,8 @@ const PLANOS = [
     id: "plan_academia",
     name: "Connect",
     tagline: "O clube, as famílias e o dinheiro. A plataforma inteira.",
-    // 24,99 € desde 13/10/2026; quem já estava ficou a 19,99 € (migração 20261013170000).
-    cents: 2499,
+    // 29,99 € desde 12/11/2026 (migração 20261112120000); antes 24,99 € (13/10) e 19,99 €. Quem já estava fica com o preço que tinha.
+    cents: 2999,
     order: 2,
     recommended: true,
     features: [
@@ -100,7 +101,8 @@ const PLANOS = [
     id: "plan_connect_pro",
     name: "Connect Pro",
     tagline: "Tudo o que está no Connect, mais o site do clube com domínio próprio.",
-    cents: 2999,
+    // 34,99 € desde 12/11/2026 (migração 20261112120000); antes 29,99 €.
+    cents: 3499,
     order: 3,
     recommended: false,
     website: true,

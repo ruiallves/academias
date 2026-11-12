@@ -1,9 +1,9 @@
 ---
 type: DPA
-version: 1.1
+version: 1.2
 title: Acordo de Tratamento de Dados
 summary: A relação de tratamento de dados entre o clube, responsável pelo tratamento, e a Academias, subcontratante.
-changeNote: Passa a cobrir o site público do clube (Connect Pro), os visitantes que escrevem pelo formulário de contactos ou pedem para ser sócios, quem compra na loja e na bilheteira do site, o alojamento do site e a verificação contra envios automáticos.
+changeNote: Passa a cobrir o Assistente IA: que dados do clube são enviados ao fornecedor do modelo de linguagem, quais nunca saem, e esse fornecedor como subcontratante, com os pedidos tratados na União Europeia, sem retenção de conteúdo nem uso para treino de modelos.
 ---
 
 Este documento descreve a relação de tratamento de dados entre o clube e a Academias. É parte integrante dos Termos de Serviço e é aceite por quem representa o clube.
@@ -30,6 +30,8 @@ Na loja e na bilheteira, o clube é o vendedor: o pagamento é feito na conta de
 
 O que o clube publica no site é decisão do clube: o plantel de uma equipa de formação só deve ir para o site com o consentimento das famílias, e a plataforma não liga nenhuma equipa sem o clube o fazer.
 
+**No Assistente IA**, quando o clube o tem ligado: as mensagens escritas ou ditas pelas pessoas do clube ao assistente, o histórico de cada conversa, as propostas preparadas e o registo de quem as confirmou; o áudio ditado, transcrito e não guardado; e o uso por clube, mês e modelo (número de pedidos e de tokens), para a conta dos créditos. Para responder a um pedido, enviamos ao fornecedor do modelo de linguagem a mensagem, o histórico dessa conversa e os dados do clube estritamente necessários à resposta: nomes de atletas, equipas e staff, datas e horas de treinos e jogos, adversários, locais, e, na importação de ficheiros, os cabeçalhos das colunas e algumas linhas com os valores mascarados. **Não são enviados** datas de nascimento, NIF, contactos, moradas, dados de pagamento, fotografias, nem informação clínica para além do estado de disponibilidade (indisponível, de baixa ou condicionado).
+
 ## 4. Instruções e confidencialidade
 
 Tratamos os dados apenas segundo as instruções documentadas do clube, incluindo as que decorrem da utilização normal da plataforma. Se uma instrução nos parecer contrária à lei, informamos o clube.
@@ -53,11 +55,14 @@ O que garantimos é que esse acesso é restrito a quem dele precisa para operar 
 ## 7. Subcontratantes
 
 Recorremos a subcontratantes para infra-estrutura e base de dados, autenticação, armazenamento de ficheiros, envio de email e de notificações, processamento de pagamentos e, para os clubes com site público, o alojamento e a distribuição do site e a verificação contra envios automáticos nos formulários do site.
-A lista actualizada é disponibilizada a pedido. Alterações relevantes são comunicadas com antecedência, para que o clube possa opor-se.
+
+Para os clubes com o Assistente IA ligado, recorremos ainda a um **fornecedor de modelos de linguagem** (OpenAI, através da sua entidade europeia), que recebe os pedidos descritos na secção 3 e os trata na União Europeia, apenas para gerar a resposta, sem os guardar para além do necessário à prestação do serviço e à sua monitorização de abusos, e sem os usar para treinar modelos. A transcrição de voz e a leitura em voz alta das respostas passam pelo mesmo fornecedor.
+
+A lista actualizada é disponibilizada a pedido. Alterações relevantes, incluindo a troca do fornecedor de modelos de linguagem, são comunicadas com antecedência, para que o clube possa opor-se ou desligar o Assistente IA.
 
 ## 8. Transferências internacionais
 
-Os dados são alojados na União Europeia. Caso venha a existir alguma transferência para fora do Espaço Económico Europeu, será feita com as garantias exigidas pelo RGPD.
+Os dados são alojados na União Europeia, e os pedidos ao fornecedor de modelos de linguagem são tratados na União Europeia. Caso venha a existir alguma transferência para fora do Espaço Económico Europeu, será feita com as garantias exigidas pelo RGPD.
 
 ## 9. Apoio ao responsável pelo tratamento
 

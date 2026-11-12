@@ -769,5 +769,152 @@
         560
       ]
     }
+  },
+  "con-assistente": {
+    "ficheiro": "con-assistente.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "O Assistente IA na página inteira: as presenças de quarta ditas numa frase e a folha pronta a confirmar",
+    "focos": {
+      "cartao": [
+        896,
+        205.6,
+        670,
+        391.9
+      ],
+      "pedido": [
+        920.8,
+        80,
+        605.2,
+        57.1
+      ],
+      "confirmar": [
+        244,
+        87,
+        211,
+        52.4
+      ]
+    }
+  },
+  "con-assistente-plano": {
+    "ficheiro": "con-assistente-plano.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Um plano de treino pedido ao Assistente IA: quatro blocos e um exercício novo desenhado",
+    "focos": {
+      "cartao": [
+        896,
+        205.6,
+        670,
+        676.9
+      ],
+      "blocos": [
+        1067,
+        553,
+        170.7,
+        16.8
+      ]
+    }
+  },
+  "con-assistente-exercicio": {
+    "ficheiro": "con-assistente-exercicio.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Um exercício criado pelo Assistente IA, com o desenho no campo de futebol 9",
+    "focos": {
+      "cartao": [
+        896,
+        160.6,
+        670,
+        731.4
+      ],
+      "desenho": [
+        971,
+        412.4,
+        520,
+        369.7
+      ]
+    }
+  },
+  "con-assistente-mini": {
+    "ficheiro": "con-assistente-mini.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "O minichat do Assistente IA aberto por cima da página do treino de quarta, com as presenças a confirmar",
+    "focos": {
+      "minichat": [
+        1524,
+        432,
+        380,
+        560
+      ],
+      "cartao": [
+        1524,
+        432,
+        380,
+        560
+      ]
+    }
+  },
+  "con-assistente-convocatoria": {
+    "ficheiro": "con-assistente-convocatoria.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Uma lesão dita e a convocatória de sábado montada a partir do último jogo, pronta a confirmar",
+    "focos": {
+      "cartao": [
+        896,
+        225.9,
+        670,
+        457.5
+      ],
+      "convocados": [
+        1279,
+        402.9,
+        234.4,
+        19.6
+      ]
+    }
+  },
+  "con-assistente-comunicado": {
+    "ficheiro": "con-assistente-comunicado.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Um comunicado às famílias escrito pelo Assistente IA, para rever antes de sair",
+    "focos": {
+      "cartao": [
+        896,
+        205.6,
+        670,
+        416.3
+      ],
+      "texto": [
+        1019,
+        342.1,
+        532,
+        176.1
+      ]
+    }
+  },
+  "con-assistente-pergunta": {
+    "ficheiro": "con-assistente-pergunta.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Uma pergunta aos dados do clube: quem faltou mais em setembro e quem está indisponível para sábado",
+    "focos": {
+      "resposta": [
+        896,
+        155.1,
+        670,
+        101.3
+      ]
+    }
   }
 }

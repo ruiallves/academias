@@ -282,8 +282,16 @@ ADJUNTO_MODELO_FORTE=gpt-6.1-sol
 ADJUNTO_MODELO_TRANSCRICAO=gpt-transcribe
 ```
 
-`Academy.adjuntoEnabled` desliga o Adjunto num clube só. Nasce ligado; a
-decisão comercial (que plano o traz) vem depois.
+`Academy.adjuntoEnabled` liga e desliga o assistente num clube só, pelo painel
+da plataforma (ficha do clube). **Decisão comercial de 12/11/2026:** é um
+extra de 14,99 €/mês (IVA incluído) em qualquer plano, com 4.000 créditos por
+mês (1 crédito = 0,001 $ de custo real na OpenAI; presenças ≈ 1, treino com
+pesquisa ≈ 100, medido nesse dia), mais 4.000 por 9,99 €. O site, os Termos
+de Serviço v1.7 (secção 14) e o DPA v1.2 já o dizem. **Ainda por construir:**
+a conta dos créditos (hoje `AdjuntoUsage` só soma tokens por modelo), o teto
+mensal, a compra de pacotes e a cobrança do extra na mensalidade; e os clubes
+existentes nascem com o assistente ligado, por isso antes do lançamento há
+que o desligar a quem não pagar.
 
 ## Testes
 

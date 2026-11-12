@@ -120,7 +120,12 @@ export async function loadContexts(): Promise<void> {
   if (state.contexts === null) {
     const guardados = lerArranque<AppContext[]>("contextos");
     if (guardados) {
-      state = { contexts: guardados, active: resolverActivo(guardados), error: null };
+      /*
+       * O site vem com eles: sem isto o ecrã de escolha desenhava-se com as
+       * áreas e o "Site do clube" só aparecia segundos depois, com o servidor.
+       */
+      const site = siteValido(lerArranque<string>("site"));
+      state = { contexts: guardados, active: resolverActivo(guardados), error: null, site };
       setActiveArea(state.active);
       emit();
     }
@@ -129,9 +134,10 @@ export async function loadContexts(): Promise<void> {
   if (import.meta.env.DEV) await resolverClubeDaConta();
   try {
     const r = await apiGet<{ contexts: AppContext[]; telefoneEmFalta?: boolean; site?: string }>("/api/app/contexts");
+    const site = siteValido(r.site);
     guardarArranque("contextos", r.contexts);
+    guardarArranque("site", site);
     const active = resolverActivo(r.contexts);
-    const site = typeof r.site === "string" && /^https:\/\//.test(r.site) ? r.site : null;
     state = { contexts: r.contexts, active, error: null, telefoneEmFalta: r.telefoneEmFalta === true, site };
     setActiveArea(active);
   } catch (e) {
@@ -140,6 +146,11 @@ export async function loadContexts(): Promise<void> {
     state = { ...state, error: e instanceof Error ? e.message : "Não foi possível carregar." };
   }
   emit();
+}
+
+/** O endereço do site só serve se for https (vem do servidor ou do guardado). */
+function siteValido(site: unknown): string | null {
+  return typeof site === "string" && /^https:\/\//.test(site) ? site : null;
 }
 
 /** Que contexto fica vestido, dada a lista — ver o cabeçalho de `loadContexts`. */

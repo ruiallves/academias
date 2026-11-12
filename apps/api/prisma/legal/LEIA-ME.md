@@ -40,6 +40,17 @@ Antes de considerar qualquer versão final:
 - nos Termos de Serviço v1.2: com fidelização em vigor só se sobe de plano
   (secção 8), e cancelar obriga a pagar as mensalidades até ao fim da
   fidelização (secção 11), sem dizer quando esse valor é cobrado.
+- na v1.7 (12/11/2026, com os Termos de Utilização v1.1, o DPA v1.2, a
+  Privacidade v1.1 e a Utilização Aceitável v1.1): a secção 14 sobre o
+  Assistente IA (confirmação humana, créditos, dados enviados ao fornecedor do
+  modelo, limitação de responsabilidade pelas respostas) e o fornecedor
+  (OpenAI, entidade europeia) como subcontratante no DPA. O DPA afirma rota
+  europeia, sem retenção e sem treino: confirmar que a conta OpenAI tem a
+  retenção zero pedida e que a API corre com `OPENAI_BASE_URL` europeu antes
+  de publicar. Os preços novos (19,99/29,99/34,99 e 14,99 do extra) e a regra
+  de que quem já tinha subscrição mantém a mensalidade; quem mudar de plano
+  passa a pagar o preço de tabela (a v1.6 prometia 24,99 € no Connect Pro a
+  quem já cá estava).
 
 ## Como se corrige um texto antes de haver aceitações a sério
 

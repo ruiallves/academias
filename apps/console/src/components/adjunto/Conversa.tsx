@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, Pencil, Undo2 } from "@/lib/icons";
+import { Bot, Check, Pencil, Undo2 } from "@/lib/icons";
+import { staffById } from "@/lib/api";
+import { useSession } from "@/session";
 import { cx, Monogram, Pill } from "@/components/primitives";
 import { mostrarOk, textoDoErro, mostrarErro } from "@/lib/avisos";
 import {
@@ -107,17 +109,20 @@ function Balao({
 }) {
   if (mensagem.role === "USER") {
     return (
-      <div className="flex justify-end">
+      <div className="flex items-end justify-end gap-2">
         <div className={cx("max-w-[85%] rounded-[12px_12px_4px_12px] border border-line bg-surface px-3 py-2 whitespace-pre-wrap text-ink", compacto ? "text-meta" : "text-body")}>
           {mensagem.text}
         </div>
+        <AvatarDaPessoa compacto={compacto} />
       </div>
     );
   }
 
   const aPensar = mensagem.aChegar && !mensagem.text && mensagem.blocks.length === 0;
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex items-start gap-2.5">
+      <AvatarDoAssistente compacto={compacto} />
+    <div className="flex min-w-0 flex-1 flex-col gap-2.5 pt-0.5">
       {aPensar ? (
         <div className={cx("flex items-center gap-2 text-ink-3", compacto ? "text-meta" : "text-body")}>
           <span className="adjunto-pulso inline-block size-2 rounded-full bg-signal" aria-hidden />
@@ -146,7 +151,44 @@ function Balao({
         return null;
       })}
     </div>
+    </div>
   );
+}
+
+/**
+ * Quem fala em cada balão: o robô do assistente à esquerda (o mesmo do botão
+ * ao canto) e a pessoa à direita, com a foto da ficha de staff ou, sem ela,
+ * as iniciais na cor do clube, como na barra lateral.
+ */
+function AvatarDoAssistente({ compacto }: { compacto?: boolean }) {
+  return (
+    <span
+      className={cx("inline-flex shrink-0 items-center justify-center rounded-full bg-signal-strong text-signal-on", compacto ? "size-6" : "size-8")}
+      aria-hidden
+    >
+      <Bot className={compacto ? "size-3.5" : "size-[18px]"} strokeWidth={2} />
+    </span>
+  );
+}
+
+function AvatarDaPessoa({ compacto }: { compacto?: boolean }) {
+  const { session } = useSession();
+  const foto = session.staffId ? staffById(session.staffId)?.photoUrl : undefined;
+  const dim = compacto ? "size-6 text-[10px]" : "size-8 text-[12px]";
+  if (foto) return <img src={foto} alt="" aria-hidden className={cx("shrink-0 rounded-full bg-sunken object-cover", dim)} />;
+  return (
+    <span className={cx("inline-flex shrink-0 items-center justify-center rounded-full bg-signal-soft font-semibold text-signal-ink select-none", dim)} aria-hidden>
+      {iniciais(session.name)}
+    </span>
+  );
+}
+
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  const primeira = partes[0][0] ?? "";
+  const ultima = partes.length > 1 ? (partes[partes.length - 1][0] ?? "") : "";
+  return (primeira + ultima).toUpperCase();
 }
 
 /* -------------------------------------------------------------------------- */

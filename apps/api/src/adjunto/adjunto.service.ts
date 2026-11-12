@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { RequestContext } from "../common/permissions";
 import { formatarNoFuso } from "../common/fuso";
 import { OpenAiClient } from "./openai.client";
+import { estadoDoAssistente } from "./estado";
 import { CLASSIFICADOR, lerAcao, ROTA_GERAL, ROTA_PLANEADOR, ROTA_REFORCO, type Acao, type Nivel, type Rota } from "./rotas";
 import { Executor, ferramentasDe, type Contexto, type Formulario, type Pergunta, type Planeador, type PropostaNova } from "./ferramentas";
 import { PropostasService, type PropostaParaAConsola } from "./propostas.service";
@@ -86,9 +87,7 @@ export class AdjuntoService {
    */
   async estado(ctx: RequestContext): Promise<{ ligado: boolean; nome: string; voz: boolean; semChave: boolean }> {
     const academia = await this.prisma.runAs(ctx.academyId, (db) => db.academy.findFirst({ where: { id: ctx.academyId }, select: { adjuntoEnabled: true } }));
-    const comChave = this.openai.ligado();
-    const emDesenvolvimento = process.env.NODE_ENV !== "production";
-    return { ligado: (comChave || emDesenvolvimento) && academia?.adjuntoEnabled === true, nome: NOME, voz: comChave, semChave: !comChave };
+    return { ...estadoDoAssistente(academia?.adjuntoEnabled === true, this.openai.ligado()), nome: NOME };
   }
 
   private async exigirLigado(ctx: RequestContext): Promise<void> {

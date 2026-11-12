@@ -154,6 +154,9 @@
 .plano-nota { margin-top: calc(var(--u) * 0.9); font-size: calc(var(--u) * 1.35); color: var(--texto-3); }
 .plano-lista { margin-top: calc(var(--u) * 2.4); list-style: none; }
 .plano-lista li { padding-block: calc(var(--u) * 0.82); border-top: 1px solid var(--fio); }
+/* O Assistente IA somado ao plano: a linha que o interruptor acrescenta. */
+.plano-lista .plano-ia { font-weight: 650; color: var(--acento-texto, var(--texto)); }
+.palco-noite .plano-lista .plano-ia { color: var(--acento); }
 .plano-fora { margin-top: calc(var(--u) * 1.6); font-size: calc(var(--u) * 1.35); color: var(--texto-3); }
 .plano-fora b { color: var(--texto-2); font-weight: 650; }
 .plano-acao { margin-top: auto; padding-top: calc(var(--u) * 2.6); }
@@ -169,6 +172,15 @@
 .interruptor { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--areia); }
 .interruptor button { height: 40px; padding-inline: 18px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; color: var(--texto-2); transition: background-color 200ms, color 200ms; }
 .interruptor button[aria-pressed="true"] { background: var(--tinta); color: #ffffff; }
+
+/* O interruptor do assistente IA: uma pista verde com o botão a deslizar, e o texto ao lado. */
+.alternador { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 700; font-size: 0.98rem; color: var(--texto); user-select: none; }
+.alternador input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.alternador-pista { position: relative; width: 46px; height: 26px; border-radius: 999px; background: var(--areia); transition: background-color 200ms; flex: none; }
+.alternador-pista::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgb(7 29 23 / 0.2); transition: transform 200ms var(--ease-saida); }
+.alternador input:checked + .alternador-pista { background: var(--acento); }
+.alternador input:checked + .alternador-pista::after { transform: translateX(20px); }
+.alternador input:focus-visible + .alternador-pista { outline: 2px solid var(--tinta); outline-offset: 2px; }
 
 /* ===========================================================================
    O que o clube ganha: uma frase grande e as quatro partes por baixo

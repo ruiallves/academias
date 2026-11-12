@@ -36,8 +36,8 @@ export function Heroi() {
             A infraestrutura digital do teu clube<span className="ponto">.</span>
           </h1>
           <p className="lede mt-7">
-            Atletas, treinos, jogos, mensalidades e sócios. Uma consola para quem trabalha no clube e uma app para as
-            famílias, os atletas e os sócios.
+            Atletas, treinos, jogos, mensalidades e sócios. Uma consola para quem trabalha no clube, uma app para as
+            famílias, os atletas e os sócios, e um assistente com IA que te auxilia no teu dia a dia.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <Link to="/contactos" className="btn btn-cheio">
@@ -216,6 +216,14 @@ const AREAS: Area[] = [
     pc: "site-inicio",
     tel: "site-tel-bilhete",
     mais: { to: "/site-clube", label: "O site do clube" },
+  },
+  {
+    nome: "Assistente IA",
+    titulo: "Diz o que aconteceu, e ele prepara o resto",
+    texto: "\"Faltaram o Pedro e o Rui.\" O assistente abre a folha de presenças pronta a confirmar. Faz o mesmo com lesões, convocatórias, marcações, comunicados e planos de treino com exercícios desenhados. Nada fica gravado sem alguém do clube confirmar.",
+    pc: "con-assistente",
+    tel: "con-assistente-tel",
+    mais: { to: "/assistente-ia-clubes", label: "O assistente com IA" },
   },
 ];
 

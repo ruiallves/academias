@@ -13,6 +13,7 @@ import { criarTecnica } from "./tecnica.mjs";
 import { criarDesenvolvimento } from "./desenvolvimento.mjs";
 import { criarOutros } from "./outros.mjs";
 import { criarGestao } from "./gestao.mjs";
+import { criarAssistente } from "./assistente.mjs";
 import { EXERCICIOS_EXTRA, inscricoes, resumoDoExercicio } from "./modalidades.mjs";
 import { readFileSync } from "node:fs";
 
@@ -32,6 +33,7 @@ export function criarApi(clube, extras = {}) {
   const desenvolvimento = criarDesenvolvimento(clube);
   const outros = criarOutros(clube);
   const gestao = criarGestao(clube);
+  const assistente = criarAssistente(clube);
 
   /** As rotas exatas. O valor é o corpo, ou uma função da query. */
   const GET = {
@@ -78,6 +80,7 @@ export function criarApi(clube, extras = {}) {
     ...desenvolvimento.GET,
     ...outros.GET,
     ...gestao.GET,
+    ...assistente.GET,
     ...(extras.GET ?? {}),
   };
 
@@ -101,9 +104,13 @@ export function criarApi(clube, extras = {}) {
       };
     }],
     ...(extras.PADROES ?? []),
+    ...assistente.PADROES,
   ];
 
   return function responder(metodo, caminho, query, corpo) {
+    // O assistente responde a escritas com um corpo próprio (a resposta em streaming).
+    const doAssistente = assistente.responder(metodo, caminho, query, corpo);
+    if (doAssistente) return doAssistente;
     if (metodo === "GET") {
       if (caminho in GET) {
         const v = GET[caminho];

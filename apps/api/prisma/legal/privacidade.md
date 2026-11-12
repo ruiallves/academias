@@ -1,6 +1,6 @@
 ---
 type: PRIVACY_POLICY
-version: 1.0
+version: 1.1
 title: Política de Privacidade
 summary: Como tratamos dados pessoais — os que tratamos por conta própria e os que tratamos por conta de um clube.
 ---
@@ -33,7 +33,7 @@ Não vendemos dados pessoais, e não os usamos para publicidade de terceiros.
 
 ## Onde estão alojados
 
-A base de dados e os ficheiros estão alojados na União Europeia. Recorremos a fornecedores de infra-estrutura, de autenticação, de envio de email e notificações, e de pagamentos. A lista actual consta do Acordo de Tratamento de Dados.
+A base de dados e os ficheiros estão alojados na União Europeia. Recorremos a fornecedores de infra-estrutura, de autenticação, de envio de email e notificações, de pagamentos e, nos clubes com o Assistente IA ligado, de modelos de linguagem, que trata os pedidos na União Europeia sem os guardar nem os usar para treinar modelos. A lista actual consta do Acordo de Tratamento de Dados.
 
 ## Durante quanto tempo
 

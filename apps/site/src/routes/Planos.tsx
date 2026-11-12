@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Seta } from "@/components/marca";
 import { Precos } from "@/seccoes/Precos";
-import { FAQ, MODULES } from "@/lib/content";
+import { AI_ADDON, euro, FAQ, MODULES } from "@/lib/content";
 
 /**
  * Planos.
@@ -67,13 +67,28 @@ export default function Planos() {
                     <Sinal on />
                   </td>
                 </tr>
+                {/* O extra, com o mesmo preço em qualquer plano. */}
+                <tr className="border-t border-fio-2">
+                  <td className="py-3.5 pr-4 pl-6">
+                    <p className="font-semibold">{AI_ADDON.name}</p>
+                    <p className="hidden text-[0.88rem] text-texto-3 sm:block">
+                      Presenças, lesões, convocatórias, treinos e comunicados ditos ao assistente. {AI_ADDON.credits.toLocaleString("pt-PT")} créditos por mês.
+                    </p>
+                  </td>
+                  {[0, 1, 2].map((i) => (
+                    <td key={i} className="py-3.5 text-center text-[0.92rem] font-semibold whitespace-nowrap">
+                      +{euro(AI_ADDON.monthly)}
+                    </td>
+                  ))}
+                </tr>
               </tbody>
             </table>
           </div>
 
           <p className="corpo mt-6 text-[0.95rem]">
             A Consola resolve o clube por dentro. O Connect acrescenta o que as famílias e os sócios veem: a app do clube
-            e os pagamentos. O Connect Pro junta-lhe o site do clube. Podes começar num e mudar quando quiseres.
+            e os pagamentos. O Connect Pro junta-lhe o site do clube. O {AI_ADDON.name} soma-se a qualquer um deles por{" "}
+            {euro(AI_ADDON.monthly)} por mês. Podes começar num e mudar quando quiseres.
           </p>
         </div>
       </section>

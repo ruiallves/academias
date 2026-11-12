@@ -46,12 +46,29 @@ export type Plan = {
   priceNote?: string;
 };
 
+/**
+ * O Assistente IA é um extra, com o mesmo preço em qualquer plano.
+ *
+ * O preço inclui um saldo mensal de créditos. Um crédito é uma unidade de
+ * custo real: marcar presenças gasta cerca de 1, um treino planeado com
+ * ideias da internet gasta perto de 100 (medido a 12/11/2026). O saldo é o
+ * teto do que o clube pode gastar; mais créditos compram-se à parte, em
+ * pacotes iguais ao saldo mensal.
+ */
+export const AI_ADDON = {
+  name: "Assistente IA",
+  monthly: 14.99,
+  credits: 4000,
+  /** Um pacote a mais, com os mesmos créditos do saldo mensal. */
+  extraPack: 9.99,
+};
+
 export const PLANS: Plan[] = [
   {
     id: "consola",
     name: "Consola",
     tagline: "O clube por dentro, para a direção e os treinadores.",
-    monthly: 14.99,
+    monthly: 19.99,
     includes: [
       "Atletas, equipas, staff e cargos",
       "Calendário, treinos e convocatórias",
@@ -66,7 +83,7 @@ export const PLANS: Plan[] = [
     id: "ligado",
     name: "Connect",
     tagline: "O clube, as famílias, os sócios e os pagamentos.",
-    monthly: 24.99,
+    monthly: 29.99,
     popular: true,
     includes: [
       "Tudo da Consola",
@@ -81,7 +98,7 @@ export const PLANS: Plan[] = [
     id: "pro",
     name: "Connect Pro",
     tagline: "O Connect com o site do clube.",
-    monthly: 29.99,
+    monthly: 34.99,
     featured: true,
     includes: [
       "Tudo do Connect",
@@ -132,7 +149,7 @@ export const CLUBES_COM_EMBLEMA = CLUBES.filter((c): c is (typeof CLUBES)[number
 /**
  * Os números da plataforma.
  *
- * **São contagens verdadeiras**, feitas à base de dados a 1 de novembro de 2026:
+ * **São contagens verdadeiras**, feitas à base de dados a 12 de novembro de 2026:
  * tudo o que os clubes criaram na plataforma (clubes cancelados incluídos),
  * sem contar os dois clubes de testes (`life-club` e `ad-fafe`). Não se
  * arredonda para cima e não se inventa. Um número inventado numa página de
@@ -144,13 +161,13 @@ export const CLUBES_COM_EMBLEMA = CLUBES.filter((c): c is (typeof CLUBES)[number
  * valores e a data. Pode descer: treinos e equipas apagados pelos clubes saem.
  */
 export const NUMEROS = {
-  data: "1 de novembro de 2026",
+  data: "12 de novembro de 2026",
   itens: [
-    { valor: 1003, rotulo: "atletas" },
-    { valor: 80, rotulo: "equipas" },
-    { valor: 678, rotulo: "sócios" },
-    { valor: 5646, rotulo: "treinos marcados" },
-    { valor: 346, rotulo: "jogos" },
+    { valor: 1024, rotulo: "atletas" },
+    { valor: 89, rotulo: "equipas" },
+    { valor: 705, rotulo: "sócios" },
+    { valor: 5927, rotulo: "treinos marcados" },
+    { valor: 379, rotulo: "jogos" },
   ],
 };
 
@@ -263,6 +280,52 @@ export const PESSOAS: Pessoa[] = [
 ];
 
 /* -------------------------------------------------------------------------- */
+/* O Assistente IA                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O que o assistente faz hoje, escrito como se diz a um clube.
+ *
+ * A regra do ficheiro vale aqui a dobrar: a IA só promete o que já está na
+ * consola. Cada item tem a captura que o mostra.
+ */
+export const ASSISTENTE = {
+  rotulo: "Assistente com IA para clubes",
+  titulo: "Diz ao assistente o que aconteceu, e ele trata do resto",
+  lede:
+    "Está em todas as páginas da consola. Escreve-se ou fala-se, como a um adjunto à beira do campo, e ele prepara as presenças, a lesão, a convocatória ou o treino. Nada fica gravado sem alguém do clube carregar em Confirmar.",
+  capacidades: [
+    {
+      titulo: "O dia a dia do treinador, dito em voz alta",
+      texto: "\"Faltaram o Pedro e o Rui, o Tiago chegou atrasado.\" O assistente abre a folha de presenças do treino com todos os atletas no estado certo. O mesmo para registar uma lesão, fazer a convocatória de sábado ou marcar e desmarcar treinos e jogos.",
+      captura: "con-assistente",
+      tel: "con-assistente-tel",
+    },
+    {
+      titulo: "Treinos planeados e exercícios desenhados",
+      texto: "Pede um treino de passe e receção para os Sub-13 e recebe a sessão em blocos, com o tempo, a intensidade e os exercícios. Um exercício novo vem desenhado no campo, com animação, e entra na biblioteca do clube. Se quiseres, procura ideias na internet antes de planear.",
+      captura: "con-assistente-plano",
+    },
+    {
+      titulo: "Exercícios desenhados no campo",
+      texto: "\"Cria um exercício de saída de bola a três, com finalização, para 12 jogadores.\" O exercício nasce desenhado no campo da modalidade, em vários momentos animados e com os pontos-chave escritos. Ao confirmar entra na biblioteca do clube e edita-se no editor tático como qualquer outro.",
+      captura: "con-assistente-exercicio",
+    },
+    {
+      titulo: "Comunicados, notícias e o Excel tal como está",
+      texto: "\"Avisa os pais dos Sub-11 que não há treino amanhã por causa da chuva.\" O comunicado sai redigido com o tom de um clube a escrever às famílias, para rever antes de enviar; no Connect Pro escreve também a notícia do jogo para o site. E um Excel de atletas desarrumado entra tal como está: o assistente percebe as colunas, ensaia e só grava depois de confirmares.",
+      captura: "con-assistente-mini",
+    },
+  ],
+  regras: [
+    "Nada fica gravado sem confirmar",
+    "Vê só o que a pessoa que fala pode ver",
+    "Não assume o que não foi dito: pergunta",
+    "Diz sempre que é uma IA",
+  ],
+};
+
+/* -------------------------------------------------------------------------- */
 /* Módulos (a tabela de comparação dos planos)                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -339,14 +402,9 @@ export const ROADMAP: RoadmapItem[] = [
     body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento, e estamos a tratar disso.",
   },
   {
-    when: "Novembro 2026",
-    title: "Sistema de bilheteira",
-    body: "Gestão da venda de bilhetes para os jogos do clube.",
-  },
-  {
     when: "Janeiro 2027",
-    title: "IA sobre os dados do clube",
-    body: "Resumos e sinais a partir do que já lá está, sem inventar o que ninguém registou.",
+    title: "Assistente IA: relatórios e candidaturas",
+    body: "Relatórios de época e candidaturas à Câmara ou ao IPDJ escritos a partir dos dados do clube, pelo assistente que já marca presenças e planeia treinos.",
   },
   {
     when: "Março 2027",
@@ -395,6 +453,18 @@ export const FAQ = [
   {
     q: "O domínio do site fica em nome de quem?",
     a: "Do clube. Registamo-lo e renovamo-lo nós enquanto o plano estiver ativo. Se o clube já tiver um domínio, usa-se esse.",
+  },
+  {
+    q: "O que faz o Assistente IA?",
+    a: "Está em todas as páginas da consola. Diz-se o que aconteceu, por escrito ou por voz, e ele prepara as presenças do treino, o registo de uma lesão, a convocatória, a marcação de um treino ou jogo, um comunicado às famílias ou um plano de treino com exercícios desenhados. Também importa um Excel de atletas tal como está. Nada fica gravado sem alguém do clube carregar em Confirmar.",
+  },
+  {
+    q: "Quanto custa o Assistente IA?",
+    a: "É um extra de 14,99 € por mês, com IVA, em qualquer plano. Inclui 4.000 créditos por mês. Marcar presenças, registar uma lesão ou fazer uma convocatória gasta cerca de 1 crédito. Um treino planeado com ideias da internet gasta perto de 100. Um clube com oito equipas usa cerca de metade do saldo. Quando os créditos acabam, o clube compra mais 4.000 por 9,99 € ou espera pelo mês seguinte. Nunca há cobranças automáticas.",
+  },
+  {
+    q: "Os dados do clube vão para onde, quando usamos o assistente?",
+    a: "O que a pessoa escreve e os nomes dos atletas que a resposta precisa vão ao fornecedor do modelo de linguagem, pela rota europeia e sem ficarem guardados nem servirem para treinar modelos. Datas de nascimento, contactos, NIF e diagnósticos clínicos não saem da plataforma. O Acordo de Tratamento de Dados lista o fornecedor.",
   },
   {
     q: "A IA vai inventar estatísticas sobre os nossos atletas?",

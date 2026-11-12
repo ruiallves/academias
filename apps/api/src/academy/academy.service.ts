@@ -30,6 +30,7 @@ import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
 import { minutosDasPartesParaGravar, partesDoJogo, problemaNoTempoDoJogo } from "./minutos-do-jogo";
 import { enderecoDoSite, siteIncluido, siteSoNaExperiencia } from "../site/plano";
+import { estadoDoAssistente, temChaveDoModelo } from "../adjunto/estado";
 
 /**
  * Um jogo com bilhetes vendidos não se desmarca nem se apaga pelo calendário:
@@ -271,6 +272,8 @@ export class AcademyService {
           memberAnnualStartMonth: true, memberAnnualStartDay: true,
           // A associação distrital: a mesma em todas as modalidades. Ver `Academy.association`.
           association: true,
+          // O Assistente IA ligado pela plataforma. Ver `assistente` na resposta.
+          adjuntoEnabled: true,
         },
       });
 
@@ -366,6 +369,12 @@ export class AcademyService {
               websiteNaExperiencia: await siteSoNaExperiencia(db, ctx.academyId),
               // O endereço do site, só publicado e no plano: a ligação "Site do clube" no menu da conta.
               siteUrl: await enderecoDoSite(db, ctx.academyId, this.config.get<string>("SITE_PREVIEW_DOMAIN") ?? "website.academias.pt"),
+              /*
+               * O Assistente IA, com a mesma regra de `GET /api/adjunto/estado`.
+               * Vem no arranque para a barra de baixo do telemóvel nascer já com
+               * o robô no meio (antes aparecia o Calendário e o robô depois).
+               */
+              assistente: estadoDoAssistente(academy.adjuntoEnabled, temChaveDoModelo(this.config.get<string>("OPENAI_API_KEY"))),
               /*
                * Os meses de cada escalão desta época, para o período de cobrança
                * por escalão. Vazio = segue os meses do clube.

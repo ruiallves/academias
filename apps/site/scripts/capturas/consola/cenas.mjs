@@ -9,6 +9,7 @@ import { em } from "./clube.mjs";
 import { EX_SAIDA, TREINO_DE_QUARTA } from "./tecnica.mjs";
 import { JOGO_DE_SABADO } from "./jogos.mjs";
 import { BASQUETEBOL, EX_PICK_AND_ROLL, EX_SAIDA_FUTSAL, FUTSAL } from "./modalidades.mjs";
+import { CENAS_ASSISTENTE } from "./assistente.mjs";
 
 const quadro = (n) => ({
   id: `con-quadro-${n}`,
@@ -459,10 +460,14 @@ function porta(id, descricao, codigo) {
 }
 
 /** As cenas que se tiram também no telemóvel (`--telemovel`), por esta ordem. */
+// As cenas do Assistente IA vivem em `assistente.mjs`, com a API simulada delas.
+CENAS.push(...CENAS_ASSISTENTE);
+
 export const CENAS_TELEMOVEL = [
   "con-visao-geral", "con-mensalidades-depois", "con-quadro-1", "con-quadro-2", "con-quadro-3", "con-quadro-4",
   "con-planeamento", "con-presencas-depois", "con-jogo-ficha", "con-atleta-avaliacoes", "con-comunicacao",
   "con-inventario", "con-contas", "porta-ok", "porta-repetido",
+  "con-assistente", "con-assistente-plano", "con-assistente-exercicio", "con-assistente-convocatoria", "con-assistente-comunicado",
 ];
 
 /* -------------------------------------------------------------------------- */

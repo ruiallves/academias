@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { ApiError, apiGet, apiGetSilencioso } from "@/lib/http";
 import { ACADEMY_SUSPENDED_CODE } from "@/lib/subscricao";
+// Só funções chamadas depois do arranque: o ciclo com `adjunto.ts` (que importa `reloadAcademy`) não pesa.
+import { aplicarEstadoDoArranque } from "@/lib/adjunto";
 import { METHOD_LABEL } from "@/lib/finance";
 import type {
   Academy,
@@ -75,6 +77,8 @@ type ApiBootstrap = {
     websiteNaExperiencia?: boolean;
     /** O endereço do site público, só publicado e no plano. */
     siteUrl?: string | null;
+    /** O Assistente IA, com a regra de `/api/adjunto/estado`. Um servidor antigo não o manda. */
+    assistente?: { ligado: boolean; voz: boolean; semChave: boolean };
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -485,6 +489,12 @@ export function loadAcademy(): Promise<void> {
         soft<ApiAnnouncement>("/api/announcements"),
       ]);
 
+      /*
+       * O assistente antes do primeiro desenho: a barra de baixo do telemóvel
+       * nasce já com o robô no meio, em vez de mostrar o Calendário e trocar
+       * quando a pergunta à parte chegasse. Ver `aplicarEstadoDoArranque`.
+       */
+      if (boot.academy?.assistente) aplicarEstadoDoArranque(boot.academy.assistente);
       apply(build(boot, teams, athletes, staff, sessions, fees, matches, events, announcements));
 
       /*

@@ -1,8 +1,9 @@
 ---
 type: TERMS_OF_USE
-version: 1.0
+version: 1.1
 title: Termos de Utilização
-summary: O que cada pessoa aceita para usar a consola ou a app do clube.
+summary: O que cada pessoa aceita para usar a consola ou a app do clube, incluindo o assistente com IA.
+changeNote: A consola passa a ter um assistente com inteligência artificial. Uma secção nova diz o que ele é, o que faz com o que lhe dizes, e que nada fica gravado sem confirmares.
 ---
 
 Estes termos aplicam-se a quem usa a plataforma Academias com uma conta pessoal: na consola de gestão do clube, ou na app do clube. O contrato com o clube é outro documento, os Termos de Serviço; estes dizem respeito à tua utilização.
@@ -35,18 +36,29 @@ Nós enviamos-te comunicações apenas sobre o funcionamento do serviço: altera
 
 Quando pagas uma mensalidade ou uma quota pela app do clube, o pagamento é processado por um prestador de serviços de pagamento e é feito ao clube, não a nós. O estado do pagamento na app reflecte a confirmação recebida do prestador. Dúvidas sobre valores devem ser tratadas com o clube.
 
-## 6. Os teus dados
+## 6. O assistente com IA
+
+Se o teu clube tiver o Assistente IA ligado, encontras na consola um assistente com inteligência artificial com que falas por escrito ou por voz. **É um sistema de inteligência artificial, e não uma pessoa**, e a consola lembra-to em cada conversa.
+
+- **Nada fica gravado sem confirmares.** O assistente prepara presenças, lesões, convocatórias, marcações, comunicados, planos de treino e exercícios como propostas num cartão. Só ficam gravadas quando carregas em Confirmar, e ficam gravadas em teu nome, com as tuas permissões, como se as tivesses feito à mão. Lê o cartão antes de confirmar: és tu que respondes pelo que confirmas.
+- **Pode errar.** Um modelo de linguagem pode perceber mal um nome, uma data ou um pedido. Quando o assistente pergunta, responde; quando algo no cartão não está certo, corrige ou recusa.
+- **Vê o que tu vês.** O assistente só lê e só propõe o que o teu papel no clube permite. Não o uses para tentar chegar a dados que não te dizem respeito, para contornar permissões ou para lhe pedir que ignore as regras dele.
+- **O que lhe dizes sai da plataforma.** A tua mensagem, a conversa e os nomes de atletas, equipas e staff de que a resposta precisa são enviados ao fornecedor do modelo de linguagem, na União Europeia, sem ficarem guardados nem servirem para treinar modelos. Não escrevas ao assistente dados que ele não precisa: diagnósticos, contactos, dados de pagamento ou de outras pessoas.
+- **Conselhos técnicos, não médicos.** Os planos de treino e os exercícios são sugestões; quem decide se servem para os atletas é o treinador. O assistente não dá conselhos médicos nem lê o boletim clínico além do estado de disponibilidade.
+- **Gasta créditos do clube.** Cada pedido gasta créditos do saldo mensal do clube. Usa-o para o trabalho do clube.
+
+## 7. Os teus dados
 
 Os dados que o clube tem sobre ti são tratados pelo clube, que é o responsável pelo tratamento; nós tratamo-los por conta dele. Para exercer os teus direitos sobre esses dados, dirige-te ao clube. A Política de Privacidade explica o que tratamos por conta própria e como.
 
-## 7. Fim do acesso
+## 8. Fim do acesso
 
 O clube pode terminar o teu acesso a qualquer momento. Podes também pedir ao clube que o termine. Os dados que o clube tem sobre ti continuam a ser tratados pelo clube nos termos das políticas dele.
 
-## 8. Alterações
+## 9. Alterações
 
 Estes termos podem ser actualizados. Cada versão tem um número e uma data de entrada em vigor. Quando publicarmos uma versão nova que exija nova aceitação, pedimos-ta na próxima vez que entrares.
 
-## 9. Lei aplicável
+## 10. Lei aplicável
 
 Aplica-se a lei portuguesa, sem prejuízo das regras imperativas de protecção do consumidor.

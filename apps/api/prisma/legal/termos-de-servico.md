@@ -1,9 +1,9 @@
 ---
 type: TERMS_OF_SERVICE
-version: 1.6
+version: 1.7
 title: Termos de Serviço
-summary: O contrato entre o clube e a Academias: o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
-changeNote: A loja e a bilheteira do site já vendem, com os pagamentos e a faturação do clube ligados. O site passa a ter páginas legais (privacidade, condições de venda e termos do sócio) escritas a partir dos dados do clube, que o clube confirma e completa.
+summary: O contrato entre o clube e a Academias: o que inclui cada plano, o Assistente IA, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
+changeNote: Chega o Assistente IA, um extra em qualquer plano, com uma secção própria (o que faz, os créditos, os dados que trata e as responsabilidades). Os preços de tabela sobem para quem entrar a partir de agora (Consola 19,99 €, Connect 29,99 €, Connect Pro 34,99 €); quem já tinha subscrição mantém a mensalidade que paga.
 ---
 
 Estes termos regulam a utilização da plataforma Academias por clubes e academias desportivas. Estão escritos para serem lidos por quem dirige um clube, não por juristas. Ao aceitá-los em nome do clube, a pessoa que os aceita declara que está autorizada a representá-lo para este efeito. O Acordo de Tratamento de Dados e a Política de Utilização Aceitável fazem parte deste contrato.
@@ -55,6 +55,15 @@ O plano Consola **não inclui** a app do clube, a cobrança de mensalidades ou q
 - A **loja online** e a **bilheteira digital com códigos QR**. A venda abre quando o clube tem os pagamentos e a faturação ligados, e os pagamentos seguem as regras da secção 10.
 - **Páginas legais** do site (política de privacidade, condições de venda e termos do sócio), escritas pela plataforma a partir dos dados que o clube indica no menu Website. São textos de base: o clube confirma-os, completa-os com as suas regras, e responde por eles perante quem visita, compra ou se faz sócio.
 
+**Assistente IA** — um extra que se junta a qualquer dos três planos, pelo mesmo preço, e que o clube liga e desliga a pedido:
+
+- Um assistente com inteligência artificial dentro da consola, com que se fala por escrito ou por voz, e que prepara escritas na plataforma a partir do que lhe é dito: presenças de um treino, registo de uma lesão ou aviso ao departamento clínico, convocatórias, marcação e desmarcação de treinos, jogos e eventos, inscrição de atletas, comunicados às famílias, planos de treino e exercícios desenhados, e, nos clubes com site, notícias e alterações ao site.
+- Respostas a perguntas sobre os dados do clube, com o âmbito e as permissões de quem pergunta.
+- Um saldo mensal de **créditos**, que mede o custo real de cada pedido (secção 14).
+- A importação de ficheiros de atletas lidos pelo assistente está incluída em todos os planos, sem gastar créditos.
+
+**Nada do que o assistente prepara fica gravado sem uma pessoa do clube o confirmar.** A secção 14 descreve o funcionamento, os limites e as responsabilidades.
+
 Todos os planos incluem **5 GB de espaço de armazenamento** para os ficheiros do clube (ver a secção 13).
 
 Funcionalidades futuras — nomeadamente a análise de vídeo Academias AI — serão objecto de termos próprios e de contratação à parte, e não estão incluídas em nenhum dos planos acima.
@@ -95,11 +104,12 @@ O clube dispõe de um período experimental de **30 dias** com acesso à platafo
 
 A subscrição é **mensal**. Os preços em vigor à data desta versão são:
 
-- **Plano Consola**: 14,99 € por mês, IVA incluído.
-- **Plano Connect**: 24,99 € por mês, IVA incluído.
-- **Plano Connect Pro**: 29,99 € por mês, IVA incluído.
+- **Plano Consola**: 19,99 € por mês, IVA incluído.
+- **Plano Connect**: 29,99 € por mês, IVA incluído.
+- **Plano Connect Pro**: 34,99 € por mês, IVA incluído.
+- **Assistente IA**: 14,99 € por mês, IVA incluído, somados à mensalidade do plano, com 4.000 créditos por mês. Créditos a mais: 4.000 por 9,99 €, IVA incluído, comprados pelo clube quando os quiser e nunca de forma automática.
 
-**Clubes que já usavam a plataforma.** Um clube que já tinha subscrição à data de entrada em vigor desta versão mantém o preço que paga enquanto continuar no mesmo plano. Se passar para o plano Connect Pro, paga **24,99 € por mês**, IVA incluído.
+**Clubes que já usavam a plataforma.** Um clube que já tinha subscrição à data de entrada em vigor desta versão mantém a mensalidade que paga enquanto continuar no mesmo plano. Se ligar o Assistente IA, paga a mensalidade que já tinha mais os 14,99 € do extra. Se mudar de plano, paga o preço de tabela do plano novo em vigor à data da mudança.
 
 Os preços são por clube e não variam com o número de atletas. Um aumento do espaço de armazenamento acima dos 5 GB incluídos tem um preço próprio, somado à mensalidade (ver a secção 13). Prevalecem, quando existam, as condições da proposta aceite pelo clube, incluindo um **período de fidelização** (o período contratual mínimo que a proposta indique). A mensalidade é devida na data indicada na factura.
 
@@ -122,6 +132,8 @@ A mudança produz efeitos no início do mês a que se aplica e é facturada ao p
 Ao descer de plano, o clube deixa de ter acesso ao que o plano novo não inclui — nomeadamente, ao descer de Connect para Consola, à app do clube, à cobrança de mensalidades e quotas e à página pública de adesão a sócio. Os dados mantêm-se guardados e voltam a estar acessíveis se o clube subir de plano outra vez. É da responsabilidade do clube avisar as famílias e os sócios antes de uma descida de plano que lhes retire a app.
 
 Ao sair do plano Connect Pro, o site do clube deixa de estar disponível ao público e deixamos de renovar o domínio. O domínio continua a ser do clube: a pedido, entregamos o que for preciso para o clube o transferir para outro prestador.
+
+**O Assistente IA** liga-se e desliga-se a pedido do clube, por escrito. Ligá-lo produz efeitos quando for activado, e o extra é cobrado a partir da mensalidade seguinte, com o saldo de créditos do mês já disponível. Desligá-lo produz efeitos no fim do mês já pago; os créditos não gastos nesse mês não são reembolsados nem transitam. O que o assistente ajudou a gravar fica no clube como qualquer outro registo.
 
 ## 9. Falta de pagamento, desactivação e cessação
 
@@ -167,65 +179,85 @@ O limite pode ser aumentado a pedido do clube, mediante um **acréscimo na mensa
 
 Quando o clube atinge o limite, a plataforma deixa de aceitar ficheiros novos até o clube libertar espaço, apagando ficheiros de que já não precise, ou até o limite ser aumentado. **Nenhum ficheiro existente é apagado por o limite ter sido atingido**, e o resto do serviço continua a funcionar normalmente.
 
-## 14. Disponibilidade do serviço
+## 14. O Assistente IA
+
+**O que é.** O Assistente IA é uma funcionalidade da consola que usa modelos de linguagem de um fornecedor externo para interpretar o que uma pessoa do clube escreve ou dita, ler os dados do clube a que essa pessoa tem acesso e preparar escritas na plataforma. O clube é informado, e informa quem o usa, de que está a interagir com um sistema de inteligência artificial; a consola di-lo em cada conversa.
+
+**Nada se grava sem confirmação.** Tudo o que o assistente prepara é uma proposta, apresentada num cartão à pessoa que falou com ele. Só fica gravado quando essa pessoa carrega em Confirmar, e fica gravado com a conta e as permissões dela, como se o tivesse feito à mão na consola. O assistente não tem forma própria de escrever na base de dados do clube. Depois de confirmar, a maior parte das escritas pode ser desfeita durante dez minutos.
+
+**Permissões e âmbito.** O assistente só lê e só propõe o que a pessoa que fala pode ler e fazer na consola. Um treinador fala com o assistente sobre as equipas dele; a direcção, sobre o clube todo. As permissões são verificadas pelo servidor em cada acção, e não pelo modelo.
+
+**Pode errar.** Os modelos de linguagem podem interpretar mal um pedido, omitir um nome ou propor um valor errado. Por isso o assistente pergunta em vez de assumir o que não lhe foi dito, e por isso a confirmação é sempre de uma pessoa. **O clube é responsável pelo que confirma**, como é responsável por tudo o que introduz na plataforma (secção 5). A Academias não responde por decisões desportivas, administrativas, clínicas ou financeiras tomadas com base em respostas do assistente, nem pelo conteúdo de textos que o assistente redija e o clube publique ou envie depois de os rever.
+
+**Planos de treino e exercícios.** Os planos de treino e os exercícios que o assistente propõe são sugestões técnicas genéricas a partir do que lhe foi pedido. Cabe ao treinador do clube avaliar se são adequados à idade, à condição física e à situação dos atletas antes de os aplicar. O assistente não tem acesso ao boletim clínico além do estado de disponibilidade (indisponível, de baixa ou condicionado) e não dá conselhos médicos.
+
+**Os créditos.** Cada pedido ao assistente gasta créditos em função do custo real que nos é cobrado pelo fornecedor do modelo: pelos tokens processados, pelas pesquisas na internet quando a pessoa as pede, e pelo áudio na conversa por voz. Uma acção simples, como marcar presenças, gasta cerca de 1 crédito; um plano de treino com pesquisa na internet gasta perto de 100. O saldo mensal (4.000 créditos) renova-se no primeiro dia de cada mês de subscrição e é o limite do que o clube pode gastar nesse mês. A direcção vê o saldo, o que gastou e em quê nas Definições do clube, e é avisada quando chega a 80 %. Esgotado o saldo, as acções mais pesadas (planos de treino, exercícios, pesquisa na internet e voz) param até ao mês seguinte ou até o clube comprar créditos a mais; as acções do dia a dia continuam dentro de um limite razoável. Os créditos não se convertem em dinheiro, não se reembolsam e não transitam para o mês seguinte. A tabela de créditos por acção pode ser ajustada quando o custo do fornecedor muda, com aviso de 30 dias quando a alteração for relevante.
+
+**Os dados.** Para responder, o assistente envia ao fornecedor do modelo de linguagem a mensagem da pessoa, o histórico dessa conversa, e os dados do clube estritamente necessários à resposta, nomeadamente nomes de atletas, de equipas e de staff, datas e horas de treinos e jogos, e, na importação de ficheiros, os cabeçalhos e algumas linhas com os valores mascarados. Datas de nascimento, NIF, contactos, moradas, dados de pagamento e informação clínica para além do estado de disponibilidade não são enviados. O fornecedor é subcontratante do clube nos termos do Acordo de Tratamento de Dados, trata os pedidos na União Europeia, não os guarda para além do necessário à prestação do serviço e não os usa para treinar modelos. As conversas ficam guardadas na plataforma, no clube, e apagam-se quando o clube as apaga ou quando a conta do clube é eliminada.
+
+**Utilização aceitável.** O assistente destina-se à actividade do clube. Não pode ser usado para tentar obter dados de outros clubes ou de pessoas fora do âmbito de quem fala, para contornar permissões, para gerar conteúdo ilícito, ofensivo ou enganador, nem de forma automatizada ou em volume alheio ao uso normal de um clube. Podemos limitar ou suspender o assistente num clube que o use dessa forma, nos termos da secção 12.
+
+**Mudanças.** Os modelos, o fornecedor e as capacidades do assistente podem mudar. Acrescentar capacidades não exige aviso; retirar uma capacidade relevante ou mudar de fornecedor é comunicado com pelo menos 30 dias de antecedência, e o clube pode desligar o extra até essa data sem qualquer custo.
+
+## 15. Disponibilidade do serviço
 
 Procuramos manter o serviço disponível de forma contínua, mas não garantimos ausência total de interrupções. Podem existir janelas de manutenção, preferencialmente fora dos períodos de maior utilização, e alterações à plataforma que melhorem ou substituam funcionalidades sem reduzir o essencial do que o plano inclui.
 
-Interrupções causadas por fornecedores de infra-estrutura, de autenticação, de pagamentos ou de comunicações, por falhas de rede ou por causas fora do nosso controlo não constituem incumprimento.
+Interrupções causadas por fornecedores de infra-estrutura, de autenticação, de pagamentos, de comunicações ou de modelos de linguagem, por falhas de rede ou por causas fora do nosso controlo não constituem incumprimento.
 
-## 15. Suporte
+## 16. Suporte
 
 O suporte é prestado por **correio electrónico** ou por **WhatsApp**, nos contactos indicados no site, com resposta em dias úteis. Durante o período experimental acompanhamos a montagem do clube na plataforma. O suporte não inclui a introdução de dados em nome do clube, formação presencial nem desenvolvimento à medida, que podem ser acordados à parte.
 
-## 16. Propriedade intelectual
+## 17. Propriedade intelectual
 
 A plataforma, o software, a marca, o desenho e a documentação são nossos ou dos nossos licenciantes. A subscrição dá ao clube o direito não exclusivo e intransmissível de utilizar o serviço durante a vigência do contrato, e não a propriedade sobre ele.
 
 O clube não pode copiar, modificar, descompilar, extrair por meios automáticos ou criar obras derivadas da plataforma, nem usá-la para construir um produto concorrente.
 
-Os dados que o clube introduz continuam a ser do clube. A marca do clube (nome, cor, símbolo) é do clube, e é usada apenas para personalizar o serviço que lhe é prestado, incluindo o site do clube. Sugestões que o clube nos faça podem ser usadas livremente para melhorar o produto, sem obrigação de compensação.
+Os dados que o clube introduz continuam a ser do clube. O que o assistente prepara e o clube confirma (presenças, planos de treino, exercícios, textos) é do clube, como se o tivesse introduzido à mão. A marca do clube (nome, cor, símbolo) é do clube, e é usada apenas para personalizar o serviço que lhe é prestado, incluindo o site do clube. Sugestões que o clube nos faça podem ser usadas livremente para melhorar o produto, sem obrigação de compensação.
 
 Salvo oposição escrita do clube, podemos indicar o nome e o símbolo do clube como referência de cliente no site e em materiais de apresentação.
 
-## 17. Dados pessoais
+## 18. Dados pessoais
 
 No tratamento dos dados que o clube introduz, o clube é o responsável pelo tratamento e a Academias é subcontratante. Os termos desse tratamento constam do Acordo de Tratamento de Dados, que faz parte deste contrato.
 
 A informação sobre os dados que tratamos por conta própria — por exemplo, os dados de contacto de quem subscreve — consta da Política de Privacidade.
 
-## 18. Confidencialidade
+## 19. Confidencialidade
 
 Cada parte mantém confidencial a informação não pública da outra a que aceda por causa deste contrato — para o clube, nomeadamente as condições comerciais e a informação técnica sobre a plataforma; para a Academias, os dados e a organização interna do clube — e só a usa para os fins do contrato. A obrigação mantém-se após o fim do contrato.
 
-## 19. Exportação e eliminação de dados
+## 20. Exportação e eliminação de dados
 
 Os dados do clube podem ser exportados a pedido, em formato aberto e legível por máquina, sem custo, durante a vigência do contrato e nos **30 dias** seguintes ao seu fim.
 
 Terminada a relação — por cancelamento, por cessação ou por falta de pagamento, nos termos da secção 9 — e decorrido esse prazo, os dados do clube são eliminados dos sistemas activos dentro do prazo indicado no Acordo de Tratamento de Dados. Cópias de segurança são eliminadas de acordo com o respectivo ciclo de retenção. As cópias de segurança existem para recuperação do serviço e não substituem a exportação pelo clube.
 
-## 20. Garantias e limitação de responsabilidade
+## 21. Garantias e limitação de responsabilidade
 
-A plataforma é fornecida tal como está. Não garantimos que satisfaça todos os requisitos do clube nem que funcione sem erros ou interrupções.
+A plataforma é fornecida tal como está. Não garantimos que satisfaça todos os requisitos do clube nem que funcione sem erros ou interrupções. As respostas e as propostas do Assistente IA são geradas por modelos de linguagem e não garantimos que sejam exactas, completas ou adequadas a cada situação: a secção 14 explica porque é sempre uma pessoa do clube que confirma.
 
 Respondemos pelos danos directos que resultem de incumprimento nosso, nos limites permitidos por lei, até ao valor total das mensalidades pagas pelo clube nos 12 meses anteriores ao facto que deu origem ao dano.
 
-Não respondemos por lucros cessantes, perda de dados que o clube não tenha exportado, danos indirectos, nem por decisões desportivas, administrativas, clínicas ou financeiras tomadas pelo clube com base na informação da plataforma, nem por conteúdos introduzidos pelo clube ou pelas pessoas a quem deu acesso.
+Não respondemos por lucros cessantes, perda de dados que o clube não tenha exportado, danos indirectos, nem por decisões desportivas, administrativas, clínicas ou financeiras tomadas pelo clube com base na informação da plataforma ou nas respostas do Assistente IA, nem por conteúdos introduzidos pelo clube ou pelas pessoas a quem deu acesso, incluindo os que o assistente preparou e uma pessoa do clube confirmou.
 
 Nada nestes termos limita a responsabilidade por dolo ou negligência grosseira, nem a que não possa ser limitada por lei.
 
-## 21. Força maior
+## 22. Força maior
 
 Nenhuma das partes responde pelo incumprimento causado por acontecimentos fora do seu controlo razoável — falhas generalizadas de rede ou de energia, actos de terceiros, catástrofes, decisões de autoridades —, enquanto durarem e na medida em que impeçam o cumprimento.
 
-## 22. Comunicações
+## 23. Comunicações
 
 As comunicações entre as partes fazem-se por escrito, por correio electrónico para os endereços indicados na conta do clube e no site. Uma comunicação enviada para o email do responsável da conta considera-se recebida pelo clube. O clube é responsável por manter esses contactos actualizados.
 
-## 23. Alterações a estes termos
+## 24. Alterações a estes termos
 
 Estes termos podem ser actualizados. Cada versão tem um número e uma data de entrada em vigor, visíveis no topo do documento. Alterações relevantes são comunicadas com pelo menos 30 dias de antecedência, e a aceitação da versão nova é pedida ao responsável do clube na plataforma. Se o clube não aceitar a versão nova, pode cancelar até à data de entrada em vigor sem qualquer custo. As versões anteriores e as respectivas aceitações ficam registadas.
 
-## 24. Disposições gerais
+## 25. Disposições gerais
 
 Este contrato, com o Acordo de Tratamento de Dados e a Política de Utilização Aceitável, constitui o acordo integral entre as partes sobre o serviço e substitui propostas ou acordos anteriores. Em caso de contradição, prevalecem estes termos, depois o Acordo de Tratamento de Dados, depois a Política de Utilização Aceitável.
 
@@ -233,6 +265,6 @@ O clube não pode ceder a sua posição neste contrato sem o nosso acordo escrit
 
 Se alguma cláusula for considerada inválida, as restantes mantêm-se em vigor. A tolerância de um incumprimento não vale como renúncia.
 
-## 25. Lei aplicável e foro
+## 26. Lei aplicável e foro
 
 Aplica-se a lei portuguesa. Para litígios emergentes destes termos são competentes os tribunais portugueses, sem prejuízo das regras imperativas aplicáveis.

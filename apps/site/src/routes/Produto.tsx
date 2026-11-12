@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Monitor, Telemovel } from "@/components/aparelhos";
 import { cx, Seta } from "@/components/marca";
-import { PESSOAS, ROADMAP, SECURITY } from "@/lib/content";
+import { AI_ADDON, ASSISTENTE, euro, PESSOAS, ROADMAP, SECURITY } from "@/lib/content";
 
 /**
  * O clube por dentro.
@@ -53,6 +53,9 @@ export default function Produto() {
                   {p.nome}
                 </a>
               ))}
+              <a href="#assistente" className="rotulo text-texto-3 transition-colors hover:text-texto">
+                Assistente IA
+              </a>
             </nav>
           </div>
         </div>
@@ -114,6 +117,45 @@ export default function Produto() {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* O assistente com IA: o que faz hoje, um ecrã por capacidade. */}
+      <section id="assistente" className="palco-cal faixa scroll-mt-(--topo)">
+        <div className="wrap">
+          <div className="flex items-center gap-3">
+            <h2 className="titulo t2">{ASSISTENTE.rotulo.replace("Assistente com IA para clubes", "Assistente IA")}</h2>
+            <span className="etiqueta etiqueta-viva">Nova Funcionalidade</span>
+          </div>
+          <p className="lede mt-4 max-w-[62ch]">{ASSISTENTE.lede}</p>
+          {ASSISTENTE.capacidades.map((c, i) => (
+            <article
+              key={c.titulo}
+              className="fio-cima grid items-center gap-10 py-[clamp(40px,6vw,88px)] lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"
+            >
+              <div className={i % 2 ? "lg:order-2" : undefined}>
+                <h3 className="titulo t3 max-w-[18ch]">
+                  {c.titulo}
+                  <span className="ponto">.</span>
+                </h3>
+                <p className="corpo mt-4">{c.texto}</p>
+              </div>
+              <div className="montra-um" aria-hidden>
+                <Monitor capturas={[c.captura]} plano={{ captura: c.captura }} />
+              </div>
+            </article>
+          ))}
+          <ul className="fio-cima grid gap-x-8 pt-6 sm:grid-cols-2 lg:grid-cols-4">
+            {ASSISTENTE.regras.map((r) => (
+              <li key={r} className="py-2 text-[0.95rem] leading-snug text-texto-2">
+                {r}
+              </li>
+            ))}
+          </ul>
+          <Link to="/assistente-ia-clubes" className="ligacao-seta mt-8">
+            O assistente ao pormenor, com os preços
+            <Seta />
+          </Link>
         </div>
       </section>
 

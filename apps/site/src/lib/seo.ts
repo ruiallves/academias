@@ -33,7 +33,7 @@ export const PAGINAS: Pagina[] = [
     path: "/",
     title: "Software de gestão de clubes desportivos | Academias",
     description:
-      "Software de gestão para clubes desportivos: atletas, treinos, jogos, mensalidades por MB WAY e sócios. Consola para o clube e app para as famílias. 30 dias grátis.",
+      "Software de gestão para clubes desportivos: atletas, treinos, jogos, mensalidades por MB WAY e sócios, com assistente IA. Consola para o clube e app para as famílias. 30 dias grátis.",
     prioridade: 1,
   },
   {
@@ -46,7 +46,7 @@ export const PAGINAS: Pagina[] = [
   {
     path: "/planos",
     title: "Preços do software de gestão de clubes | Academias",
-    description: `Planos desde ${desde} por mês para gerir o clube: Consola, Connect com app e pagamentos, e Connect Pro com o site do clube. 30 dias de experiência, sem cartão.`,
+    description: `Planos desde ${desde} por mês para gerir o clube: Consola, Connect com app e pagamentos, e Connect Pro com o site do clube. Assistente IA como extra. 30 dias de experiência, sem cartão.`,
     prioridade: 0.9,
   },
   {
@@ -104,7 +104,7 @@ const software = {
   operatingSystem: "Web, Android, iOS",
   inLanguage: "pt-PT",
   description:
-    "Software de gestão de clubes e academias desportivas: atletas, equipas, treinos, convocatórias, jogos, mensalidades, sócios e quotas, com app para as famílias, os atletas e os sócios.",
+    "Software de gestão de clubes e academias desportivas: atletas, equipas, treinos, convocatórias, jogos, mensalidades, sócios e quotas, com app para as famílias, os atletas e os sócios, e um assistente com IA que te auxilia na gestão do teu dia a dia.",
   publisher: { "@id": `${SITE_URL}/#organizacao` },
   offers: {
     "@type": "AggregateOffer",
