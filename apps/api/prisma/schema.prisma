@@ -306,6 +306,8 @@ model Academy {
   familyInvites       FamilyInvite[]
   /// De que contacto nasceu este cliente. Ver `Contact`, do lado da plataforma.
   contacts            Contact[]
+  /// A carteira do comercial que trouxe o clube, se é pago à comissão.
+  salesPortfolio      SalesPortfolioClub?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4774,6 +4776,8 @@ model PlatformAdmin {
   compensation    SalesCompensation?
   payouts         SalesPayout[]      @relation("PayoutAdmin")
   payoutsApproved SalesPayout[]      @relation("PayoutApprovedBy")
+  /// Os clubes que trouxe, quando é pago à comissão.
+  portfolio       SalesPortfolioClub[] @relation("PortfolioAdmin")
 }
 
 /// Convite para entrar na plataforma como administrador.
@@ -5844,11 +5848,16 @@ model SalesShift {
   @@index([adminId, startedAt])
 }
 
-/// Quanto se paga a um comercial: à hora, e uma comissão por cada bloco de
-/// reuniões marcadas. Uma linha por pessoa; o dono ajusta.
+/// Quanto se paga a um comercial. Uma linha por pessoa; o dono ajusta.
+///
+/// Dois modelos, um de cada vez (`payModel`): à hora pelos turnos mais uma
+/// comissão por cada bloco de reuniões marcadas, ou só comissão sobre o que
+/// pagam os clubes da carteira (`SalesPortfolioClub`), sem horário.
 model SalesCompensation {
   adminId String        @id
   admin   PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  payModel SalesPayModel @default(HOURLY)
 
   hourlyCents           Int @default(700)
   /// Quantas reuniões marcadas fazem uma comissão. Conta acumulada: o que sobra
@@ -5856,7 +5865,55 @@ model SalesCompensation {
   meetingsPerCommission Int @default(10)
   commissionCents       Int @default(0)
 
+  /// Só comissão: a percentagem do que o clube paga, sem IVA, que fica para o
+  /// comercial. É o valor com que nasce cada clube novo da carteira; cada clube
+  /// guarda o seu, e mudar este não mexe nos que já lá estão.
+  clubPercent Int  @default(20)
+  /// Durante quantos meses se paga por cada clube, contados do início. Nulo =
+  /// enquanto o clube pagar. Também só serve de valor inicial.
+  clubMonths  Int?
+
   updatedAt DateTime @updatedAt
+}
+
+enum SalesPayModel {
+  /// À hora, pelos turnos, mais a comissão por blocos de reuniões.
+  HOURLY
+  /// Só comissão: uma parte do que paga cada clube da carteira. Sem turnos.
+  COMMISSION
+}
+
+/// Um clube na carteira de um comercial pago à comissão.
+///
+/// O comercial recebe `percent` % de cada mensalidade que o clube paga (sem
+/// IVA), a partir de `startsOn`, durante `months` meses (nulo = enquanto pagar)
+/// e até `endedOn`, se o dono o tirar da carteira. A comissão nasce do
+/// pagamento: o que conta é a receita do clube nas Contas
+/// (`PlatformTransaction` com o `academyId`), pelo dia em que entrou, e um ano
+/// pago de uma vez dá a comissão do ano nesse mês.
+///
+/// Um clube só pode estar numa carteira (`academyId` único).
+model SalesPortfolioClub {
+  id String @id @default(cuid())
+
+  adminId String
+  admin   PlatformAdmin @relation("PortfolioAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+
+  academyId String  @unique
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  percent  Int
+  months   Int?
+  startsOn DateTime  @db.Date
+  /// Tirado da carteira: os pagamentos a partir deste dia já não dão comissão.
+  endedOn  DateTime? @db.Date
+  note     String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([adminId])
 }
 
 /// Um mês aprovado: os números ficam como estavam no dia da aprovação, e o total
@@ -5873,6 +5930,8 @@ model SalesPayout {
   commissions     Int
   hoursCents      Int
   commissionCents Int
+  /// Comissões da carteira (só no modelo à comissão).
+  portfolioCents  Int @default(0)
   totalCents      Int
 
   approvedAt   DateTime       @default(now())

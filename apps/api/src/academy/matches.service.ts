@@ -54,13 +54,27 @@ export class MatchesService {
   async listIn(db: ScopedClient, ctx: RequestContext, from?: Date, to?: Date) {
     if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
     const scope = calendarScopeFilter(ctx);
+    /*
+     * O jogo para onde o filho foi **convidado** de outro escalão.
+     *
+     * O âmbito de uma família são as equipas dos filhos, e um Sub-11 chamado a
+     * reforçar os Sub-13 não é dos Sub-13: o jogo ficava de fora da lista, a
+     * família recebia o aviso "estás convocado" e a app abria "este evento já
+     * não existe" (Santa Maria FC, 14/11/2026, três famílias). Um jogo em que um
+     * dos meus atletas está convocado é meu, seja de que equipa for.
+     */
+    const meus = athleteScopeFilter(ctx);
+    const convidado = meus ? { callUps: { some: { athleteId: meus } } } : null;
 
     const start = from ?? new Date(Date.now() - 30 * 86_400_000);
     const end = to ?? new Date(Date.now() + 90 * 86_400_000);
 
 
       const matches = await db.match.findMany({
-        where: { startsAt: { gte: start, lte: end }, ...(scope ? { teamId: scope } : {}) },
+        where: {
+          startsAt: { gte: start, lte: end },
+          ...(scope ? (convidado ? { OR: [{ teamId: scope }, convidado] } : { teamId: scope }) : {}),
+        },
         orderBy: { startsAt: "asc" },
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
@@ -152,7 +166,8 @@ export class MatchesService {
          * daquele escalão, com nomes de atletas lá dentro, e ficam de fora
          * quando o jogo não é meu. Ver `calendarScopeFilter` e `inTeamScope`.
          */
-        const meu = inTeamScope(ctx, m.teamId);
+        // Ou de uma equipa minha, ou com um atleta meu convocado como convidado.
+        const meu = inTeamScope(ctx, m.teamId) || (meus !== undefined && m.callUps.some((c) => meus.in.includes(c.athleteId)));
 
         return {
           id: m.id,

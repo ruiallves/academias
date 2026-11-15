@@ -110,6 +110,7 @@ export default function Hoje({ me }: { me: Me }) {
 
   const h = hoje.data;
   const comercial = me.role === "COMERCIAL";
+  const aComissao = h?.payModel === "COMMISSION";
 
   function registado(c: Contact, resultado: CallOutcome) {
     setLista((l) => (l ?? []).map((x) => (x.id === c.id ? c : x)));
@@ -131,7 +132,7 @@ export default function Hoje({ me }: { me: Me }) {
           totalFila === 0 ? "fila vazia" : `${fila.seguimentos.length} seguimentos e ${fila.novos.length} clubes novos na fila`
         }`}
       >
-        {comercial && h && <Turno turno={h.turno} onChange={hoje.reload} />}
+        {comercial && h && !aComissao && <Turno turno={h.turno} onChange={hoje.reload} />}
       </PageHeader>
 
       {h && (
@@ -145,7 +146,11 @@ export default function Hoje({ me }: { me: Me }) {
                 note: `${h.hoje.atendidas} de ${h.hoje.chamadas} hoje`,
               },
               { label: "Reuniões marcadas", value: String(h.hoje.reunioes), note: `${h.semana.reunioes} esta semana` },
-              ...(comercial ? [{ label: "Turno hoje", value: horas(h.hoje.minutos), note: `${horas(h.mes.minutos)} este mês` }] : []),
+              ...(comercial && aComissao && h.carteira
+                ? [{ label: "Carteira", value: euros(h.carteira.porMesCents), note: `por mês, ${h.carteira.aPagar} ${h.carteira.aPagar === 1 ? "clube a pagar" : "clubes a pagar"}` }]
+                : comercial
+                  ? [{ label: "Turno hoje", value: horas(h.hoje.minutos), note: `${horas(h.mes.minutos)} este mês` }]
+                  : []),
             ]}
           />
         </div>
@@ -235,7 +240,8 @@ export default function Hoje({ me }: { me: Me }) {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          {h && (comercial || h.mes.configured) && <CartaoComissao h={h} />}
+          {h && aComissao && h.carteira && <CartaoCarteira c={h.carteira} />}
+          {h && !aComissao && (comercial || h.mes.configured) && <CartaoComissao h={h} />}
 
           <Panel>
             <header className="flex items-center justify-between border-b border-line px-5 py-3.5">
@@ -476,6 +482,41 @@ function Turno({ turno, onChange }: { turno: ComercialHoje["turno"]; onChange: (
         Terminar
       </button>
     </div>
+  );
+}
+
+/** À comissão: o que a carteira rende por mês e o que já entrou este mês. */
+function CartaoCarteira({ c }: { c: NonNullable<ComercialHoje["carteira"]> }) {
+  return (
+    <Panel>
+      <header className="border-b border-line px-5 py-3.5">
+        <h2 className="text-panel text-ink">Carteira</h2>
+      </header>
+      <div className="px-5 py-5">
+        <p className="text-meta text-ink-3">A receber por mês</p>
+        <p className="mt-1 text-[32px] leading-none font-semibold tracking-[-0.02em] text-ink tabular">{euros(c.porMesCents)}</p>
+        <p className="mt-2 text-meta leading-relaxed text-ink-2">
+          {c.clubes === 0
+            ? "Ainda sem clubes. Cada reunião que fechar entra aqui."
+            : `${c.aPagar} ${c.aPagar === 1 ? "clube a pagar" : "clubes a pagar"}${c.emExperiencia ? ` e ${c.emExperiencia} em experiência` : ""}.`}
+        </p>
+      </div>
+      <dl className="grid grid-cols-2 border-t border-line text-center">
+        <div className="border-r border-line px-2 py-3">
+          <dt className="text-[11px] text-ink-4">Este mês</dt>
+          <dd className="mt-0.5 text-body font-semibold text-ink tabular">{euros(c.esteMesCents)}</dd>
+        </div>
+        <div className="px-2 py-3">
+          <dt className="text-[11px] text-ink-4">Ganho no total</dt>
+          <dd className="mt-0.5 text-body font-semibold text-ink tabular">{euros(c.ganhoCents)}</dd>
+        </div>
+      </dl>
+      <div className="border-t border-line px-5 py-3">
+        <Link to="/comercial/carteira" className="text-meta text-ink-3 hover:text-ink">
+          Ver a carteira
+        </Link>
+      </div>
+    </Panel>
   );
 }
 

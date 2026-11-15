@@ -1,4 +1,4 @@
-import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useState } from "react";
+import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { CalendarPlus, Check, Mail, MessageCircle, Phone, PhoneCall, Trash2, X } from "lucide-react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 import { googleEventUrl, telHref, whatsappHref } from "@/lib/google";
@@ -16,7 +16,7 @@ import {
   type ContactStatus,
   type Me,
 } from "@/lib/types";
-import { cx } from "./primitives";
+import { cx, ListaDeEscolha } from "./primitives";
 import { RegistarChamada } from "./comercial/RegistarChamada";
 import { diaLegivel, hhmm, livreParaMim } from "@/lib/comercial";
 
@@ -111,6 +111,11 @@ export function ContactDialog({ contact, todos, grupo, me, onClose, onSaved }: P
             }}
             onDeleted={onSaved}
             onClose={onClose}
+            onAbrir={(c) => {
+              // O clube já existe: a janela passa a ser a ficha dele, com o histórico.
+              setFull(c);
+              apiGet<Contact>(`/contactos/${c.id}`).then(setFull).catch(() => {});
+            }}
           />
           {full?.meetings && full.meetings.length > 0 && <Meetings meetings={full.meetings} />}
           {full?.touches && full.touches.length > 0 && <History touches={full.touches} />}
@@ -181,6 +186,7 @@ function Ficha({
   onSaved,
   onDeleted,
   onClose,
+  onAbrir,
 }: {
   contact: Contact | null;
   todos: Contact[];
@@ -189,6 +195,8 @@ function Ficha({
   onSaved: (c: Contact) => void;
   onDeleted: () => void;
   onClose: () => void;
+  /** Abrir a ficha de um clube que já existe, escolhido na lista de parecidos. */
+  onAbrir: (c: Contact) => void;
 }) {
   const base = contact ? { sport: contact.sport, association: contact.association ?? "" } : inicial(grupo);
 
@@ -230,6 +238,24 @@ function Ficha({
       .catch(() => {});
   }, [gere, me.id]);
   const comAF = MODALIDADES_COM_AF.includes(sport);
+
+  /**
+   * Os clubes da lista com um nome parecido, enquanto se escreve um clube novo:
+   * todas as palavras escritas têm de aparecer no nome (sem acentos nem
+   * maiúsculas), os que começam pelo que se escreveu primeiro.
+   */
+  const [verParecidos, setVerParecidos] = useState(false);
+  const parecidos = useMemo(() => {
+    const q = chave(name);
+    if (contact || q.length < 2) return [];
+    const palavras = q.split(" ");
+    return todos
+      .map((c) => ({ c, k: chave(c.name) }))
+      .filter(({ k }) => palavras.every((p) => k.includes(p)))
+      .sort((a, b) => Number(b.k.startsWith(q)) - Number(a.k.startsWith(q)) || a.c.name.localeCompare(b.c.name, "pt"))
+      .slice(0, 8)
+      .map(({ c }) => c);
+  }, [contact, name, todos]);
 
   /** O mesmo clube já na lista, pelo nome sem acentos nem maiúsculas. */
   const repetido = name.trim().length >= 3
@@ -342,9 +368,62 @@ function Ficha({
 
       <section className="space-y-3 border-b border-line px-5 py-4">
         <div className="text-meta font-medium text-ink">Clube</div>
-        <Field label="Nome do clube">
-          <input className={INPUT} value={name} onChange={(e) => setName(e.target.value)} placeholder="FC Ferreirense" autoFocus={!contact} />
-        </Field>
+        {/* A lista fica fora do `Field` (que é um <label>): um toque lá dentro ia parar ao campo. */}
+        <div className="relative">
+          <Field label="Nome do clube">
+            <input
+              className={INPUT}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setVerParecidos(true);
+              }}
+              onFocus={() => setVerParecidos(true)}
+              onBlur={() => setVerParecidos(false)}
+              onKeyDown={(e) => {
+                // Esc fecha primeiro a lista, e só depois a ficha.
+                if (e.key !== "Escape" || !verParecidos || parecidos.length === 0) return;
+                e.stopPropagation();
+                setVerParecidos(false);
+              }}
+              placeholder="FC Ferreirense"
+              autoFocus={!contact}
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={verParecidos && parecidos.length > 0}
+              aria-controls="clubes-parecidos"
+            />
+          </Field>
+          {verParecidos && parecidos.length > 0 && (
+            <div className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-[var(--radius-control)] border border-line bg-surface shadow-[var(--shadow-pop)]">
+              <p className="border-b border-line px-3 py-1.5 text-[11px] text-ink-4">
+                {parecidos.length === 1 ? "Já existe um clube com este nome" : "Já existem clubes com este nome"}. Toca para abrir a ficha.
+              </p>
+              <ListaDeEscolha id="clubes-parecidos" role="listbox" className="max-h-[260px] overflow-y-auto">
+                {parecidos.map((c) => (
+                  <li key={c.id} role="option" aria-selected={false}>
+                    <button
+                      type="button"
+                      onClick={() => onAbrir(c)}
+                      className="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors duration-150 hover:bg-canvas"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-body font-medium text-ink">{c.name}</span>
+                        <span className="block truncate text-[11px] text-ink-4">
+                          {[c.locality, c.association ?? "sem associação", c.sport !== "Futebol" ? c.sport : null].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right text-[11px] leading-tight">
+                        <span className="block text-ink-2">{CONTACT_STATUS_LABEL[c.status]}</span>
+                        <span className="block text-ink-4">{c.owner ? (c.owner.id === me.id ? "contigo" : `com ${c.owner.name.split(" ")[0]}`) : "livre"}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ListaDeEscolha>
+            </div>
+          )}
+        </div>
         {repetido && (
           <p className="rounded-[var(--radius-control)] bg-[#fdf3e1] px-3 py-2 text-meta text-[#8a5a12]">
             Já existe "{repetido.name}" ({repetido.association ?? "sem associação"}).

@@ -77,8 +77,9 @@ export default function Evento() {
       <header className="px-1" style={ESTILO_DO_CABECALHO}>
         <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
           {jogo ? "Jogo" : "Treino"}
-          {/* Com duas equipas, de qual é. */}
-          {jogo && child.teamIds.length > 1 && jogo.team ? ` · ${jogo.team}` : ""}
+          {/* Com duas equipas, de qual é; e quando foi chamado de outro escalão, de qual e que vai como convidado. */}
+          {jogo && (child.teamIds.length > 1 || jogo.guest) && jogo.team ? ` · ${jogo.team}` : ""}
+          {jogo?.guest ? " · convidado" : ""}
         </p>
         <h1 className="mt-0.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">
           {jogo ? `${jogo.isHome ? "vs" : "@"} ${jogo.opponent}` : treino?.team || child.team}

@@ -15,6 +15,7 @@ import Hoje from "@/routes/comercial/Hoje";
 import Clubes from "@/routes/comercial/Clubes";
 import Reunioes from "@/routes/comercial/Reunioes";
 import Mes from "@/routes/comercial/Mes";
+import Carteira from "@/routes/comercial/Carteira";
 import type { Me } from "@/lib/types";
 
 export default function App({ me }: { me: Me }) {
@@ -23,6 +24,7 @@ export default function App({ me }: { me: Me }) {
       <Route index element={<Hoje me={me} />} />
       <Route path="clubes" element={<Clubes me={me} />} />
       <Route path="reunioes" element={<Reunioes me={me} />} />
+      <Route path="carteira" element={<Carteira me={me} />} />
       <Route path="mes" element={<Mes me={me} />} />
     </Route>
   );

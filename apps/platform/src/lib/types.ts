@@ -2,7 +2,15 @@
 
 export type PlatformRole = "OWNER" | "ADMIN" | "SUPPORT" | "COMERCIAL";
 
-export type Me = { id: string; name: string; email: string; role: PlatformRole; mfaEnabled: boolean };
+export type Me = {
+  id: string;
+  name: string;
+  email: string;
+  role: PlatformRole;
+  mfaEnabled: boolean;
+  /** Só para o papel Comercial: à comissão, o menu tem a Carteira e não há turnos. */
+  salesPayModel?: "HOURLY" | "COMMISSION" | null;
+};
 
 /* -------------------------------------------------------------------------- */
 /* Administradores                                                             */
@@ -436,9 +444,75 @@ export type ComercialHoje = {
     contact: { id: string; name: string; locality: string | null; association: string | null };
   }[];
   mes: { month: string; minutos: number; reunioes: number; comissao: CommissionProgress; totalCents: number; configured: boolean };
+  payModel: SalesPayModel;
+  carteira: CarteiraTotais | null;
 };
 
-export type Compensation = { hourlyCents: number; meetingsPerCommission: number; commissionCents: number };
+/** À hora (turnos + comissão por blocos de reuniões) ou só comissão sobre os clubes da carteira. */
+export type SalesPayModel = "HOURLY" | "COMMISSION";
+
+export type Compensation = {
+  payModel: SalesPayModel;
+  hourlyCents: number;
+  meetingsPerCommission: number;
+  commissionCents: number;
+  clubPercent: number;
+  /** Nulo = enquanto o clube pagar. */
+  clubMonths: number | null;
+};
+
+export type CarteiraTotais = {
+  clubes: number;
+  aPagar: number;
+  emExperiencia: number;
+  porMesCents: number;
+  esteMesCents: number;
+  ganhoCents: number;
+};
+
+export type EstadoNaCarteira = "ativo" | "em-atraso" | "experiencia" | "suspenso" | "cancelado" | "terminou" | "retirado";
+
+export type CarteiraClube = {
+  id: string;
+  academyId: string;
+  name: string;
+  plan: string | null;
+  trialEndsAt: string | null;
+  mensalidadeCents: number;
+  percent: number;
+  months: number | null;
+  startsOn: string;
+  endsOn: string | null;
+  endedOn: string | null;
+  note: string | null;
+  estado: EstadoNaCarteira;
+  porMesCents: number;
+  esteMesCents: number;
+  ganhoCents: number;
+  ultimoPagamento: string | null;
+};
+
+export type Carteira = {
+  admin: { id: string; name: string };
+  payModel: SalesPayModel;
+  defaults: { percent: number; months: number | null };
+  totals: CarteiraTotais;
+  clubs: CarteiraClube[];
+  months: { month: string; label: string; cents: number }[];
+  /** Só para quem gere: clubes que ainda não estão em carteira nenhuma. */
+  livres?: { id: string; name: string; plan: string | null; status: string | null; sugerido: boolean }[];
+};
+
+export type CarteiraLinhaDoMes = {
+  id: string;
+  academyId: string;
+  clube: string;
+  dia: string;
+  description: string;
+  amountCents: number;
+  percent: number;
+  commissionCents: number;
+};
 
 export type SalesShift = {
   id: string;
@@ -465,6 +539,7 @@ export type ComercialMes = {
   commission: CommissionProgress;
   hoursCents: number;
   commissionCents: number;
+  portfolio: { lines: CarteiraLinhaDoMes[]; cents: number };
   totalCents: number;
   payout: { approvedAt: string; approvedBy: string | null; transactionId: string | null } | null;
 };

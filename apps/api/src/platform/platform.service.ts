@@ -206,6 +206,12 @@ export class PlatformService {
     };
   }
 
+  /** Como se paga a um comercial: à hora (o que vale sem condições) ou à comissão. */
+  async salesPayModel(adminId: string) {
+    const c = await this.prisma.salesCompensation.findUnique({ where: { adminId }, select: { payModel: true } });
+    return c?.payModel ?? "HOURLY";
+  }
+
   async academies() {
     const rows = await this.prisma.resiliente(
       () => this.prisma.$queryRaw<AcademyRow[]>`SELECT * FROM app.platform_academies()`,

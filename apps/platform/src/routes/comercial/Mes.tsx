@@ -10,7 +10,7 @@ import { apiDelete, apiPatch, apiPost, apiPut } from "@/lib/http";
 import { useApi } from "@/lib/query";
 import { euros, eurosExact } from "@/lib/format";
 import { dataCurta, hhmm, horas, mesAtual, nomeDoMes, paraInputLocal, somarMes } from "@/lib/comercial";
-import { MEETING_STATUS_LABEL, type ComercialMes, type ComercialPessoa, type Me, type SalesMeeting, type SalesShift } from "@/lib/types";
+import { MEETING_STATUS_LABEL, type ComercialMes, type ComercialPessoa, type Me, type SalesMeeting, type SalesPayModel, type SalesShift } from "@/lib/types";
 
 /**
  * O mês de um comercial: quanto trabalhou, o que marcou e quanto se lhe paga.
@@ -65,6 +65,8 @@ export default function Mes({ me }: { me: Me }) {
   const aprovado = Boolean(d.payout);
   const futuro = mes > mesAtual();
   const taxa = d.calls ? Math.round((d.answered / d.calls) * 100) : null;
+  const aComissao = d.compensation.payModel === "COMMISSION";
+  const clubesQuePagaram = new Set(d.portfolio.lines.map((l) => l.academyId)).size;
 
   async function aprovar() {
     if (busy) return;
@@ -95,7 +97,7 @@ export default function Mes({ me }: { me: Me }) {
 
   return (
     <>
-      <PageHeader title={gere ? "Mês da equipa" : "O meu mês"} subtitle={gere ? d.admin.name : `As tuas horas, reuniões e o que tens a receber`}>
+      <PageHeader title={gere ? "Mês da equipa" : "O meu mês"} subtitle={gere ? d.admin.name : aComissao ? "As tuas reuniões e o que os teus clubes te renderam" : "As tuas horas, reuniões e o que tens a receber"}>
         {gere && equipa.data && equipa.data.length > 1 && (
           <select
             value={pessoa ?? ""}
@@ -132,6 +134,26 @@ export default function Mes({ me }: { me: Me }) {
         <div className="min-w-0 p-6">
           <p className="text-meta text-ink-3">{aprovado ? "Aprovado para pagar" : mes === mesAtual() ? "A receber até agora" : "A receber"}</p>
           <p className="mt-1 text-[40px] leading-none font-semibold tracking-[-0.03em] text-ink tabular">{eurosExact(d.totalCents)}</p>
+          {aComissao ? (
+            d.portfolio.lines.length === 0 ? (
+              <p className="mt-5 max-w-[420px] text-body text-ink-3">Nenhum clube da carteira pagou neste mês.</p>
+            ) : (
+              <dl className="mt-5 max-w-[480px] space-y-2 text-body">
+                {d.portfolio.lines.map((l) => (
+                  <div key={l.id} className="flex items-baseline justify-between gap-4">
+                    <dt className="min-w-0 text-ink-2">
+                      <span className="text-ink">{l.clube}</span>
+                      <span className="text-ink-4">
+                        {" "}
+                        · pagou {eurosExact(l.amountCents)} a {dataCurta(`${l.dia}T12:00:00`)} · {l.percent} %
+                      </span>
+                    </dt>
+                    <dd className="shrink-0 text-ink tabular">{eurosExact(l.commissionCents)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )
+          ) : (
           <dl className="mt-5 max-w-[420px] space-y-2 text-body">
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-ink-2">
@@ -146,27 +168,42 @@ export default function Mes({ me }: { me: Me }) {
               <dd className="text-ink tabular">{eurosExact(d.commissionCents)}</dd>
             </div>
           </dl>
+          )}
           {!d.configured && gere && (
             <p className="mt-4 text-meta text-warn">As condições ainda não foram definidas: está a contar 7 €/h, comissão a 0 € a cada 10 reuniões.</p>
           )}
         </div>
-        <div className="flex items-center gap-5 border-t border-line bg-canvas/60 p-6 md:border-t-0 md:border-l">
-          <AnelComissao feito={d.commission.progresso} total={d.commission.porComissao} />
-          <div className="max-w-[170px] text-meta leading-relaxed text-ink-2">
-            Uma comissão a cada <span className="font-medium text-ink">{d.commission.porComissao}</span> reuniões marcadas.
-            <span className="mt-1 block text-ink-3">
-              {d.commission.faltam === 1 ? "Falta 1" : `Faltam ${d.commission.faltam}`} para a próxima. O que sobra passa para o mês seguinte.
-            </span>
+        {aComissao ? (
+          <div className="flex items-center border-t border-line bg-canvas/60 p-6 md:border-t-0 md:border-l">
+            <div className="max-w-[220px] text-meta leading-relaxed text-ink-2">
+              Recebe <span className="font-medium text-ink">{d.compensation.clubPercent} %</span> do que cada clube da carteira paga, sem IVA,{" "}
+              {d.compensation.clubMonths ? `durante ${d.compensation.clubMonths} meses` : "enquanto o clube pagar"}.
+              <Link to="/comercial/carteira" className="mt-2 block font-medium text-ink underline underline-offset-2">
+                Ver a carteira
+              </Link>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-5 border-t border-line bg-canvas/60 p-6 md:border-t-0 md:border-l">
+            <AnelComissao feito={d.commission.progresso} total={d.commission.porComissao} />
+            <div className="max-w-[170px] text-meta leading-relaxed text-ink-2">
+              Uma comissão a cada <span className="font-medium text-ink">{d.commission.porComissao}</span> reuniões marcadas.
+              <span className="mt-1 block text-ink-3">
+                {d.commission.faltam === 1 ? "Falta 1" : `Faltam ${d.commission.faltam}`} para a próxima. O que sobra passa para o mês seguinte.
+              </span>
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="mb-5">
         <Numeros
           items={[
-            { label: "Horas", value: horas(d.minutes), note: `${d.shifts.length} ${d.shifts.length === 1 ? "turno" : "turnos"}` },
+            aComissao
+              ? { label: "Clubes que pagaram", value: String(clubesQuePagaram), note: `${d.portfolio.lines.length} ${d.portfolio.lines.length === 1 ? "pagamento" : "pagamentos"}` }
+              : { label: "Horas", value: horas(d.minutes), note: `${d.shifts.length} ${d.shifts.length === 1 ? "turno" : "turnos"}` },
             { label: "Chamadas", value: String(d.calls), note: taxa !== null ? `${taxa}% atenderam` : "nenhuma ainda" },
-            { label: "Reuniões marcadas", value: String(d.meetings.length), note: `${d.meetingsCounted} contam para a comissão` },
+            { label: "Reuniões marcadas", value: String(d.meetings.length), note: aComissao ? "no mês" : `${d.meetingsCounted} contam para a comissão` },
             {
               label: "Feitas",
               value: String(d.meetings.filter((m) => m.status === "REALIZADA").length),
@@ -176,7 +213,8 @@ export default function Mes({ me }: { me: Me }) {
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className={cx("grid gap-5", (!aComissao || d.shifts.length > 0) && "xl:grid-cols-2")}>
+        {(!aComissao || d.shifts.length > 0) && (
         <Panel>
           <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
             <h2 className="text-panel text-ink">Turnos</h2>
@@ -210,6 +248,7 @@ export default function Mes({ me }: { me: Me }) {
             </ul>
           )}
         </Panel>
+        )}
 
         <Panel>
           <header className="border-b border-line px-5 py-3.5">
@@ -303,23 +342,39 @@ function CondicoesDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [modelo, setModelo] = useState<SalesPayModel>(atual.payModel);
   const [hora, setHora] = useState(centimosParaTexto(atual.hourlyCents));
   const [x, setX] = useState(String(atual.meetingsPerCommission));
   const [comissao, setComissao] = useState(centimosParaTexto(atual.commissionCents));
+  const [percent, setPercent] = useState(String(atual.clubPercent));
+  const [meses, setMeses] = useState(atual.clubMonths === null ? "" : String(atual.clubMonths));
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const h = textoParaCentimos(hora);
   const c = textoParaCentimos(comissao);
   const n = Number(x);
-  const valido = h !== null && c !== null && Number.isInteger(n) && n >= 1 && n <= 100;
+  const pct = Number(percent);
+  const m = meses ? Number(meses) : null;
+  const validoHora = h !== null && c !== null && Number.isInteger(n) && n >= 1 && n <= 100;
+  const validoComissao = Number.isInteger(pct) && pct >= 1 && pct <= 100 && (m === null || (Number.isInteger(m) && m >= 1 && m <= 240));
+  const valido = modelo === "HOURLY" ? validoHora : validoComissao;
+  const nome = pessoa.name.split(" ")[0];
 
   async function guardar() {
     if (!valido || busy) return;
     setBusy(true);
     setErro(null);
     try {
-      await apiPut(`/comercial/equipa/${pessoa.id}/condicoes`, { hourlyCents: h, meetingsPerCommission: n, commissionCents: c });
+      // Os valores do outro modelo vão como estavam, para não se perderem ao trocar.
+      await apiPut(`/comercial/equipa/${pessoa.id}/condicoes`, {
+        payModel: modelo,
+        hourlyCents: h ?? atual.hourlyCents,
+        meetingsPerCommission: Number.isInteger(n) && n >= 1 && n <= 100 ? n : atual.meetingsPerCommission,
+        commissionCents: c ?? atual.commissionCents,
+        clubPercent: validoComissao ? pct : atual.clubPercent,
+        clubMonths: validoComissao ? m : atual.clubMonths,
+      });
       onSaved();
       onClose();
     } catch (err) {
@@ -332,22 +387,77 @@ function CondicoesDialog({
   return (
     <Dialog title="Condições" subtitle={pessoa.name} onClose={onClose} width={440}>
       <div className="space-y-4 px-5 py-5">
-        <Field label="Valor por hora" hint="€">
-          <input className={INPUT} inputMode="decimal" value={hora} onChange={(e) => setHora(e.target.value)} />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Reuniões por comissão">
-            <input className={INPUT} inputMode="numeric" value={x} onChange={(e) => setX(e.target.value.replace(/\D/g, "").slice(0, 3))} />
-          </Field>
-          <Field label="Valor da comissão" hint="€">
-            <input className={INPUT} inputMode="decimal" value={comissao} onChange={(e) => setComissao(e.target.value)} />
-          </Field>
+        <div role="group" aria-label="Como recebe">
+          <p className="mb-1.5 text-meta font-medium text-ink-2">Como recebe</p>
+          <div className="grid grid-cols-2 gap-1 rounded-[var(--radius-control)] border border-line bg-canvas p-1">
+            {(
+              [
+                ["HOURLY", "À hora"],
+                ["COMMISSION", "Só comissão"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setModelo(id)}
+                aria-pressed={modelo === id}
+                className={cx(
+                  "h-8 cursor-pointer rounded-[calc(var(--radius-control)-2px)] text-body font-medium transition-colors duration-150",
+                  modelo === id ? "bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-ink-3 hover:text-ink",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <p className="text-meta leading-relaxed text-ink-3">
-          {valido
-            ? `A cada ${n} reuniões marcadas, ${pessoa.name.split(" ")[0]} ganha ${eurosExact(c!)}. A conta é acumulada: o que sobra de um mês passa para o seguinte. Uma reunião cancelada deixa de contar, e podes tirar ou pôr qualquer uma à mão.`
-            : "Escreve os valores em euros (ex.: 7 ou 7,50) e um número de reuniões entre 1 e 100."}
-        </p>
+
+        {modelo === "HOURLY" ? (
+          <>
+            <Field label="Valor por hora" hint="€">
+              <input className={INPUT} inputMode="decimal" value={hora} onChange={(e) => setHora(e.target.value)} />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Reuniões por comissão">
+                <input className={INPUT} inputMode="numeric" value={x} onChange={(e) => setX(e.target.value.replace(/\D/g, "").slice(0, 3))} />
+              </Field>
+              <Field label="Valor da comissão" hint="€">
+                <input className={INPUT} inputMode="decimal" value={comissao} onChange={(e) => setComissao(e.target.value)} />
+              </Field>
+            </div>
+            <p className="text-meta leading-relaxed text-ink-3">
+              {validoHora
+                ? `${nome} marca turnos no painel e recebe as horas. A cada ${n} reuniões marcadas ganha ${eurosExact(c!)}. A conta é acumulada: o que sobra de um mês passa para o seguinte. Uma reunião cancelada deixa de contar, e podes tirar ou pôr qualquer uma à mão.`
+                : "Escreve os valores em euros (ex.: 7 ou 7,50) e um número de reuniões entre 1 e 100."}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Comissão por clube" hint="% sem IVA">
+                <input className={INPUT} inputMode="numeric" value={percent} onChange={(e) => setPercent(e.target.value.replace(/\D/g, "").slice(0, 3))} />
+              </Field>
+              <Field label="Durante">
+                <select className={INPUT} value={meses} onChange={(e) => setMeses(e.target.value)}>
+                  <option value="">Enquanto pagar</option>
+                  {[...new Set([6, 12, 18, 24, 36, 48, 60, ...(atual.clubMonths ? [atual.clubMonths] : [])])]
+                    .sort((a, b) => a - b)
+                    .map((v) => (
+                      <option key={v} value={v}>
+                        {v} meses
+                      </option>
+                    ))}
+                </select>
+              </Field>
+            </div>
+            <p className="text-meta leading-relaxed text-ink-3">
+              {validoComissao
+                ? `${nome} não marca turnos. Recebe ${pct} % de cada mensalidade que os clubes da carteira pagam, sem IVA, ${m ? `durante os primeiros ${m} meses de cada clube` : "enquanto o clube pagar"}. Os clubes juntam-se na Carteira, e cada um pode ter uma percentagem e um prazo diferentes.`
+                : "Escreve uma percentagem entre 1 e 100."}
+            </p>
+            <p className="text-[11px] text-ink-4">A percentagem e o prazo daqui são os valores com que entram os clubes novos. Os que já estão na carteira guardam os seus.</p>
+          </>
+        )}
         <p className="text-[11px] text-ink-4">Mudar as condições muda as contas dos meses por aprovar. Os meses aprovados ficam como estão.</p>
         {erro && <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{erro}</p>}
         <div className="flex justify-end gap-2">

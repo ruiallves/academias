@@ -1,6 +1,7 @@
 import type { Tool } from "openai/resources/responses/responses";
 import type { PrismaService, ScopedClient } from "../prisma/prisma.service";
 import { can, teamScopeFilter, teamScopeForRoster, type RequestContext } from "../common/permissions";
+import { equipasDaEpocaAtual } from "../common/seasons";
 import { formatarNoFuso, instanteNoFuso, partesNoFuso } from "../common/fuso";
 import { normalizar, resolverNome, resolverNomes, rotuloDe, type Pessoa } from "./nomes";
 import { ACOES, aplicaSe, descricaoDasAcoes, lerDiasDaSemana, lerValor, podeFazer, RECUSADO, respondido, SECCOES_DO_SITE, somarMinutos, type Acao, type Campo, type Condicao, type TipoDeCampo } from "./acoes";
@@ -454,7 +455,7 @@ export class Executor {
     const scope = teamScopeForRoster(this.ctx);
     return this.prisma.runAs(this.ctx.academyId, async (db) => {
       const teams = await db.team.findMany({
-        where: { season: { isCurrent: true }, ...(scope ? { id: scope } : {}) },
+        where: { ...(await equipasDaEpocaAtual(db)), ...(scope ? { id: scope } : {}) },
         orderBy: [{ sport: { position: "asc" } }, { position: "asc" }, { name: "asc" }],
         select: { id: true, name: true, sport: { select: { name: true } }, _count: { select: { athletes: { where: { leftAt: null } } } } },
       });
@@ -858,7 +859,7 @@ export class Executor {
       const site = precisaDoSite ? await this.dadosDoSite(db) : null;
       const [equipas, catalogo, staff, treinos] = await Promise.all([
         db.team.findMany({
-          where: { season: { isCurrent: true }, ...(scope ? { id: scope } : {}) },
+          where: { ...(await equipasDaEpocaAtual(db)), ...(scope ? { id: scope } : {}) },
           orderBy: [{ sport: { position: "asc" } }, { position: "asc" }, { name: "asc" }],
           select: { id: true, name: true, sportId: true, schedule: true, sport: { select: { name: true } }, competitions: { select: { competition: { select: { label: true, archivedAt: true } } } } },
         }),
@@ -960,7 +961,7 @@ export class Executor {
   private async equipaPorNome(db: ScopedClient, dito: string): Promise<{ ok: true; equipa: { id: string; name: string; sportId: string; schedule: unknown } } | { ok: false; resultado: ResultadoDaFerramenta }> {
     const scope = teamScopeForRoster(this.ctx);
     const equipas = await db.team.findMany({
-      where: { season: { isCurrent: true }, ...(scope ? { id: scope } : {}) },
+      where: { ...(await equipasDaEpocaAtual(db)), ...(scope ? { id: scope } : {}) },
       select: { id: true, name: true, sportId: true, schedule: true, sport: { select: { name: true } } },
     });
     const porId = equipas.find((e) => e.id === dito);
@@ -2013,7 +2014,7 @@ export class Executor {
       // O plantel onde procurar: a equipa dita, a do contexto, ou todas as da pessoa.
       const teamIds = a.teamId ? [a.teamId] : this.contexto.teamId ? [this.contexto.teamId] : null;
       const equipas = await db.team.findMany({
-        where: { season: { isCurrent: true }, ...(teamIds ? { id: { in: teamIds } } : scope ? { id: scope } : {}) },
+        where: { ...(await equipasDaEpocaAtual(db)), ...(teamIds ? { id: { in: teamIds } } : scope ? { id: scope } : {}) },
         select: { id: true, name: true },
       });
       let plantel: (AtletaDoPlantel & { teamName: string })[] = [];

@@ -9,7 +9,13 @@
  * Uso: npm run test:comercial --workspace @academia/api
  */
 import {
+  comissaoDoPagamento,
   comissoes,
+  diaDe,
+  diasDoMes,
+  fimDaComissao,
+  hojeComoData,
+  pagamentoDaComissao,
   efeitoDaChamada,
   inicioDoDiaEDaSemana,
   limitesDoMes,
@@ -111,6 +117,24 @@ c = comissoes(5, 0, 5);
 check("mês sem reuniões não paga comissão", c.novas === 0);
 c = comissoes(0, 7, 0);
 check("X a zero conta como 1 (nunca divide por zero)", c.porComissao === 1 && c.novas === 7);
+
+console.log("\nCarteira (comercial à comissão)");
+const dt = (s: string) => new Date(`${s}T00:00:00Z`);
+check("29,99 € com IVA a 20 % = 4,88 €", comissaoDoPagamento(2999, 23, 20) === 488, comissaoDoPagamento(2999, 23, 20));
+check("ano pago de uma vez (323,89 €) dá a comissão do ano", comissaoDoPagamento(32389, 23, 20) === 5267, comissaoDoPagamento(32389, 23, 20));
+check("pagamento sem IVA não desconta nada", comissaoDoPagamento(1000, 0, 20) === 200);
+check("12 meses a partir de 15/11/2026 acabam a 15/11/2027", diaDe(fimDaComissao(dt("2026-11-15"), 12)!) === "2027-11-15");
+check("31/01 + 1 mês encolhe para 28/02", diaDe(fimDaComissao(dt("2027-01-31"), 1)!) === "2027-02-28");
+check("sem prazo não tem fim", fimDaComissao(dt("2026-11-15"), null) === null);
+const cart = { startsOn: dt("2026-11-15"), months: 12, endedOn: null };
+check("pagamento antes do início não conta", !pagamentoDaComissao(dt("2026-11-14"), cart));
+check("pagamento no dia do início conta", pagamentoDaComissao(dt("2026-11-15"), cart));
+check("último dia do prazo conta, o seguinte já não", pagamentoDaComissao(dt("2027-11-14"), cart) && !pagamentoDaComissao(dt("2027-11-15"), cart));
+check("para sempre continua anos depois", pagamentoDaComissao(dt("2035-01-01"), { ...cart, months: null }));
+check("tirado da carteira deixa de contar nesse dia", pagamentoDaComissao(dt("2027-02-28"), { ...cart, endedOn: dt("2027-03-01") }) && !pagamentoDaComissao(dt("2027-03-01"), { ...cart, endedOn: dt("2027-03-01") }));
+const dez = diasDoMes("2026-12");
+check("dias de dezembro vão até 1 de janeiro", diaDe(dez.inicio) === "2026-12-01" && diaDe(dez.fim) === "2027-01-01");
+check("hoje em Lisboa, a 31/07 às 23:30 de Lisboa, já é 01/08", diaDe(hojeComoData(new Date("2026-07-31T23:30:00Z"))) === "2026-08-01");
 
 console.log(`\n${ok} certos, ${falhas} errados\n`);
 process.exit(falhas ? 1 : 0);

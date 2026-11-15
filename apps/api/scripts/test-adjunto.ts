@@ -387,5 +387,21 @@ check("o esquema é estrito em todos os níveis", JSON.stringify(ESQUEMA_DO_PLAN
 const pedido = pedidoDoPlaneador({ clube: "AD Fafe", equipa: "Sub-11", idade: 11, modalidade: "Futebol", terreno: "f7", quando: "quinta-feira, 13 de novembro, 18:00", duracaoMin: 75, foco: "físico, puxado", usarBiblioteca: null, biblioteca: [{ id: "ex1", nome: "Rondo 4v2", categoria: "Técnico", tipo: "Posse", minutos: 10, jogadores: "4v2", intensidade: 5, idadeMin: 9, idadeMax: 12, descricao: null, comDesenho: true }], pesquisar: true });
 check("o pedido leva a equipa, o terreno, a biblioteca e a pesquisa", pedido.includes("sub-11") && pedido.includes("55×37") && pedido.includes("ex1: Rondo 4v2") && pedido.includes("Procura na internet"));
 
+/* ---- A época ---------------------------------------------------------------- */
+
+// A AD Fafe (12/11/2026) tem uma época só, sem a marca `isCurrent`, como quase
+// todos os clubes: o assistente lia a marca, não via equipa nenhuma e dizia
+// que não havia treino. As equipas da época vêm de `equipasDaEpocaAtual`.
+console.log("\nA época");
+{
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const path = await import("node:path");
+  // Corre a partir de apps/api (npm run test:adjunto).
+  const pasta = path.join(process.cwd(), "src", "adjunto");
+  const ficheiros = (readdirSync(pasta, { recursive: true }) as string[]).filter((f) => f.endsWith(".ts"));
+  const comMarca = ficheiros.filter((f) => /isCurrent:\s*true/.test(readFileSync(path.join(pasta, f), "utf8")));
+  check("nenhum ficheiro do assistente filtra pela marca isCurrent", comMarca.length === 0, comMarca);
+}
+
 console.log(`\n${ok} ok, ${falhas} ${falhas === 1 ? "falha" : "falhas"}`);
 if (falhas > 0) process.exit(1);

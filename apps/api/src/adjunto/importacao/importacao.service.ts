@@ -3,6 +3,7 @@ import type { AdjuntoImport, Prisma } from "@prisma/client";
 import type { Response as OpenAiResponse } from "openai/resources/responses/responses";
 import { PrismaService } from "../../prisma/prisma.service";
 import { can, type RequestContext } from "../../common/permissions";
+import { currentSeason } from "../../common/seasons";
 import { AthletesService, type ResultadoDaImportacao } from "../../academy/athletes.service";
 import { AcademyService } from "../../academy/academy.service";
 import { OpenAiClient } from "../openai.client";
@@ -278,8 +279,9 @@ export class ImportacaoService {
 
   private async clube(ctx: RequestContext): Promise<Clube> {
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const epoca = await db.season.findFirst({ where: { isCurrent: true }, select: { label: true } });
-      const equipas = await db.team.findMany({ where: { season: { isCurrent: true } }, select: { id: true, name: true, sportId: true, sport: { select: { name: true } } } });
+      // A época em curso pela regra de toda a plataforma (a marcada, senão a mais recente): quase nenhum clube tem uma marcada.
+      const epoca = await currentSeason(db);
+      const equipas = await db.team.findMany({ where: { seasonId: epoca?.id ?? "__sem-epoca__" }, select: { id: true, name: true, sportId: true, sport: { select: { name: true } } } });
       const modalidades = await db.sport.findMany({ orderBy: [{ position: "asc" }, { name: "asc" }], select: { id: true, name: true } });
       return {
         epoca: epoca?.label ?? "",

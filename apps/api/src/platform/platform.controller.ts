@@ -203,9 +203,11 @@ export class PlatformController {
   /** Quem sou eu, do lado da plataforma. A app usa-o para arrancar. */
   @Get("me")
   @PlatformRoles("OWNER", "ADMIN", "SUPPORT", "COMERCIAL")
-  me(@Req() req: PlatformRequest) {
+  async me(@Req() req: PlatformRequest) {
     const { id, name, email, role, mfaEnrolledAt } = req.admin;
-    return { id, name, email, role, mfaEnabled: mfaEnrolledAt !== null };
+    // O comercial pago à comissão tem a Carteira no menu e não tem turnos.
+    const salesPayModel = role === "COMERCIAL" ? await this.platform.salesPayModel(id) : null;
+    return { id, name, email, role, mfaEnabled: mfaEnrolledAt !== null, salesPayModel };
   }
 
   @Get("overview")

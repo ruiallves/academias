@@ -14,6 +14,7 @@ export const SECCOES = [
   { to: "/comercial", label: "Hoje", end: true },
   { to: "/comercial/clubes", label: "Clubes" },
   { to: "/comercial/reunioes", label: "Reuniões" },
+  { to: "/comercial/carteira", label: "Carteira" },
   { to: "/comercial/mes", label: "Mês" },
 ];
 

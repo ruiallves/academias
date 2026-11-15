@@ -422,6 +422,9 @@ export type Match = {
   id: string;
   /** A equipa deste jogo: o filho pode estar em duas. */
   team: string;
+  teamId: string;
+  /** O filho foi chamado de outro escalão para este jogo. */
+  guest: boolean;
   /** O id do jogo no servidor — sem o sufixo do filho. Ver `id`. */
   matchId: string;
   childId: string;
@@ -1023,8 +1026,17 @@ function build(
     })),
   );
 
-  const asMatches: Match[] = matches.flatMap((m) =>
-    (byTeam.get(m.teamId) ?? []).map((childId) => {
+  /*
+   * Um jogo é dos filhos que estão nessa equipa, e também dos que foram
+   * **convidados** de outro escalão: um Sub-11 chamado a reforçar os Sub-13
+   * recebia o aviso "estás convocado" e a app abria "este evento já não existe",
+   * porque só se olhava para a equipa (Santa Maria FC, 14/11/2026).
+   */
+  const meusFilhos = new Set(children.map((c) => c.id));
+  const asMatches: Match[] = matches.flatMap((m) => {
+    const daEquipa = byTeam.get(m.teamId) ?? [];
+    const convidados = m.calledUp.map((c) => c.athleteId).filter((id) => meusFilhos.has(id) && !daEquipa.includes(id));
+    return [...daEquipa, ...convidados].map((childId) => {
       // A minha linha na convocatória, se lá estou.
       const minha = m.calledUp.find((c) => c.athleteId === childId);
       const cancelled = m.status === "CANCELLED";
@@ -1038,6 +1050,8 @@ function build(
         matchId: m.id,
         childId,
         team: m.teamName ?? teamById.get(m.teamId)?.name ?? "",
+        teamId: m.teamId,
+        guest: !daEquipa.includes(childId),
         start: new Date(m.startsAt),
         end: new Date(m.endsAt),
         venue: m.venue,
@@ -1067,8 +1081,8 @@ function build(
         arrivalAt: m.arrivalAt ? new Date(m.arrivalAt) : undefined,
         notes: m.callUpNotes?.trim() || undefined,
       };
-    }),
-  );
+    });
+  });
 
   const payments: Payment[] = charges.map((c) => ({
     id: c.id,

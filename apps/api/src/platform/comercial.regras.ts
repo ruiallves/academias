@@ -258,6 +258,56 @@ export function pagamento(minutos: number, hourlyCents: number, novasComissoes: 
   return { hoursCents, commissionCents: comissao, totalCents: hoursCents + comissao };
 }
 
+/* -------------------------------------------------------------------------- */
+/* A carteira (comercial pago à comissão)                                      */
+/* -------------------------------------------------------------------------- */
+
+/** `AAAA-MM-DD` de uma coluna `@db.Date`, que chega como meia-noite UTC. */
+export const diaDe = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** O dia de hoje em Lisboa, como as colunas `@db.Date` o guardam. */
+export function hojeComoData(agora: Date): Date {
+  const p = partesNoFuso(agora);
+  return new Date(Date.UTC(p.ano, p.mes - 1, p.dia));
+}
+
+/** Os dias de um mês, para comparar com colunas `@db.Date`: do dia 1 ao dia 1 do seguinte. */
+export function diasDoMes(ym: string): { inicio: Date; fim: Date } {
+  const ano = Number(ym.slice(0, 4));
+  const mes = Number(ym.slice(5, 7));
+  return { inicio: new Date(Date.UTC(ano, mes - 1, 1)), fim: new Date(Date.UTC(ano, mes, 1)) };
+}
+
+/**
+ * O primeiro dia em que um clube já não dá comissão por ter acabado o prazo:
+ * `startsOn` mais `months` meses. Nulo é "enquanto o clube pagar".
+ *
+ * O dia encolhe nos meses curtos e não salta para o mês seguinte: 31 de janeiro
+ * mais um mês é 28 (ou 29) de fevereiro, e não 3 de março.
+ */
+export function fimDaComissao(startsOn: Date, months: number | null): Date | null {
+  if (months === null) return null;
+  const ano = startsOn.getUTCFullYear();
+  const mes = startsOn.getUTCMonth() + months;
+  const ultimo = new Date(Date.UTC(ano, mes + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(ano, mes, Math.min(startsOn.getUTCDate(), ultimo)));
+}
+
+/** Um pagamento recebido neste dia dá comissão? Dentro do prazo e antes de sair da carteira. */
+export function pagamentoDaComissao(dia: Date, c: { startsOn: Date; months: number | null; endedOn: Date | null }): boolean {
+  const d = diaDe(dia);
+  if (d < diaDe(c.startsOn)) return false;
+  const fim = fimDaComissao(c.startsOn, c.months);
+  if (fim && d >= diaDe(fim)) return false;
+  if (c.endedOn && d >= diaDe(c.endedOn)) return false;
+  return true;
+}
+
+/** A comissão de um pagamento: `percent` % do valor sem IVA, arredondada ao cêntimo. */
+export function comissaoDoPagamento(amountCents: number, vatRate: number, percent: number): number {
+  return Math.round(((amountCents / (1 + vatRate / 100)) * percent) / 100);
+}
+
 /** "12h05", "0h40". */
 export function horasEMinutos(minutos: number): string {
   return `${Math.floor(minutos / 60)}h${String(minutos % 60).padStart(2, "0")}`;

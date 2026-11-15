@@ -14,7 +14,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from "class-validator";
-import { ContactChannel, ContactLostReason, SalesMeetingMode, SalesMeetingStatus } from "@prisma/client";
+import { ContactChannel, ContactLostReason, SalesMeetingMode, SalesMeetingStatus, SalesPayModel } from "@prisma/client";
 import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { ComercialService } from "./comercial.service";
@@ -114,6 +114,9 @@ class TurnoDto {
 }
 
 class CondicoesDto {
+  @IsOptional() @IsIn(Object.values(SalesPayModel))
+  payModel?: SalesPayModel;
+
   @IsInt() @Min(0) @Max(100_00)
   hourlyCents!: number;
 
@@ -122,6 +125,35 @@ class CondicoesDto {
 
   @IsInt() @Min(0) @Max(10_000_00)
   commissionCents!: number;
+
+  @IsOptional() @IsInt() @Min(1) @Max(100)
+  clubPercent?: number;
+
+  /** Nulo = enquanto o clube pagar. */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(1) @Max(240)
+  clubMonths?: number | null;
+}
+
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+
+class CarteiraDto {
+  @IsOptional() @IsString() @Length(1, 40)
+  academyId?: string;
+
+  @IsOptional() @IsInt() @Min(1) @Max(100)
+  percent?: number;
+
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(1) @Max(240)
+  months?: number | null;
+
+  @IsOptional() @Matches(DIA)
+  startsOn?: string;
+
+  @IsOptional() @ValidateIf((_, v) => v !== null) @Matches(DIA)
+  endedOn?: string | null;
+
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @Length(0, 500)
+  note?: string | null;
 }
 
 const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -188,7 +220,31 @@ export class ComercialController {
     return this.comercial.mes(req.admin, q.pessoa, q.mes);
   }
 
+  @Get("carteira")
+  @PlatformRoles("OWNER", "ADMIN", "COMERCIAL")
+  carteira(@Req() req: PlatformRequest, @Query() q: MesQuery) {
+    return this.comercial.carteira(req.admin, q.pessoa);
+  }
+
   /* --- Gestão: dono e administradores ------------------------------------- */
+
+  @Post("equipa/:adminId/carteira")
+  @PlatformRoles("OWNER", "ADMIN")
+  juntarACarteira(@Req() req: PlatformRequest, @Ip() ip: string, @Param("adminId") adminId: string, @Body() body: CarteiraDto) {
+    return this.comercial.juntarACarteira(req.admin, adminId, body, ip);
+  }
+
+  @Patch("carteira/:id")
+  @PlatformRoles("OWNER", "ADMIN")
+  editarCarteira(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: CarteiraDto) {
+    return this.comercial.editarCarteira(req.admin, id, body, ip);
+  }
+
+  @Delete("carteira/:id")
+  @PlatformRoles("OWNER", "ADMIN")
+  apagarDaCarteira(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string) {
+    return this.comercial.apagarDaCarteira(req.admin, id, ip);
+  }
 
   @Get("equipa")
   @PlatformRoles("OWNER", "ADMIN")

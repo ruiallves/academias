@@ -1,13 +1,18 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { ContactChannel, ContactLostReason, Prisma, SalesMeetingMode, SalesMeetingStatus } from "@prisma/client";
+import type { ContactChannel, ContactLostReason, Prisma, SalesMeetingMode, SalesMeetingStatus, SalesPayModel } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
 import { ContactsService } from "./contacts.service";
 import type { PlatformAdminContext } from "./platform.guard";
 import {
   atendeu,
+  comissaoDoPagamento,
   comissoes,
+  diaDe,
+  diasDoMes,
   efeitoDaChamada,
+  fimDaComissao,
+  hojeComoData,
   horasEMinutos,
   inicioDoDiaEDaSemana,
   limitesDoMes,
@@ -16,6 +21,7 @@ import {
   minutosDoTurno,
   nomeDoMes,
   pagamento,
+  pagamentoDaComissao,
   type Resultado,
 } from "./comercial.regras";
 
@@ -34,7 +40,17 @@ import {
  * marcam o resultado das reuniões, corrigem turnos e aprovam meses.
  */
 
-const DEFAULTS = { hourlyCents: 700, meetingsPerCommission: 10, commissionCents: 0 };
+const DEFAULTS = {
+  payModel: "HOURLY" as SalesPayModel,
+  hourlyCents: 700,
+  meetingsPerCommission: 10,
+  commissionCents: 0,
+  clubPercent: 20,
+  clubMonths: null as number | null,
+};
+
+/** O IVA das mensalidades da plataforma, para a estimativa da carteira (os preços incluem IVA). */
+const IVA_DA_MENSALIDADE = 23;
 
 /** Um turno com mais do que isto é quase de certeza um "esqueci-me de terminar". */
 const TURNO_MAXIMO_MIN = 16 * 60;
@@ -71,7 +87,23 @@ export type ReuniaoInput = {
 
 export type TurnoInput = { startedAt?: string; endedAt?: string | null; note?: string | null };
 
-export type CondicoesInput = { hourlyCents: number; meetingsPerCommission: number; commissionCents: number };
+export type CondicoesInput = {
+  payModel?: SalesPayModel;
+  hourlyCents: number;
+  meetingsPerCommission: number;
+  commissionCents: number;
+  clubPercent?: number;
+  clubMonths?: number | null;
+};
+
+export type CarteiraInput = {
+  academyId?: string;
+  percent?: number;
+  months?: number | null;
+  startsOn?: string;
+  endedOn?: string | null;
+  note?: string | null;
+};
 
 @Injectable()
 export class ComercialService {
@@ -119,8 +151,12 @@ export class ComercialService {
 
     const deHoje = chamadasSemana.filter((c) => c.happenedAt >= dia);
     const minutosHoje = await this.minutosDesde(admin.id, dia, agora);
+    const aComissao = mes.compensation.payModel === "COMMISSION";
+    const carteira = aComissao ? (await this.lerCarteira(admin.id, false)).totals : null;
 
     return {
+      payModel: mes.compensation.payModel,
+      carteira,
       turno: turno ? { id: turno.id, startedAt: turno.startedAt } : null,
       hoje: {
         chamadas: deHoje.length,
@@ -373,6 +409,8 @@ export class ComercialService {
   /* ------------------------------------------------------------------------ */
 
   async iniciarTurno(admin: PlatformAdminContext) {
+    const comp = await this.prisma.salesCompensation.findUnique({ where: { adminId: admin.id }, select: { payModel: true } });
+    if (comp?.payModel === "COMMISSION") throw new BadRequestException("Recebes à comissão: não há turnos para marcar.");
     const aberto = await this.prisma.salesShift.findFirst({ where: { adminId: admin.id, endedAt: null } });
     if (aberto) return { id: aberto.id, startedAt: aberto.startedAt, endedAt: null };
     const t = await this.prisma.salesShift.create({ data: { adminId: admin.id, startedAt: new Date() } });
@@ -472,13 +510,28 @@ export class ComercialService {
     if (!pessoa) throw new NotFoundException("Pessoa não encontrada");
 
     const condicoes = comp
-      ? { hourlyCents: comp.hourlyCents, meetingsPerCommission: comp.meetingsPerCommission, commissionCents: comp.commissionCents }
+      ? {
+          payModel: comp.payModel,
+          hourlyCents: comp.hourlyCents,
+          meetingsPerCommission: comp.meetingsPerCommission,
+          commissionCents: comp.commissionCents,
+          clubPercent: comp.clubPercent,
+          clubMonths: comp.clubMonths,
+        }
       : DEFAULTS;
+    const aComissao = condicoes.payModel === "COMMISSION";
 
     const minutos = turnos.reduce((s, t) => s + minutosDoTurno(t, agora), 0);
     const contam = reunioes.filter((r) => r.countsForCommission).length;
     const com = comissoes(antes, contam, condicoes.meetingsPerCommission);
-    const pago = pagamento(minutos, condicoes.hourlyCents, com.novas, condicoes.commissionCents);
+    /*
+     * À comissão não há horas nem blocos de reuniões: paga-se só a parte do que
+     * os clubes da carteira pagaram neste mês. À hora, a carteira não conta.
+     */
+    const carteira = aComissao ? await this.comissoesDaCarteira(adminId, mes) : { linhas: [], cents: 0 };
+    const pago = aComissao
+      ? { hoursCents: 0, commissionCents: 0, totalCents: carteira.cents }
+      : pagamento(minutos, condicoes.hourlyCents, com.novas, condicoes.commissionCents);
 
     return {
       admin: { id: pessoa.id, name: pessoa.name, role: pessoa.role },
@@ -503,6 +556,7 @@ export class ComercialService {
       commission: { ...com, novas: payout ? payout.commissions : com.novas },
       hoursCents: payout ? payout.hoursCents : pago.hoursCents,
       commissionCents: payout ? payout.commissionCents : pago.commissionCents,
+      portfolio: { lines: carteira.linhas, cents: payout ? payout.portfolioCents : carteira.cents },
       totalCents: payout ? payout.totalCents : pago.totalCents,
       payout: payout
         ? { approvedAt: payout.approvedAt, approvedBy: payout.approvedBy?.name ?? null, transactionId: payout.transactionId }
@@ -543,6 +597,9 @@ export class ComercialService {
       hourlyCents: dto.hourlyCents,
       meetingsPerCommission: dto.meetingsPerCommission,
       commissionCents: dto.commissionCents,
+      ...(dto.payModel !== undefined ? { payModel: dto.payModel } : {}),
+      ...(dto.clubPercent !== undefined ? { clubPercent: dto.clubPercent } : {}),
+      ...(dto.clubMonths !== undefined ? { clubMonths: dto.clubMonths } : {}),
     };
     const row = await this.prisma.salesCompensation.upsert({ where: { adminId }, create: { adminId, ...data }, update: data });
     await this.platform.audit(admin, "sales.compensation", "admin", adminId, data, ip);
@@ -577,7 +634,10 @@ export class ComercialService {
                 occurredAt: new Date(new Date().toISOString().slice(0, 10)),
                 category: "Comercial",
                 counterparty: r.admin.name,
-                notes: `${horasEMinutos(r.minutes)} de turnos e ${r.commission.novas} ${r.commission.novas === 1 ? "comissão" : "comissões"} (${r.meetingsCounted} reuniões marcadas no mês).`,
+                notes:
+                  r.compensation.payModel === "COMMISSION"
+                    ? `Comissões da carteira: ${r.portfolio.lines.length} ${r.portfolio.lines.length === 1 ? "pagamento" : "pagamentos"} de clubes (${[...new Set(r.portfolio.lines.map((l) => l.clube))].join(", ")}).`
+                    : `${horasEMinutos(r.minutes)} de turnos e ${r.commission.novas} ${r.commission.novas === 1 ? "comissão" : "comissões"} (${r.meetingsCounted} reuniões marcadas no mês).`,
                 createdById: admin.id,
               },
             })
@@ -591,6 +651,7 @@ export class ComercialService {
           commissions: r.commission.novas,
           hoursCents: r.hoursCents,
           commissionCents: r.commissionCents,
+          portfolioCents: r.portfolio.cents,
           totalCents: r.totalCents,
           approvedById: admin.id,
           transactionId: transacao?.id ?? null,
@@ -610,6 +671,255 @@ export class ComercialService {
       if (p.transactionId) await tx.platformTransaction.deleteMany({ where: { id: p.transactionId } });
     });
     await this.platform.audit(admin, "sales.payout.reopen", "admin", adminId, { month: mes, totalCents: p.totalCents }, ip);
+    return { ok: true };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Carteira (comercial pago à comissão)                                      */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * A carteira de um comercial: os clubes que trouxe, quanto rende cada um por
+   * mês, o que já ganhou e os últimos 12 meses.
+   *
+   * O comercial vê a sua. O dono e os administradores veem a de qualquer pessoa
+   * e, para juntar clubes, a lista dos que ainda não estão em carteira nenhuma,
+   * com os que vieram de reuniões dessa pessoa marcados como sugestão.
+   */
+  async carteira(admin: PlatformAdminContext, alvo: string | undefined) {
+    const gere = admin.role === "OWNER" || admin.role === "ADMIN";
+    if (!gere && alvo && alvo !== admin.id) throw new ForbiddenException("Só vês a tua carteira.");
+    return this.lerCarteira(gere && alvo ? alvo : admin.id, gere);
+  }
+
+  private async lerCarteira(adminId: string, comLivres: boolean) {
+    const [pessoa, comp, clubes] = await Promise.all([
+      this.prisma.platformAdmin.findUnique({ where: { id: adminId }, select: { id: true, name: true } }),
+      this.prisma.salesCompensation.findUnique({ where: { adminId } }),
+      this.prisma.salesPortfolioClub.findMany({ where: { adminId }, orderBy: { startsOn: "desc" } }),
+    ]);
+    if (!pessoa) throw new NotFoundException("Pessoa não encontrada");
+
+    const ids = clubes.map((c) => c.academyId);
+    const [academias, suspensas, pagos] = await Promise.all([
+      ids.length
+        ? this.prisma.$queryRaw<{ id: string; name: string; plan_name: string | null; sub_status: string | null; mrr_cents: number | null; trial_ends_at: Date | null }[]>`
+            SELECT id, name, plan_name, sub_status, mrr_cents, trial_ends_at FROM app.platform_academies() WHERE id = ANY(${ids})`
+        : Promise.resolve([]),
+      ids.length
+        ? this.prisma.academy.findMany({ where: { id: { in: ids } }, select: { id: true, suspendedAt: true } })
+        : Promise.resolve([]),
+      ids.length
+        ? this.prisma.platformTransaction.findMany({
+            where: { kind: "INCOME", status: "COMPLETED", academyId: { in: ids } },
+            select: { academyId: true, amountCents: true, vatRate: true, occurredAt: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const academiaDe = new Map(academias.map((a) => [a.id, a]));
+    const suspensaDe = new Map(suspensas.map((a) => [a.id, a.suspendedAt]));
+
+    const agora = new Date();
+    const hoje = diaDe(hojeComoData(agora));
+    const esteMes = mesDe(agora);
+    const meses = ultimosMeses(esteMes, 12);
+    const porMes = new Map(meses.map((m) => [m, 0]));
+
+    const linhas = clubes.map((c) => {
+      const a = academiaDe.get(c.academyId);
+      const fim = fimDaComissao(c.startsOn, c.months);
+      const contam = pagos.filter((p) => p.academyId === c.academyId && pagamentoDaComissao(p.occurredAt, c));
+      let ganhoCents = 0;
+      let esteMesCents = 0;
+      let ultimoPagamento: string | null = null;
+      for (const p of contam) {
+        const v = comissaoDoPagamento(p.amountCents, p.vatRate, c.percent);
+        const dia = diaDe(p.occurredAt);
+        const m = dia.slice(0, 7);
+        ganhoCents += v;
+        if (m === esteMes) esteMesCents += v;
+        if (porMes.has(m)) porMes.set(m, porMes.get(m)! + v);
+        if (!ultimoPagamento || dia > ultimoPagamento) ultimoPagamento = dia;
+      }
+
+      const estado: EstadoNaCarteira =
+        c.endedOn && diaDe(c.endedOn) <= hoje
+          ? "retirado"
+          : fim && diaDe(fim) <= hoje
+            ? "terminou"
+            : suspensaDe.get(c.academyId)
+              ? "suspenso"
+              : a?.sub_status === "ACTIVE"
+                ? "ativo"
+                : a?.sub_status === "PAST_DUE"
+                  ? "em-atraso"
+                  : a?.sub_status === "TRIALING"
+                    ? "experiencia"
+                    : "cancelado";
+      const rende = estado === "ativo" || estado === "em-atraso";
+
+      return {
+        id: c.id,
+        academyId: c.academyId,
+        name: a?.name ?? "Clube apagado",
+        plan: a?.plan_name ?? null,
+        trialEndsAt: a?.trial_ends_at ?? null,
+        mensalidadeCents: a?.mrr_cents ?? 0,
+        percent: c.percent,
+        months: c.months,
+        startsOn: diaDe(c.startsOn),
+        endsOn: fim ? diaDe(fim) : null,
+        endedOn: c.endedOn ? diaDe(c.endedOn) : null,
+        note: c.note,
+        estado,
+        porMesCents: rende ? comissaoDoPagamento(a?.mrr_cents ?? 0, IVA_DA_MENSALIDADE, c.percent) : 0,
+        esteMesCents,
+        ganhoCents,
+        ultimoPagamento,
+      };
+    });
+
+    const naCarteira = linhas.filter((l) => l.estado !== "retirado" && l.estado !== "terminou");
+    const totals = {
+      clubes: naCarteira.length,
+      aPagar: linhas.filter((l) => l.estado === "ativo" || l.estado === "em-atraso").length,
+      emExperiencia: linhas.filter((l) => l.estado === "experiencia").length,
+      porMesCents: linhas.reduce((s, l) => s + l.porMesCents, 0),
+      esteMesCents: linhas.reduce((s, l) => s + l.esteMesCents, 0),
+      ganhoCents: linhas.reduce((s, l) => s + l.ganhoCents, 0),
+    };
+
+    let livres: { id: string; name: string; plan: string | null; status: string | null; sugerido: boolean }[] | undefined;
+    if (comLivres) {
+      const [semDono, vindas] = await Promise.all([
+        this.prisma.academy.findMany({
+          where: { salesPortfolio: { is: null } },
+          select: { id: true, name: true, subscription: { select: { status: true, plan: { select: { name: true } } } } },
+          orderBy: { name: "asc" },
+        }),
+        this.prisma.contact.findMany({
+          where: { academyId: { not: null }, meetings: { some: { bookedById: adminId } } },
+          select: { academyId: true },
+        }),
+      ]);
+      const sugeridas = new Set(vindas.map((v) => v.academyId));
+      livres = semDono
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          plan: a.subscription?.plan.name ?? null,
+          status: a.subscription?.status ?? null,
+          sugerido: sugeridas.has(a.id),
+        }))
+        .sort((x, y) => Number(y.sugerido) - Number(x.sugerido));
+    }
+
+    return {
+      admin: pessoa,
+      payModel: comp?.payModel ?? DEFAULTS.payModel,
+      defaults: { percent: comp?.clubPercent ?? DEFAULTS.clubPercent, months: comp ? comp.clubMonths : DEFAULTS.clubMonths },
+      totals,
+      clubs: linhas,
+      months: meses.map((m) => ({ month: m, label: nomeDoMes(m), cents: porMes.get(m) ?? 0 })),
+      livres,
+    };
+  }
+
+  /** As comissões da carteira num mês: um pagamento de um clube, uma linha. */
+  private async comissoesDaCarteira(adminId: string, mes: string) {
+    const clubes = await this.prisma.salesPortfolioClub.findMany({
+      where: { adminId },
+      include: { academy: { select: { name: true } } },
+    });
+    if (clubes.length === 0) return { linhas: [], cents: 0 };
+    const { inicio, fim } = diasDoMes(mes);
+    const pagos = await this.prisma.platformTransaction.findMany({
+      where: {
+        kind: "INCOME",
+        status: "COMPLETED",
+        academyId: { in: clubes.map((c) => c.academyId) },
+        occurredAt: { gte: inicio, lt: fim },
+      },
+      select: { id: true, academyId: true, amountCents: true, vatRate: true, occurredAt: true, description: true },
+      orderBy: { occurredAt: "asc" },
+    });
+    const deClube = new Map(clubes.map((c) => [c.academyId, c]));
+    const linhas = pagos.flatMap((p) => {
+      const c = p.academyId ? deClube.get(p.academyId) : undefined;
+      if (!c || !pagamentoDaComissao(p.occurredAt, c)) return [];
+      return [{
+        id: p.id,
+        academyId: c.academyId,
+        clube: c.academy.name,
+        dia: diaDe(p.occurredAt),
+        description: p.description,
+        amountCents: p.amountCents,
+        percent: c.percent,
+        commissionCents: comissaoDoPagamento(p.amountCents, p.vatRate, c.percent),
+      }];
+    });
+    return { linhas, cents: linhas.reduce((s, l) => s + l.commissionCents, 0) };
+  }
+
+  /** Juntar um clube à carteira de um comercial. Um clube só pode estar numa. */
+  async juntarACarteira(admin: PlatformAdminContext, adminId: string, dto: CarteiraInput, ip?: string) {
+    await this.comercialExiste(adminId);
+    if (!dto.academyId) throw new BadRequestException("Escolhe o clube.");
+    const academia = await this.prisma.academy.findUnique({ where: { id: dto.academyId }, select: { id: true, name: true } });
+    if (!academia) throw new NotFoundException("Clube não encontrado");
+    const ja = await this.prisma.salesPortfolioClub.findUnique({
+      where: { academyId: dto.academyId },
+      include: { admin: { select: { name: true } } },
+    });
+    if (ja) throw new ConflictException(`${academia.name} já está na carteira de ${ja.admin.name}.`);
+
+    const comp = await this.prisma.salesCompensation.findUnique({ where: { adminId } });
+    const row = await this.prisma.salesPortfolioClub.create({
+      data: {
+        adminId,
+        academyId: dto.academyId,
+        percent: dto.percent ?? comp?.clubPercent ?? DEFAULTS.clubPercent,
+        months: dto.months !== undefined ? dto.months : (comp ? comp.clubMonths : DEFAULTS.clubMonths),
+        startsOn: dto.startsOn ? lerDia(dto.startsOn) : hojeComoData(new Date()),
+        note: texto(dto.note),
+        createdById: admin.id,
+      },
+    });
+    await this.platform.audit(admin, "sales.portfolio.add", "academy", dto.academyId, { adminId, percent: row.percent, months: row.months }, ip);
+    return row;
+  }
+
+  /** Mudar a percentagem, o prazo, o início, ou tirar da carteira (`endedOn`). */
+  async editarCarteira(admin: PlatformAdminContext, id: string, dto: CarteiraInput, ip?: string) {
+    const antes = await this.prisma.salesPortfolioClub.findUnique({ where: { id } });
+    if (!antes) throw new NotFoundException("Clube não encontrado na carteira");
+    const startsOn = dto.startsOn !== undefined ? lerDia(dto.startsOn) : antes.startsOn;
+    const endedOn = dto.endedOn !== undefined ? (dto.endedOn ? lerDia(dto.endedOn) : null) : antes.endedOn;
+    if (endedOn && diaDe(endedOn) < diaDe(startsOn)) throw new BadRequestException("Não pode sair da carteira antes de entrar.");
+
+    const row = await this.prisma.salesPortfolioClub.update({
+      where: { id },
+      data: {
+        startsOn,
+        endedOn,
+        ...(dto.percent !== undefined ? { percent: dto.percent } : {}),
+        ...(dto.months !== undefined ? { months: dto.months } : {}),
+        ...(dto.note !== undefined ? { note: texto(dto.note) } : {}),
+      },
+    });
+    await this.platform.audit(admin, "sales.portfolio.update", "academy", antes.academyId, {
+      antes: { percent: antes.percent, months: antes.months, startsOn: antes.startsOn, endedOn: antes.endedOn },
+      depois: { percent: row.percent, months: row.months, startsOn: row.startsOn, endedOn: row.endedOn },
+    }, ip);
+    return row;
+  }
+
+  /** Apagar da carteira, para enganos. Os meses já aprovados ficam como foram pagos. */
+  async apagarDaCarteira(admin: PlatformAdminContext, id: string, ip?: string) {
+    const c = await this.prisma.salesPortfolioClub.findUnique({ where: { id } });
+    if (!c) throw new NotFoundException("Clube não encontrado na carteira");
+    await this.prisma.salesPortfolioClub.delete({ where: { id } });
+    await this.platform.audit(admin, "sales.portfolio.delete", "academy", c.academyId, { adminId: c.adminId, percent: c.percent, months: c.months }, ip);
     return { ok: true };
   }
 
@@ -682,6 +992,32 @@ function reuniaoCurta(r: { id: string; scheduledAt: Date; mode: SalesMeetingMode
     bookedByName: r.bookedByName,
     contact: r.contact,
   };
+}
+
+type EstadoNaCarteira = "ativo" | "em-atraso" | "experiencia" | "suspenso" | "cancelado" | "terminou" | "retirado";
+
+/** Os últimos `n` meses até `ate`, do mais antigo para o mais recente. */
+function ultimosMeses(ate: string, n: number): string[] {
+  let ano = Number(ate.slice(0, 4));
+  let mes = Number(ate.slice(5, 7));
+  const r: string[] = [];
+  for (let i = 0; i < n; i++) {
+    r.unshift(`${ano}-${String(mes).padStart(2, "0")}`);
+    mes -= 1;
+    if (mes === 0) {
+      mes = 12;
+      ano -= 1;
+    }
+  }
+  return r;
+}
+
+/** Um dia `AAAA-MM-DD` (ou um instante ISO) como as colunas `@db.Date` o guardam. */
+function lerDia(v: string): Date {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v);
+  const d = m ? new Date(`${m[1]}T00:00:00Z`) : new Date(NaN);
+  if (Number.isNaN(d.getTime())) throw new BadRequestException("Data inválida");
+  return d;
 }
 
 function texto(v: string | null | undefined): string | null {

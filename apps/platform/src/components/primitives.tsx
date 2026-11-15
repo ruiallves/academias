@@ -1,6 +1,26 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
 export const cx = (...xs: (string | false | undefined | null)[]) => xs.filter(Boolean).join(" ");
+
+/**
+ * A moldura de uma lista de onde se escolhe escrevendo. Igual à da consola.
+ *
+ * `preventDefault` no `mousedown` segura o foco no campo de texto enquanto se
+ * toca numa opção: no telemóvel, perder o foco fecha o teclado e a lista sobe
+ * entre o dedo pousar e levantar, e o toque não escolhe nada. Quem escolhe
+ * continua a ser o `onClick` de cada opção. Ver `scripts/check-toque.mjs`.
+ */
+export function ListaDeEscolha({
+  className,
+  children,
+  ...resto
+}: { className?: string; children: ReactNode } & Omit<HTMLAttributes<HTMLUListElement>, "onMouseDown" | "className" | "children">) {
+  return (
+    <ul {...resto} className={className} onMouseDown={(e) => e.preventDefault()}>
+      {children}
+    </ul>
+  );
+}
 
 export function Panel({ className, children }: { className?: string; children: ReactNode }) {
   return <section className={cx("panel", className)}>{children}</section>;
