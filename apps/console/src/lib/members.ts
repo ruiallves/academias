@@ -268,10 +268,23 @@ export const DIAS_DO_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
  * escalão ao lado diz qual é o período, e o `title` da célula dá a data por
  * extenso.
  */
-export function feeStanding(lastPaidPeriod: string | null, hoje = new Date()): "ok" | "warn" | "late" {
+export function feeStanding(lastPaidPeriod: string | null, hoje = new Date(), annualStart = "01-01"): "ok" | "warn" | "late" {
   if (!lastPaidPeriod) return "late";
 
   const atual = hoje.getFullYear() * 12 + hoje.getMonth();
+
+  /*
+   * Quota anual (período só com o ano, "2026"): cobre o ano de quotas do
+   * sócio, da abertura (`annualStart`, MM-DD) até à mesma data do ano
+   * seguinte. Em dia até lá; depois, a mesma régua dos três meses.
+   */
+  if (/^\d{4}$/.test(lastPaidPeriod)) {
+    const [mesAbre, diaAbre] = annualStart.split("-").map(Number);
+    const fim = new Date(Number(lastPaidPeriod) + 1, (mesAbre || 1) - 1, diaAbre || 1);
+    if (hoje < fim) return "ok";
+    const depois = atual - (fim.getFullYear() * 12 + fim.getMonth());
+    return depois < 3 ? "warn" : "late";
+  }
   const [ano, mes] = lastPaidPeriod.split("-").map(Number);
   if (!Number.isFinite(ano) || !Number.isFinite(mes)) return "late";
 

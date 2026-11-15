@@ -200,7 +200,7 @@ export default function Members() {
       header: "Última quota",
       hideBelow: "md",
       render: (m) => {
-        const estado = feeStanding(m.lastPaidPeriod);
+        const estado = feeStanding(m.lastPaidPeriod, new Date(), m.annualStart);
         /* O que está em atraso de facto, por baixo: quantas e quanto. */
         const atraso = m.overdue ? (
           <div className="mt-0.5 text-meta text-risk tabular">

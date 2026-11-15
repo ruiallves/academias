@@ -7,6 +7,7 @@ import { usePresence } from "@/lib/presence";
 import { useStore } from "@/lib/store";
 import { MobileTabBar, MobileTopBar } from "./MobileNav";
 import { AdjuntoFlutuante } from "./adjunto/Botao";
+import { ErroDaPagina } from "./ErroDaPagina";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
@@ -99,7 +100,10 @@ export function Shell() {
             caixa a mais entre o `<main>` e a página. */}
         <BusyProvider>
           <BusyScreen>
-            <Outlet />
+            {/* Um erro numa página fica nela: o menu e as barras continuam. Ver `ErroDaPagina`. */}
+            <ErroDaPagina>
+              <Outlet />
+            </ErroDaPagina>
           </BusyScreen>
         </BusyProvider>
       </main>

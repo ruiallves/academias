@@ -80,10 +80,19 @@ export function periodShort(period: string): string {
   return `${name[0].toUpperCase()}${name.slice(1, 3)} ${y}`;
 }
 
-/** "2026-08" → "Agosto de 2026". Para onde um período precisa de se explicar sozinho. */
+/**
+ * "2026-08" → "Agosto de 2026". Para onde um período precisa de se explicar sozinho.
+ *
+ * As quotas anuais de sócio têm o período só com o ano ("2026") e saem como
+ * "Ano de 2026". Antes rebentava aí (sem mês não havia nome) e a lista de
+ * sócios do CB Fundão ficou em branco a 15/11/2026. Qualquer outro formato
+ * volta tal como veio: um rótulo esquisito é melhor que um ecrã vazio.
+ */
 export function periodLabel(period: string): string {
+  if (/^\d{4}$/.test(period)) return `Ano de ${period}`;
   const [y, m] = period.split("-").map(Number);
   const name = MONTH[m - 1];
+  if (!name) return period;
   return `${name[0].toUpperCase()}${name.slice(1)} de ${y}`;
 }
 
