@@ -165,7 +165,7 @@ export class LojaEmissao {
 
   private enderecoDaConsola(slug: string): string {
     const base = this.config.get<string>("PUBLIC_BASE_URL");
-    return base ? `${base.replace(/\/$/, "").replace("{slug}", slug)}/consola/website?secao=loja&vista=encomendas` : `https://${slug}.academias.pt/consola/website?secao=loja&vista=encomendas`;
+    return base ? `${base.replace(/\/$/, "").replace("{slug}", slug)}/consola/website/encomendas` : `https://${slug}.academias.pt/consola/website/encomendas`;
   }
 
   private linhasParaEmail(e: EncomendaComLinhas): LinhaDaEncomendaEmail[] {
@@ -193,7 +193,7 @@ export class LojaEmissao {
 
   /** A confirmação de uma encomenda paga. Também serve o "Reenviar" da consola. */
   async enviarConfirmacao(academyId: string, orderId: string): Promise<void> {
-    const d = await this.lerParaEmail(academyId, orderId, { status: { in: ["PAID", "READY", "SHIPPED", "DELIVERED"] } });
+    const d = await this.lerParaEmail(academyId, orderId, { status: { in: ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"] } });
     if (!d) return;
     const corpo = encomendaEmail({
       brand: d.brand,

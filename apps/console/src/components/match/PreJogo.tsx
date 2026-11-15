@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cx } from "@/components/primitives";
 import { Check, ChevronLeft, Download, DragHandle, Plus, Trash2, X } from "@/lib/icons";
@@ -266,15 +267,15 @@ export function PreJogo(p: PreJogoProps) {
             }
           >
             {p.formatos.length > 1 && (
-              <select aria-label="Formato" className={seletor} value={p.formato} disabled={!p.podeEditar} onChange={(e) => p.onFormato(e.target.value as GameFormat)}>
+              <Escolha aria-label="Formato" className={seletor} value={p.formato} disabled={!p.podeEditar} onChange={(e) => p.onFormato(e.target.value as GameFormat)}>
                 {p.formatos.map((f) => (
                   <option key={f} value={f}>
                     {FORMAT_LABEL[f]}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             )}
-            <select
+            <Escolha
               aria-label="Sistema"
               className={seletor}
               value={p.sistemas.includes(p.sistema) ? p.sistema : "__livre"}
@@ -287,16 +288,16 @@ export function PreJogo(p: PreJogoProps) {
                   {s}
                 </option>
               ))}
-            </select>
+            </Escolha>
             {p.podeEditar && p.modelos.length > 0 && (
-              <select aria-label="Importar modelo de jogo" className={seletor} value={p.modeloId ?? ""} onChange={(e) => e.target.value && p.onModelo(e.target.value)}>
+              <Escolha aria-label="Importar modelo de jogo" className={seletor} value={p.modeloId ?? ""} onChange={(e) => e.target.value && p.onModelo(e.target.value)}>
                 <option value="">Modelo de jogo…</option>
                 {p.modelos.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.nome}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             )}
             {p.podeEditar && (
               <button type="button" onClick={p.onSugerir} className="ctl-primary h-9 max-sm:w-full max-sm:justify-center">

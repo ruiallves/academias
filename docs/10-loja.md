@@ -23,9 +23,26 @@ emails em `emissao.service.ts`). Migração `20261024120000_loja`, **aplicada em
 | `Payment.siteOrderId` | O pagamento de uma encomenda, pelo mesmo webhook da euPago do clube. O `Payment` tem quatro donos possíveis. |
 
 Estados da encomenda: `RESERVED` (à espera do pagamento) → `PAID` (paga, por
-preparar) → `READY` (pronta para levantar) ou `SHIPPED` (enviada) →
-`DELIVERED`. À parte: `EXPIRED` (caducou sem pagar), `LATE_PAYMENT` (pago
-tarde e já sem stock, reembolso por fazer), `CANCELLED` (anulada pelo clube).
+preparar) → opcionalmente `IN_PRODUCTION` (entregue ao produtor: camisolas
+com nome, artigos por medida; `productionAt`, desde 15/11/2026, migração
+`20261115150000_encomenda_no_produtor`) → `READY` (pronta para levantar) ou
+`SHIPPED` (enviada) → `DELIVERED`. À parte: `EXPIRED` (caducou sem pagar),
+`LATE_PAYMENT` (pago tarde e já sem stock, reembolso por fazer), `CANCELLED`
+(anulada pelo clube). `ESTADOS_VIVOS` e `ESTADOS_PAGOS` em `loja/regras.ts`.
+
+Desde 15/11/2026 (migração `20261115180000_encomenda_referencia_e_estados`):
+
+- `SiteOrder.reference`: referência única em toda a plataforma (`ENC-XXXX-XXXX`,
+  alfabeto sem 0/O/1/I). A API gera-a com `referenciaNova`; a base tem um valor
+  por omissão (`app.nova_referencia_encomenda()`).
+- `POST /api/loja/encomendas/:id/estado {estado, rastreio?, avisar?}` muda para
+  qualquer passo vivo, para a frente ou para trás (`mudancaDeEstado`): o passo
+  de chegada ganha data se não a tinha, os seguintes perdem-na, a paga nunca.
+  Email só para a frente, em `READY`/`SHIPPED`, e com `avisar` (omissão: sim).
+  `CANCELLED` não volta. Os endereços `pronta`, `enviada`, `entregue` e
+  `producao` passam por aqui.
+- `SiteOrderEvent`: cada mudança e cada anulação, com `byName`. Só
+  `SELECT`/`INSERT` para `academia_app` (REVOKE de UPDATE/DELETE/TRUNCATE).
 
 ### Catálogo e códigos (11/11/2026)
 

@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState, type FormEvent } from "react";
 import { academy } from "@/lib/api";
 import { sportById } from "@/lib/api";
@@ -103,13 +104,13 @@ export function NewProspectDialog({ onClose, onCreated }: { onClose: () => void;
           </DialogField>
 
           <DialogField label="Modalidade">
-            <select value={sportId} onChange={(e) => setSportId(e.target.value)} className={dialogInputClass}>
+            <Escolha value={sportId} onChange={(e) => setSportId(e.target.value)} className={dialogInputClass}>
               {sports.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         </div>
 
@@ -127,14 +128,14 @@ export function NewProspectDialog({ onClose, onCreated }: { onClose: () => void;
               desaparece em vez de pedir algo que não existe. */}
           {positions.length > 0 && (
             <DialogField label="Posição" hint="opcional">
-              <select value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass}>
+              <Escolha value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass}>
                 <option value="">—</option>
                 {positions.map((p) => (
                   <option key={p} value={p}>
                     {p}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
           )}
         </div>

@@ -1,8 +1,9 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { Boxes, ImagePlus, Package, PackageOpen, Pencil, Percent, Plus, ShoppingBag, Tags, Trash2, Truck } from "@/lib/icons";
+import { Link } from "react-router-dom";
+import { Boxes, ImagePlus, Package, Pencil, Plus, ShoppingBag, Trash2, Truck } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
-import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
+import { ResultCount, SearchInput, Select, Toolbar } from "@/components/filters";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
@@ -10,61 +11,50 @@ import { useStore } from "@/lib/store";
 import { apagarProduto, guardarConfig, guardarProduto, motivoSemVendas, useSite, type LojaConfig, type ProdutoDoSite } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 import { CampoDeImagem } from "./CampoDeImagem";
-import { Encomendas } from "./Encomendas";
 import { Categorias, Codigos, slugDe } from "./LojaCatalogo";
 
 const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
 
-type Vista = "produtos" | "categorias" | "codigos" | "encomendas" | "entrega";
-const VISTAS: Vista[] = ["produtos", "categorias", "codigos", "encomendas", "entrega"];
+export type VistaDaLoja = "produtos" | "categorias" | "codigos" | "entrega";
 
 /**
- * A loja do site, em cinco vistas: os produtos (foto, galeria, preço e preço
- * riscado, categoria, endereço, tamanhos e stock; visível ou não), as
- * categorias (ordem e endereço do filtro do site), os códigos promocionais,
- * as encomendas (para preparar, entregar, anular e reembolsar), e a entrega
- * (levantamento no clube, envio pelo correio e o aviso da loja). A vista fica
- * no endereço (`?vista=encomendas`), que é para onde o email de uma encomenda
- * nova aponta.
+ * A loja do site, uma parte de cada vez: os produtos (foto, galeria, preço e
+ * preço riscado, categoria, endereço, tamanhos e stock; visível ou não), as
+ * categorias (ordem e endereço do filtro do site), os códigos promocionais e
+ * a entrega (levantamento no clube, envio pelo correio e o aviso da loja).
+ *
+ * As partes são os separadores da página Loja (`/website/loja?secao=…`, ver
+ * `routes/website/rotas.ts`). As encomendas têm página própria
+ * (`/website/encomendas`), para onde aponta o email de uma encomenda nova.
  */
-export function Loja() {
+export function Loja({ vista, onIrParaEntrega }: { vista: VistaDaLoja; onIrParaEntrega: () => void }) {
   const store = useStore();
   const slug = store.academy.slug;
   const site = useSite(slug);
-  const [params, setParams] = useSearchParams();
-  const pedida = params.get("vista") as Vista | null;
-  const vista: Vista = pedida && VISTAS.includes(pedida) ? pedida : "produtos";
-  const irPara = (v: Vista) => {
-    const p = new URLSearchParams(params);
-    if (v === "produtos") p.delete("vista");
-    else p.set("vista", v);
-    setParams(p);
-  };
 
   const semVendas = motivoSemVendas(site);
   const vende = !semVendas && (site.loja.levantamento.ativo || site.loja.envio.ativo);
 
   return (
     <div className="space-y-6">
-      <Segmented
-        value={vista}
-        onChange={irPara}
-        label="Partes da loja"
-        options={[
-          { value: "produtos" as const, label: "Produtos", count: site.produtos.length },
-          { value: "categorias" as const, label: "Categorias", count: site.categorias.length || undefined, icon: Tags },
-          { value: "codigos" as const, label: "Códigos", count: site.codigos.filter((c) => c.estado === "ativo").length || undefined, icon: Percent },
-          { value: "encomendas" as const, label: "Encomendas", count: site.encomendasPorTratar || undefined, icon: PackageOpen },
-          { value: "entrega" as const, label: "Entrega", icon: Truck },
-        ]}
-      />
-
       {!vende && (
         <p className="flex items-start gap-2 rounded-[10px] border border-warn/25 bg-warn-soft px-3.5 py-2.5 text-meta leading-relaxed text-warn">
           <ShoppingBag className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
           <span>
             <strong className="font-semibold">A loja está em catálogo: ainda não vende online.</strong>{" "}
-            {semVendas ? `${semVendas} ` : "Precisa de uma forma de entrega ligada, na vista Entrega. "}
+            {semVendas ? (
+              `${semVendas} `
+            ) : vista === "entrega" ? (
+              "Liga uma forma de entrega aqui em baixo. "
+            ) : (
+              <>
+                Precisa de uma forma de entrega ligada, em{" "}
+                <button type="button" onClick={onIrParaEntrega} className="font-semibold underline underline-offset-2">
+                  Entrega
+                </button>
+                .{" "}
+              </>
+            )}
             Até lá, os botões do site levam aos contactos.
           </span>
         </p>
@@ -73,7 +63,6 @@ export function Loja() {
       {vista === "produtos" && <Produtos />}
       {vista === "categorias" && <Categorias />}
       {vista === "codigos" && <Codigos />}
-      {vista === "encomendas" && <Encomendas />}
       {vista === "entrega" && <Entrega loja={site.loja} />}
     </div>
   );
@@ -342,14 +331,14 @@ function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite
         </DialogField>
         <div className="grid gap-4 sm:grid-cols-3">
           <DialogField label="Categoria">
-            <select className={dialogInputClass} value={p.categoriaId ?? ""} onChange={(e) => setP({ ...p, categoriaId: e.target.value || null })}>
+            <Escolha className={dialogInputClass} value={p.categoriaId ?? ""} onChange={(e) => setP({ ...p, categoriaId: e.target.value || null })}>
               <option value="">Sem categoria</option>
               {site.categorias.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nome}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Preço (€)">
             <input className={cx(dialogInputClass, "tabular-nums")} inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} />
@@ -361,7 +350,7 @@ function EditarProduto({ inicial, onClose, onGuardar }: { inicial: ProdutoDoSite
         {site.categorias.length === 0 && (
           <p className="-mt-2 text-meta text-ink-3">
             Ainda não há categorias.{" "}
-            <Link to="?vista=categorias" className="font-medium text-signal-ink hover:underline">
+            <Link to="?secao=categorias" className="font-medium text-signal-ink hover:underline">
               Criar categorias
             </Link>
           </p>

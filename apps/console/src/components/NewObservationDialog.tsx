@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState, type FormEvent } from "react";
 import { sportById } from "@/lib/api";
 import {
@@ -127,7 +128,7 @@ export function NewObservationDialog({
             </DialogField>
 
             <DialogField label="Contexto">
-              <select
+              <Escolha
                 value={context}
                 onChange={(e) => setContext(e.target.value as ObsContext)}
                 className={dialogInputClass}
@@ -137,7 +138,7 @@ export function NewObservationDialog({
                     {CONTEXT_LABEL[c]}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
           </div>
 
@@ -172,7 +173,7 @@ export function NewObservationDialog({
 
             {positions.length > 0 && (
               <DialogField label="Jogou a" hint="opcional">
-                <select
+                <Escolha
                   value={positionObserved}
                   onChange={(e) => setPositionObserved(e.target.value)}
                   className={dialogInputClass}
@@ -183,7 +184,7 @@ export function NewObservationDialog({
                       {p}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </DialogField>
             )}
           </div>

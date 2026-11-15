@@ -5,6 +5,7 @@ import { chooseContext } from "@/lib/contexts";
 import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope, ShieldAlert, Paperclip as Anexo } from "lucide-react";
 import { activeArea } from "@/lib/area";
 import { carregarNotificacoes, marcarLidas, useNotificacoes } from "@/lib/notificacoes";
+import { usePorPartes } from "@/lib/por-partes";
 import type { ApiNotification } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
 import { currentSubscription, pushState, pushSupported } from "@/lib/push";
@@ -60,6 +61,8 @@ export default function Notifications() {
   useEffect(() => {
     void carregarNotificacoes();
   }, []);
+  /* As primeiras já; as outras depois do deslize de entrada. Ver `lib/por-partes`. */
+  const visiveis = usePorPartes(notifications);
 
   /*
    * O convite para ligar o push só faz sentido a quem não o tem ligado.
@@ -139,7 +142,7 @@ export default function Notifications() {
         </div>
       ) : (
         <ul className="space-y-2">
-          {notifications.map((n, i) => (
+          {visiveis.map((n, i) => (
             <NotifRow key={n.id} n={n} i={i} />
           ))}
         </ul>

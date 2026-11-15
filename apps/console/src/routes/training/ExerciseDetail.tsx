@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -454,7 +455,7 @@ export default function ExerciseDetail() {
               )}
 
               <DialogField label="Objetivo">
-                <select
+                <Escolha
                   className={dialogInputClass}
                   value={draft.category ?? ""}
                   onChange={(e) => patch({ category: e.target.value || null })}
@@ -471,7 +472,7 @@ export default function ExerciseDetail() {
                   {draft.category && !categories.some((c) => c.label === draft.category) && (
                     <option value={draft.category}>{draft.category}</option>
                   )}
-                </select>
+                </Escolha>
               </DialogField>
 
               {draft.category && (
@@ -505,7 +506,7 @@ export default function ExerciseDetail() {
                   {/* Um select como os vizinhos — o datalist desenhava-se
                       diferente do resto do formulário. Um valor antigo fora da
                       lista continua lá, como opção própria. */}
-                  <select
+                  <Escolha
                     className={dialogInputClass}
                     value={draft.type ?? ""}
                     onChange={(e) => patch({ type: e.target.value || null })}
@@ -518,7 +519,7 @@ export default function ExerciseDetail() {
                       </option>
                     ))}
                     {draft.type && !types.includes(draft.type) && <option value={draft.type}>{draft.type}</option>}
-                  </select>
+                  </Escolha>
                 </DialogField>
                 <DialogField label="Jogadores">
                   <input className={dialogInputClass} value={draft.players ?? ""} onChange={(e) => patch({ players: e.target.value || null })} placeholder={ph.players} disabled={!editable} />

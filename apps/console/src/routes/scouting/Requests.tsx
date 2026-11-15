@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -362,16 +363,16 @@ function NewRequestDialog({
 
         <div className="grid grid-cols-3 gap-3">
           <DialogField label="Modalidade">
-            <select value={sportId} onChange={(e) => setSportId(e.target.value)} className={dialogInputClass}>
+            <Escolha value={sportId} onChange={(e) => setSportId(e.target.value)} className={dialogInputClass}>
               {academy.sports.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Escalão" hint={deveEscolher ? undefined : "opcional"}>
-            <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className={dialogInputClass}>
+            <Escolha value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className={dialogInputClass}>
               {/*
                 "Qualquer escalão" só para quem vê o clube todo. Um treinador que
                 o pudesse escolher estaria a pedir um jogador para uma equipa que
@@ -385,7 +386,7 @@ function NewRequestDialog({
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Posição" hint="opcional">
             <input value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass} />
@@ -420,7 +421,7 @@ function NewRequestDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <DialogField label="Urgência">
-            <select
+            <Escolha
               value={urgency}
               onChange={(e) => setUrgency(e.target.value as Urgency)}
               className={dialogInputClass}
@@ -430,7 +431,7 @@ function NewRequestDialog({
                   {URGENCY_LABEL[u]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Prazo" hint="opcional">
             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={dialogInputClass} />

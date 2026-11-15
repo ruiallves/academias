@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { academy, sportById, teamById } from "@/lib/api";
 import { epocaDaEquipa } from "@/lib/licencas";
 import { Plus, X } from "@/lib/icons";
@@ -187,7 +188,7 @@ export function EquipasDoAtletaField({
 
             <div className={cx("grid gap-2", variasModalidades ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid-cols-1")}>
               {variasModalidades && (
-                <select
+                <Escolha
                   aria-label="Modalidade"
                   value={l.sportId}
                   onChange={(e) => {
@@ -206,9 +207,9 @@ export function EquipasDoAtletaField({
                       {s.name}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               )}
-              <select
+              <Escolha
                 aria-label="Equipa"
                 value={l.teamId}
                 onChange={(e) => mudar(l.chave, { teamId: e.target.value })}
@@ -220,7 +221,7 @@ export function EquipasDoAtletaField({
                     {t.name}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </div>
 
             <div className={cx("mt-2 grid gap-2", posicoes.length > 0 ? "grid-cols-[96px_minmax(0,1fr)]" : "grid-cols-[96px]")}>
@@ -233,7 +234,7 @@ export function EquipasDoAtletaField({
                 className={dialogInputClass}
               />
               {posicoes.length > 0 && (
-                <select
+                <Escolha
                   aria-label={`Posição em ${nome}`}
                   value={l.position}
                   onChange={(e) => mudar(l.chave, { position: e.target.value })}
@@ -245,7 +246,7 @@ export function EquipasDoAtletaField({
                       {p}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               )}
             </div>
 

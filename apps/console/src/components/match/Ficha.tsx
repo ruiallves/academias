@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useState, type ReactNode } from "react";
 import { cx } from "@/components/primitives";
 import { ChevronDown, Minus, Plus } from "@/lib/icons";
@@ -250,7 +251,7 @@ export function LinhaDaFicha({
               {substituicao && (
                 <div className="flex items-center gap-2">
                   <span className="text-meta text-ink-3">por</span>
-                  <select
+                  <Escolha
                     aria-label={`Por quem entrou ${nome}`}
                     value={substituicao.valor ?? ""}
                     onChange={(e) => substituicao.onChange(e.target.value || null)}
@@ -265,7 +266,7 @@ export function LinhaDaFicha({
                         {o.nome}
                       </option>
                     ))}
-                  </select>
+                  </Escolha>
                 </div>
               )}
             </Grupo>

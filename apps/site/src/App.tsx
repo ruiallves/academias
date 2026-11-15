@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -33,11 +33,15 @@ function Cabeca() {
 /**
  * Mudar de página põe a leitura no topo. A exceção é quando há uma âncora, que
  * é quando a pessoa pediu para ir a um sítio a meio.
+ *
+ * `useLayoutEffect` e não `useEffect`: corre dentro da transição entre páginas
+ * (`lib/transicao.tsx`), e assim a página nova aparece já no topo em vez de
+ * desvanecer a meio e saltar depois.
  */
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (hash) {
       document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: "smooth" });
       return;

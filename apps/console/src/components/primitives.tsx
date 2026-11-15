@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronDown, TrendingDown, TrendingUp, type LucideIcon, ChevronRight } from "@/lib/icons";
 import { initials } from "@/lib/format";
 import { Spinner, useBusy } from "@/components/Busy";
+import { MenuDeEscolha } from "@/components/Escolha";
 
 export const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(" ");
 
@@ -763,14 +764,19 @@ export function Empty({
 /* -------------------------------------------------------------------------- */
 
 /**
- * O `<select>` do sistema, com a nossa moldura.
+ * Um menu de escolher, com a nossa moldura e com pesquisa.
  *
- * Continua a ser um `<select>` nativo — o menu que abre é o do sistema
- * operativo, que num telemóvel é uma roda e num portátil é uma lista, e
- * reimplementá-lo em React só traria uma acessibilidade pior de graça. O que
- * mudamos é a caixa: `appearance-none` tira a seta feia do browser (que não
- * respeita nem a nossa cor nem o nosso espaçamento) e pomos a nossa por cima,
- * com a mesma altura e o mesmo raio dos outros controlos.
+ * Era o `<select>` do sistema com uma caixa nossa por cima. Desde 15/11/2026 é
+ * o `MenuDeEscolha` (`components/Escolha.tsx`): abre com um campo de procura
+ * quando a lista tem mais de seis opções, e no telemóvel numa folha no fundo
+ * do ecrã. A caixa fechada ficou igual: a mesma altura, o mesmo raio e a mesma
+ * seta dos outros controlos.
+ *
+ * Um valor que não está nas opções não pode passar por outro. O `<select>` do
+ * browser, quando o `value` não correspondia a nenhuma `<option>`, mostrava a
+ * primeira e calava-se: um formulário mostrava "Campo 1" com o estado a `""` e
+ * mandava vazio para o servidor. O menu mostra um traço (ou o valor) em vez de
+ * fingir uma escolha que ninguém fez.
  */
 export function SelectField<T extends string>({
   value,
@@ -779,65 +785,43 @@ export function SelectField<T extends string>({
   size = "md",
   className,
   "aria-label": ariaLabel,
+  pesquisa,
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; disabled?: boolean }[];
   size?: "sm" | "md";
   className?: string;
   "aria-label"?: string;
+  /** Forçar (ou tirar) o campo de procura; por omissão, só com mais de seis opções. */
+  pesquisa?: boolean;
 }) {
-  const box =
-    size === "sm"
-      ? "h-8 pl-2.5 pr-7 text-meta"
-      : "h-9 pl-2.5 pr-8 text-body";
+  const box = size === "sm" ? "h-8 pl-2.5 pr-2 text-meta" : "h-9 pl-2.5 pr-2.5 text-body";
 
   return (
     <span className={cx("relative inline-flex min-w-0", className)}>
-      <select
-        aria-label={ariaLabel}
+      <MenuDeEscolha
         value={value}
-        onChange={(e) => onChange(e.target.value as T)}
+        opcoes={options}
+        onEscolher={(v) => onChange(v as T)}
+        aria-label={ariaLabel}
+        pesquisa={pesquisa}
         className={cx(
-          "w-full min-w-0 cursor-pointer appearance-none truncate rounded-[var(--radius-control)]",
+          "w-full min-w-0 cursor-pointer rounded-[var(--radius-control)] text-left",
           "border border-line bg-surface font-medium text-ink-2",
           "transition-colors duration-[120ms] hover:border-line-strong hover:text-ink",
-          "focus:border-line-strong focus:text-ink focus:outline-none",
+          "focus:border-line-strong focus:text-ink focus:outline-none aria-expanded:border-line-strong aria-expanded:text-ink",
           box,
         )}
-      >
-        {/*
-          Um valor que não está nas opções não pode passar por outro.
-
-          O `<select>` do browser, quando o `value` não corresponde a nenhuma
-          `<option>`, mostra **a primeira** — e cala-se. É como um formulário
-          mostrava "Campo 1" com o estado a `""` e mandava vazio para o
-          servidor, que respondia em inglês que o local não podia ser vazio: o
-          ecrã dizia uma coisa e o pedido levava outra, sem nada no meio a
-          assinalar a diferença.
-
-          Esta opção fantasma faz o desalinhamento aparecer. Não corrige o valor
-          — corrigir por conta própria seria escolher pelo utilizador — mas
-          deixa de o esconder, e quem estiver a olhar vê um traço onde antes via
-          uma escolha que nunca fez.
-        */}
-        {!options.some((o) => o.value === value) && (
-          <option value={value} disabled>
-            {value === "" ? "—" : value}
-          </option>
+        conteudo={(rotulo, aberto) => (
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">{rotulo}</span>
+            <ChevronDown
+              className={cx("shrink-0 text-ink-4 transition-transform duration-[120ms]", size === "sm" ? "size-3.5" : "size-4", aberto && "rotate-180")}
+              strokeWidth={1.75}
+            />
+          </span>
         )}
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        className={cx(
-          "pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-4",
-          size === "sm" ? "right-2 size-3.5" : "right-2.5 size-4",
-        )}
-        strokeWidth={1.75}
       />
     </span>
   );

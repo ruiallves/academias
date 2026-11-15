@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -601,7 +602,7 @@ function EstadoDaLinha({
       <div className="min-w-0 leading-tight">
         {onMudar ? (
           <span className="relative inline-flex items-center">
-            <select
+            <Escolha
               aria-label={`Estado da inscrição de ${linha.name}`}
               value={p}
               disabled={ocupado}
@@ -617,7 +618,7 @@ function EstadoDaLinha({
                   {x.curto}
                 </option>
               ))}
-            </select>
+            </Escolha>
             <ChevronDown className="pointer-events-none absolute right-1.5 size-3.5 text-ink-4" strokeWidth={1.75} />
           </span>
         ) : (
@@ -694,7 +695,7 @@ function BarraDeEscolha({
         )}
         {/* Um passo para todos: o valor fica sempre no rótulo, para poder escolher o mesmo duas vezes. */}
         <span className="relative inline-flex shrink-0 items-center">
-          <select
+          <Escolha
             aria-label="Mudar o estado dos escolhidos"
             value=""
             disabled={ocupado}
@@ -709,7 +710,7 @@ function BarraDeEscolha({
                 {x.label}
               </option>
             ))}
-          </select>
+          </Escolha>
           <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-surface/70" strokeWidth={1.75} />
         </span>
         <button
@@ -817,14 +818,14 @@ function GerarDialog({
     >
       <div className="space-y-4 px-5 py-4">
         <DialogField label="Tipo de boletim">
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as Tipo | "proposto")} className={dialogInputClass}>
+          <Escolha value={tipo} onChange={(e) => setTipo(e.target.value as Tipo | "proposto")} className={dialogInputClass}>
             <option value="proposto">O proposto para cada jogador</option>
             {TIPOS.filter((t) => tiposPossiveis.includes(t.key)).map((t) => (
               <option key={t.key} value={t.key}>
                 {t.label} {n > 1 ? "(todos)" : ""}
               </option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
         {tipo === "proposto" && n > 1 && (
           <p className="-mt-2 text-meta text-ink-3">

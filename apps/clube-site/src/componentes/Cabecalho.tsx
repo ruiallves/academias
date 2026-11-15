@@ -24,22 +24,19 @@ export function Cabecalho({ clube, trocarLayout = false }: { clube: Clube; troca
             {trocarLayout && <TrocarLayout atual="tribuna" />}
             {/* Abaixo de `sm` só os ícones: com o interruptor de layout, os
                 três rótulos não cabiam em 375px. O nome fica no aria-label. */}
-            {ATALHOS.map(({ href, label, Icone }) =>
-              href === "/loja" ? (
-                // A loja leva o carrinho: o número de artigos por cima do ícone.
-                <BotaoCarrinho key={href} slug={clube.slug} className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white" />
-              ) : (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-label={label}
-                  className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white"
-                >
-                  <Icone size={15} aria-hidden />
-                  <span className="hidden sm:inline">{label}</span>
-                </Link>
-              ),
-            )}
+            {ATALHOS.map(({ href, label, Icone }) => (
+              <Link
+                key={href}
+                href={href}
+                aria-label={label}
+                className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white"
+              >
+                <Icone size={15} aria-hidden />
+                <span className="hidden sm:inline">{label}</span>
+              </Link>
+            ))}
+            {/* Ao lado da Loja, só com artigos lá dentro. */}
+            <BotaoCarrinho slug={clube.slug} className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white" />
             <BotaoSocio
               
               aria-label="Sócios"

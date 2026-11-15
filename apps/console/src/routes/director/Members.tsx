@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
@@ -1649,7 +1650,7 @@ export function NewMemberDialog({
 
         <div className="grid gap-3 sm:grid-cols-3">
           <DialogField label="Documento">
-            <select
+            <Escolha
               value={documentKind}
               onChange={(e) => setDocumentKind(e.target.value as DocumentKind)}
               className={dialogInputClass}
@@ -1659,7 +1660,7 @@ export function NewMemberDialog({
                   {DOC_LABEL[k]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="N.º de documento">
             <input
@@ -1683,27 +1684,27 @@ export function NewMemberDialog({
         <div className={cx("grid gap-3", varios ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
           {!varios && (
             <DialogField label="Sexo">
-              <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
+              <Escolha value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
                 {(Object.keys(SEX_LABEL) as Sex[]).map((k) => (
                   <option key={k} value={k}>
                     {SEX_LABEL[k]}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
           )}
           <DialogField label="Categoria" hint={tiers.length === 0 ? "ainda não há" : undefined}>
-            <select value={tierId} onChange={(e) => setTierId(e.target.value)} className={dialogInputClass}>
+            <Escolha value={tierId} onChange={(e) => setTierId(e.target.value)} className={dialogInputClass}>
               <option value="">Sem categoria</option>
               {tiers.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Estado">
-            <select
+            <Escolha
               value={status}
               onChange={(e) => setStatus(e.target.value as MemberStatus)}
               className={dialogInputClass}
@@ -1713,7 +1714,7 @@ export function NewMemberDialog({
                   {STATUS_LABEL[k]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         </div>
 
@@ -1728,7 +1729,7 @@ export function NewMemberDialog({
           <div className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5">
             <DialogField label="O ano de quotas abre a" hint="hoje, por omissão">
               <div className="flex items-end gap-1.5">
-                <select
+                <Escolha
                   aria-label="Dia"
                   value={Math.min(annualDia, DIAS_DO_MES[annualMes - 1])}
                   onChange={(e) => setAnnualDia(Number(e.target.value))}
@@ -1739,8 +1740,8 @@ export function NewMemberDialog({
                       {d}
                     </option>
                   ))}
-                </select>
-                <select
+                </Escolha>
+                <Escolha
                   aria-label="Mês"
                   value={annualMes}
                   onChange={(e) => {
@@ -1756,7 +1757,7 @@ export function NewMemberDialog({
                       {nome}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </div>
             </DialogField>
             <p className="mt-2 text-meta leading-relaxed text-ink-3">
@@ -2681,7 +2682,7 @@ function AberturaDoAno({
       <div className="mt-2.5 flex items-end gap-2">
         <label className="flex flex-col gap-1">
           <span className="text-meta text-ink-3">Dia</span>
-          <select
+          <Escolha
             value={value.dia}
             disabled={!mayWrite}
             onChange={(e) => onChange({ ...value, dia: Number(e.target.value) })}
@@ -2692,11 +2693,11 @@ function AberturaDoAno({
                 {d}
               </option>
             ))}
-          </select>
+          </Escolha>
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-meta text-ink-3">Mês</span>
-          <select
+          <Escolha
             value={value.mes}
             disabled={!mayWrite}
             onChange={(e) => {
@@ -2710,7 +2711,7 @@ function AberturaDoAno({
                 {nome}
               </option>
             ))}
-          </select>
+          </Escolha>
         </label>
       </div>
 

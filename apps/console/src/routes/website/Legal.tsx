@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
 import { ExternalLink } from "@/lib/icons";
 import { cx } from "@/components/primitives";
@@ -85,14 +86,14 @@ export function InformacaoLegal() {
             label="Centro de arbitragem"
             ajuda={!d.ral ? `Sugerido pela cidade do clube${store.academy.city ? ` (${store.academy.city})` : ""}. Confirma se é o da tua zona.` : undefined}
           >
-            <select className={campoClass} value={escolhida} onChange={(e) => setD({ ...d, ral: e.target.value as EntidadeRalKey })}>
+            <Escolha className={campoClass} value={escolhida} onChange={(e) => setD({ ...d, ral: e.target.value as EntidadeRalKey })}>
               {ENTIDADES_RAL.map((e) => (
                 <option key={e.key} value={e.key}>
                   {e.sigla} · {e.area}
                 </option>
               ))}
               <option value="outra">Outro centro (Madeira, Açores, setorial)</option>
-            </select>
+            </Escolha>
           </Campo>
           {outra ? (
             <div className="grid gap-4 sm:grid-cols-2">

@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { DialogField, dialogInputClass } from "@/components/Dialog";
 import { DISTRITOS, paises } from "@/lib/paises";
 
@@ -115,14 +116,14 @@ export function MoradaField({ value, onChange }: { value: Morada; onChange: (m: 
       </div>
       <div className="grid grid-cols-2 gap-3">
         <DialogField label="Distrito">
-          <select value={value.district} onChange={set("district")} className={dialogInputClass}>
+          <Escolha value={value.district} onChange={set("district")} className={dialogInputClass}>
             <option value="">—</option>
             {DISTRITOS.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
         <DialogField label="Concelho">
           <input value={value.municipality} onChange={set("municipality")} maxLength={80} className={dialogInputClass} />
@@ -135,13 +136,13 @@ export function MoradaField({ value, onChange }: { value: Morada; onChange: (m: 
 /** Uma função e não um componente: o `DialogField` só liga o rótulo a um `<select>` que receba directamente. */
 function seletorDePais(value: string, onChange: (e: { target: { value: string } }) => void) {
   return (
-    <select value={value} onChange={onChange} className={dialogInputClass}>
+    <Escolha value={value} onChange={onChange} className={dialogInputClass}>
       <option value="">—</option>
       {paises().map((p) => (
         <option key={p.codigo} value={p.codigo}>
           {p.nome}
         </option>
       ))}
-    </select>
+    </Escolha>
   );
 }

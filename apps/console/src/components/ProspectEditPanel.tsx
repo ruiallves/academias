@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useState } from "react";
 import { academy, sportById } from "@/lib/api";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -105,13 +106,13 @@ export function ProspectEditPanel({
                 />
               </Field>
               <Field label="Modalidade">
-                <select value={sportId} onChange={(e) => setSportId(e.target.value)} className={dialogInputClass}>
+                <Escolha value={sportId} onChange={(e) => setSportId(e.target.value)} className={dialogInputClass}>
                   {academy.sports.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </Field>
             </div>
 
@@ -149,14 +150,14 @@ export function ProspectEditPanel({
             {positions.length > 0 && (
               <>
                 <Field label="Posição principal" hint="opcional">
-                  <select value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass}>
+                  <Escolha value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass}>
                     <option value="">—</option>
                     {positions.map((p) => (
                       <option key={p} value={p}>
                         {p}
                       </option>
                     ))}
-                  </select>
+                  </Escolha>
                 </Field>
 
                 <Field label="Outras posições" hint="por vírgulas">
@@ -172,7 +173,7 @@ export function ProspectEditPanel({
 
             {sport?.dominantSideLabel && (
               <Field label={sport.dominantSideLabel} hint="opcional">
-                <select
+                <Escolha
                   value={dominantSide}
                   onChange={(e) => setDominantSide(e.target.value)}
                   className={dialogInputClass}
@@ -181,7 +182,7 @@ export function ProspectEditPanel({
                   <option value="RIGHT">Direito</option>
                   <option value="LEFT">Esquerdo</option>
                   <option value="BOTH">Ambidestro</option>
-                </select>
+                </Escolha>
               </Field>
             )}
           </div>
@@ -293,14 +294,14 @@ export function ProposeToRequestDialog({
         ) : (
           <>
             <DialogField label="Pedido">
-              <select value={pick} onChange={(e) => setPick(e.target.value)} className={dialogInputClass}>
+              <Escolha value={pick} onChange={(e) => setPick(e.target.value)} className={dialogInputClass}>
                 {requests?.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.title}
                     {r.requestedBy ? ` — ${r.requestedBy}` : ""}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
 
             {chosen && (

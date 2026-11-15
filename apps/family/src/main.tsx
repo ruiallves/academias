@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { RouterComTransicao } from "./lib/navegacao";
 import { StandaloneGate } from "./StandaloneGate";
 import { vigiarVersao } from "@academia/ui/versao";
 import { forcarVistaDeTelemovel } from "./lib/vista-telemovel";
@@ -78,9 +78,9 @@ document.addEventListener("touchstart", () => {}, { passive: true });
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StandaloneGate>
-      <BrowserRouter basename={BASE || undefined}>
+      <RouterComTransicao basename={BASE || undefined}>
         <App />
-      </BrowserRouter>
+      </RouterComTransicao>
     </StandaloneGate>
   </StrictMode>,
 );

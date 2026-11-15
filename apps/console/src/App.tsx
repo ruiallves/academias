@@ -58,7 +58,7 @@ import Certification from "@/routes/certification/Certification";
 import Inscricoes from "@/routes/inscricoes/Inscricoes";
 import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import Soon from "@/routes/Soon";
-import Website from "@/routes/website/Website";
+import Website, { BilheteiraDoSite, ConteudoDoSite, EncomendasDoSite, LojaDoSite, MensagensDoSite } from "@/routes/website/Website";
 import Patrocinadores from "@/routes/director/Patrocinadores";
 import Adjunto from "@/routes/adjunto/Adjunto";
 
@@ -182,8 +182,13 @@ export default function App() {
           </>
         )}
 
-        {/* O site do clube — só em DEV, como a Academias AI. Ver `GRUPO_WEBSITE` em `lib/nav.ts`. */}
+        {/* O site do clube (Connect Pro), em seis páginas. Ver `GRUPO_WEBSITE` em `lib/nav.ts` e `routes/website/rotas.ts`. */}
         <Route path="website" element={<Allow p="website:read"><Website /></Allow>} />
+        <Route path="website/conteudo" element={<Allow p="website:read"><ConteudoDoSite /></Allow>} />
+        <Route path="website/loja" element={<Allow p="website:read"><LojaDoSite /></Allow>} />
+        <Route path="website/encomendas" element={<Allow p="website:read"><EncomendasDoSite /></Allow>} />
+        <Route path="website/bilheteira" element={<Allow p="website:read"><BilheteiraDoSite /></Allow>} />
+        <Route path="website/mensagens" element={<Allow p="website:read"><MensagensDoSite /></Allow>} />
 
         {/* Certificação FPF. Só tem menu nos clubes com futebol; quem chega pelo
             endereço sem o ter vê a página a dizê-lo. */}

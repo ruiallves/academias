@@ -376,9 +376,10 @@ const CHAVE_DO_MODO = "inventario.modo";
 
 function lerModo(): "grelha" | "lista" {
   try {
-    return localStorage.getItem(CHAVE_DO_MODO) === "lista" ? "lista" : "grelha";
+    // Lista por omissão; só quem escolheu a grelha a vê ao voltar.
+    return localStorage.getItem(CHAVE_DO_MODO) === "grelha" ? "grelha" : "lista";
   } catch {
-    return "grelha";
+    return "lista";
   }
 }
 

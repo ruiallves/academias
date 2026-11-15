@@ -80,6 +80,89 @@ export function palavras(nome: string): string[] {
   return normalizar(nome).split(" ").filter((p) => p && !PARTICULAS.has(p));
 }
 
+/**
+ * As equipas que um nome dito pode querer dizer, da mais certa para a menos.
+ *
+ * As pessoas não dizem o nome da equipa como está escrito: "o sub-19 de
+ * futebol", "sub19 futebol", "futebol sub-19" querem todos dizer "Sub-19
+ * Futebol" (AD Fafe, 15/11/2026: o assistente disse que a equipa não existia
+ * porque só comparava letra a letra). Por degraus, até um dar resultado:
+ *   1. o id, ou o nome igual;
+ *   2. as mesmas palavras, sem partículas e com "sub19" partido em "sub 19";
+ *   3. todas as palavras ditas estão no nome da equipa ou da modalidade;
+ *   4. um nome contém o outro (o comportamento de antes).
+ * Mais do que uma no primeiro degrau que dá resultado é uma pergunta, nunca
+ * uma escolha.
+ */
+export function acharEquipas<E extends { id: string; name: string; sport?: { name: string } }>(equipas: readonly E[], dito: string): E[] {
+  const porId = equipas.filter((e) => e.id === dito);
+  if (porId.length) return porId;
+  // "a equipa do sub-13", "o escalão sub-15": "equipa" e "escalão" não distinguem equipa nenhuma.
+  const limpo = normalizar(dito).replace(/\b(equipa|escalao)\b/g, " ");
+  return acharNaLista(equipas, limpo, (e) => [e.name, `${e.name} ${e.sport?.name ?? ""}`]);
+}
+
+/** Números por extenso e ordinais, como se dizem ("campo número um", "o segundo balneário"). */
+const NUMEROS: Record<string, string> = {
+  // Sem "segunda", "quarta", "quinta" e "sexta": são dias da semana ("o treino de quinta").
+  zero: "0", um: "1", uma: "1", primeiro: "1", primeira: "1", dois: "2", duas: "2", segundo: "2",
+  tres: "3", terceiro: "3", terceira: "3", quatro: "4", quarto: "4", cinco: "5", quinto: "5",
+  seis: "6", sexto: "6", sete: "7", setimo: "7", setima: "7", oito: "8", oitavo: "8", oitava: "8",
+  nove: "9", nono: "9", nona: "9", dez: "10", decimo: "10", decima: "10", onze: "11", doze: "12", treze: "13",
+  catorze: "14", quatorze: "14", quinze: "15", dezasseis: "16", dezesseis: "16", dezassete: "17", dezessete: "17",
+  dezoito: "18", dezanove: "19", dezenove: "19", vinte: "20",
+};
+/** Palavras que só ligam as outras: não distinguem nome nenhum. */
+const VAZIAS = new Set(["de", "da", "do", "das", "dos", "e", "o", "a", "os", "as", "no", "na", "nos", "nas", "ao", "aos", "em"]);
+/** "n.º 1", "nº1", "número 1", "nr 1": a marca de número antes de um número sai. */
+const MARCAS_DE_NUMERO = new Set(["n", "nr", "nro", "num", "numero", "o"]);
+
+/**
+ * A forma de comparar um nome dito com um nome escrito: minúsculas, sem
+ * acentos, sem palavras de ligação, "sub19" partido em "sub 19", números por
+ * extenso em algarismos e sem a marca de número. "Campo nº1", "campo número
+ * um" e "Campo 1" dão todos `["campo", "1"]` (AD Fafe, 15/11/2026).
+ */
+export function formaDeComparar(texto: string): string[] {
+  const partido = normalizar(texto.replace(/([a-zÀ-ɏ])(\d)/gi, "$1 $2").replace(/(\d)([a-zÀ-ɏ])/gi, "$1 $2"));
+  const ps = partido.split(" ").filter(Boolean).map((p) => NUMEROS[p] ?? p);
+  return ps.filter((p, i) => !(MARCAS_DE_NUMERO.has(p) && /^\d+$/.test(ps[i + 1] ?? "")) && !VAZIAS.has(p));
+}
+
+/**
+ * As coisas de uma lista que um nome dito pode querer dizer: um local, um
+ * balneário, uma prova, uma secção do site, uma das opções de um campo. Serve
+ * a todos os campos do assistente, para "Campo nº1" ser o "Campo 1" em todo o
+ * lado. Por degraus, até um dar resultado:
+ *   1. a mesma forma (ver `formaDeComparar`);
+ *   2. as mesmas palavras, por outra ordem;
+ *   3. todas as palavras ditas estão no nome;
+ *   4. um nome contém o outro.
+ * Mais do que uma no primeiro degrau que dá resultado é uma pergunta, nunca
+ * uma escolha. `nomesDe` dá os nomes de cada coisa (o rótulo, o valor, …).
+ */
+export function acharNaLista<T>(lista: readonly T[], dito: string, nomesDe: (t: T) => string[]): T[] {
+  const ditas = formaDeComparar(dito);
+  if (ditas.length === 0) return [];
+  const juntas = ditas.join(" ");
+  const ordenadas = [...ditas].sort().join(" ");
+  const indexado = lista.map((t) => ({ t, formas: nomesDe(t).map(formaDeComparar).filter((f) => f.length > 0) }));
+  const degraus: ((f: string[]) => boolean)[] = [
+    (f) => f.join(" ") === juntas,
+    (f) => [...f].sort().join(" ") === ordenadas,
+    (f) => ditas.every((d) => f.includes(d)),
+    (f) => {
+      const j = f.join(" ");
+      return ` ${j} `.includes(` ${juntas} `) || ` ${juntas} `.includes(` ${j} `);
+    },
+  ];
+  for (const degrau of degraus) {
+    const achados = indexado.filter((c) => c.formas.some(degrau)).map((c) => c.t);
+    if (achados.length) return achados;
+  }
+  return [];
+}
+
 function variantes(palavra: string): string[] {
   return [palavra, ...(ALCUNHAS[palavra] ?? [])];
 }

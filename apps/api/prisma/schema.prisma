@@ -380,6 +380,7 @@ model Academy {
   ticketScans        TicketScan[]
   siteOrders         SiteOrder[]
   siteOrderItems     SiteOrderItem[]
+  siteOrderEvents    SiteOrderEvent[]
 
   adjuntoConversations AdjuntoConversation[]
   adjuntoMessages      AdjuntoMessage[]
@@ -8048,6 +8049,12 @@ model SiteOrder {
   /// O número da encomenda, por clube e seguido: "Encomenda n.º 42". É o que
   /// se diz ao telefone e o que vai no email; o `id` fica para a máquina.
   number Int
+  /// A referência única em toda a plataforma ("ENC-7K2F-9QXA"): dois clubes
+  /// têm cada um a sua n.º 1, a referência não se repete. Sem 0/O nem 1/I,
+  /// para se ditar ao telefone. Ver `referenciaNova` em `loja/regras.ts`; a
+  /// base gera uma por omissão (`app.nova_referencia_encomenda()`), para uma
+  /// API antiga continuar a criar encomendas.
+  reference String @unique @default(dbgenerated("app.nova_referencia_encomenda()"))
 
   status   SiteOrderStatus   @default(RESERVED)
   delivery SiteOrderDelivery @default(PICKUP)
@@ -8079,6 +8086,9 @@ model SiteOrder {
   /// Até quando os artigos estão guardados à espera do pagamento.
   reservedUntil DateTime
   paidAt        DateTime?
+  /// Entregue ao produtor (camisolas com nome, artigos por medida): o clube
+  /// já a mandou ao fornecedor e espera que volte para a pôr pronta ou enviar.
+  productionAt  DateTime?
   /// Levantamento: pronta para levantar. Envio: entregue ao correio.
   readyAt       DateTime?
   shippedAt     DateTime?
@@ -8102,6 +8112,7 @@ model SiteOrder {
 
   items    SiteOrderItem[]
   payments Payment[]
+  events   SiteOrderEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -8116,6 +8127,10 @@ enum SiteOrderStatus {
   RESERVED
   /// Paga: o stock desceu e o clube vai preparar.
   PAID
+  /// Entregue ao produtor: o clube mandou-a ao fornecedor (artigos
+  /// personalizados ou por medida) e espera que volte. Opcional, entre a paga
+  /// e a pronta ou enviada.
+  IN_PRODUCTION
   /// Pronta para levantar no clube (só no levantamento).
   READY
   /// Entregue ao correio (só no envio).
@@ -8135,6 +8150,29 @@ enum SiteOrderDelivery {
   PICKUP
   /// Enviar pelo correio para a morada.
   SHIPPING
+}
+
+/// Uma mudança de estado de uma encomenda feita na consola, com quem a fez.
+/// O clube pode andar para a frente e para trás no percurso; voltar atrás
+/// apaga as datas dos passos seguintes, e é aqui que fica a história. Só se
+/// acrescenta (a API não tem UPDATE nem DELETE nesta tabela).
+model SiteOrderEvent {
+  id         String           @id @default(cuid())
+  academyId  String
+  academy    Academy          @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  orderId    String
+  order      SiteOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus SiteOrderStatus?
+  toStatus   SiteOrderStatus
+  byUserId   String?
+  /// O nome de quem mudou, fotografado (a pessoa pode sair do clube).
+  byName     String?
+  /// O código de seguimento, ou outra nota da mudança.
+  note       String?
+  createdAt  DateTime         @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([academyId])
 }
 
 /// Uma linha de uma encomenda: um produto num tamanho, tantas unidades, ao

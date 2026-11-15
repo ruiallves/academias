@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useMemo, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
@@ -130,7 +131,7 @@ export function DividirQuotaDialog({
 
         <DialogField label="Cobrar até (inclusive)" hint="o mês escolhido entra">
           <div className="flex items-end gap-1.5">
-            <select
+            <Escolha
               aria-label="Mês"
               value={ate.mes}
               onChange={(e) => setAte({ ...ate, mes: Number(e.target.value) })}
@@ -141,8 +142,8 @@ export function DividirQuotaDialog({
                   {nome}
                 </option>
               ))}
-            </select>
-            <select
+            </Escolha>
+            <Escolha
               aria-label="Ano"
               value={ate.ano}
               onChange={(e) => setAte({ ...ate, ano: Number(e.target.value) })}
@@ -153,7 +154,7 @@ export function DividirQuotaDialog({
                   {a}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </div>
         </DialogField>
 

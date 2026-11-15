@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "./primitives";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -572,13 +573,13 @@ function UploadDialog({
 
         <div className="grid grid-cols-3 gap-3">
           <DialogField label="Tipo">
-            <select value={kind} onChange={(e) => setKind(e.target.value as VideoKind)} className={dialogInputClass}>
+            <Escolha value={kind} onChange={(e) => setKind(e.target.value as VideoKind)} className={dialogInputClass}>
               {(Object.keys(VIDEO_KIND_LABEL) as VideoKind[]).map((k) => (
                 <option key={k} value={k}>
                   {VIDEO_KIND_LABEL[k]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Gravado a" hint="opcional">
             <input type="date" value={recordedOn} onChange={(e) => setRecordedOn(e.target.value)} className={dialogInputClass} />

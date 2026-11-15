@@ -3152,7 +3152,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           where: { id: payment.siteOrderId },
           select: { id: true, status: true, payments: { where: { status: PaymentStatus.PAID, id: { not: payment.id } }, select: { id: true } } },
         });
-        if (encomenda && (encomenda.status === "PAID" || encomenda.status === "READY" || encomenda.status === "SHIPPED") && encomenda.payments.length === 0) {
+        if (encomenda && (encomenda.status === "PAID" || encomenda.status === "IN_PRODUCTION" || encomenda.status === "READY" || encomenda.status === "SHIPPED") && encomenda.payments.length === 0) {
           await db.siteOrder.update({
             where: { id: encomenda.id },
             data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: "Reembolsado na euPago.", refundDueCents: payment.amountCents, refundedAt: new Date(), refundNote: "Reembolsado na euPago." },

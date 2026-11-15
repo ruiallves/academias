@@ -37,16 +37,14 @@ export function CascaHolofote({ clube, trocarLayout = false, children }: { clube
             <p className="hidden text-[0.8125rem] lg:block">Site oficial{clube.city ? ` · ${clube.city}` : ""}</p>
             <div className="ml-auto hidden items-center gap-1 text-[0.8125rem] lg:flex">
               {trocarLayout && <TrocarLayout atual="holofote" sobre="claro" />}
-              {ATALHOS.map(({ href, label, Icone }) =>
-                href === "/loja" ? (
-                  <BotaoCarrinho key={href} slug={clube.slug} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink" />
-                ) : (
-                  <Link key={href} href={href} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
-                    <Icone size={15} aria-hidden />
-                    {label}
-                  </Link>
-                ),
-              )}
+              {ATALHOS.map(({ href, label, Icone }) => (
+                <Link key={href} href={href} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
+                  <Icone size={15} aria-hidden />
+                  {label}
+                </Link>
+              ))}
+              {/* Ao lado da Loja, só com artigos lá dentro. */}
+              <BotaoCarrinho slug={clube.slug} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink" />
               <BotaoSocio className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
                 <UserRound size={15} aria-hidden />
                 Sócios

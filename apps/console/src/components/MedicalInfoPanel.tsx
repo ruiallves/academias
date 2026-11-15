@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx, Panel, PanelHead } from "./primitives";
@@ -213,14 +214,14 @@ function MedicalInfoDialog({
     >
       <form id="form-info-medica" onSubmit={save} className="space-y-4 p-5">
         <DialogField label="Grupo sanguíneo">
-          <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className={cx(dialogInputClass, "w-40")}>
+          <Escolha value={bloodType} onChange={(e) => setBloodType(e.target.value)} className={cx(dialogInputClass, "w-40")}>
             <option value="">Não se sabe</option>
             {GRUPOS.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
 
         <DialogField label="Alergias" hint="alimentos, medicamentos, picadas — ou «sem alergias conhecidas»">

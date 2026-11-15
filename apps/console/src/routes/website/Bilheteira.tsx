@@ -1,7 +1,7 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
-import { LugarAnual as IconeLugarAnual, MapPin, Pencil, Receipt, Recinto as IconeRecinto, SlidersHorizontal, Ticket } from "@/lib/icons";
+import { MapPin, Pencil, Receipt, Recinto as IconeRecinto, Ticket } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
-import { Segmented } from "@/components/filters";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { MapaDoRecinto } from "@academia/ui/estadio";
@@ -11,13 +11,14 @@ import { useSession } from "@/session";
 import { guardarBilheteira, motivoSemVendas, useSite, type BilheteiraDoJogo, type CategoriaDeSocio, type Recinto, type TipoDeBilhete } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 import { euro, quando } from "@/lib/bilheteira";
-import { GrelhaDePrecos, LegendaDaGrelha, PrecosPorOmissao, colunasDe, contarPrecos, grelhaDe, grelhaValida, linhasDe, tiposDe, type Grelha } from "./PrecosDaBilheteira";
+import { GrelhaDePrecos, LegendaDaGrelha, colunasDe, contarPrecos, grelhaDe, grelhaValida, linhasDe, tiposDe, type Grelha } from "./PrecosDaBilheteira";
 import { VendasDoJogo } from "./VendasDoJogo";
 import { LugaresAnuais } from "./LugaresAnuais";
 
 
 /** Quantos dias depois do jogo a bilheteira ainda aparece: os reembolsos e as contas fazem-se depois. */
 const DIAS_DEPOIS = 30;
+
 
 /**
  * Uma bilheteira por gravar. Sem preços: ao abrir o editor, a grelha começa
@@ -49,55 +50,18 @@ function padrao(recinto: Recinto | null, emCasa: boolean): BilheteiraDoJogo {
  * Os jogos dos últimos trinta dias com bilheteira continuam na lista, só com
  * as vendas: é depois do jogo que se fazem os reembolsos e as contas.
  *
- * Ao lado, os lugares anuais dos sócios (contam na lotação de todos os jogos
- * da época), e à direita os preços por omissão.
+ * Os lugares anuais dos sócios (contam na lotação de todos os jogos da época)
+ * são outro separador da página, e os preços por omissão um botão no
+ * cabeçalho dela: ver `BilheteiraDoSite` em `Website.tsx`.
  */
-export function Bilheteira({ onIrParaEstadio }: { onIrParaEstadio: () => void }) {
+export function Bilheteira({ vista, onIrParaEstadio }: { vista: "jogos" | "anuais"; onIrParaEstadio: () => void }) {
   const store = useStore();
   const { session } = useSession();
   const site = useSite(store.academy.slug);
-  const [vista, setVista] = useState<"jogos" | "anuais">("jogos");
-  const [precos, setPrecos] = useState(false);
   const podeEscrever = can(session, "website:write");
   const verSocios = can(session, "member:read");
 
-  return (
-    <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        {verSocios ? (
-          <Segmented
-            value={vista}
-            onChange={setVista}
-            label="Vistas da bilheteira"
-            options={[
-              { value: "jogos" as const, label: "Jogos", icon: Ticket },
-              { value: "anuais" as const, label: "Lugares anuais", icon: IconeLugarAnual },
-            ]}
-          />
-        ) : (
-          <span />
-        )}
-        {podeEscrever && (
-          <button type="button" className="ctl-outline" onClick={() => setPrecos(true)}>
-            <SlidersHorizontal className="size-4" strokeWidth={1.75} />
-            Preços por omissão
-          </button>
-        )}
-      </div>
-
-      {vista === "anuais" && verSocios ? <LugaresAnuais recintos={site.recintos} /> : <Jogos onIrParaEstadio={onIrParaEstadio} podeEscrever={podeEscrever} />}
-
-      {precos && (
-        <PrecosPorOmissao
-          recintos={site.recintos}
-          precos={site.precosBilheteira}
-          categorias={site.categoriasDeSocio}
-          onClose={() => setPrecos(false)}
-          onIrParaEstadio={onIrParaEstadio}
-        />
-      )}
-    </>
-  );
+  return vista === "anuais" && verSocios ? <LugaresAnuais recintos={site.recintos} /> : <Jogos onIrParaEstadio={onIrParaEstadio} podeEscrever={podeEscrever} />;
 }
 
 function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void; podeEscrever: boolean }) {
@@ -419,13 +383,13 @@ function EditarBilheteira({
         </div>
 
         <DialogField label="Recinto" hint="As linhas da grelha são as bancadas deste recinto.">
-          <select className={dialogInputClass} value={b.recintoId ?? ""} onChange={(e) => trocarRecinto(e.target.value)}>
+          <Escolha className={dialogInputClass} value={b.recintoId ?? ""} onChange={(e) => trocarRecinto(e.target.value)}>
             {recintos.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.nome}
               </option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
         {!jogo.isHome && (
           <div className="-mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[8px] bg-sunken/60 px-3 py-2.5">

@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "@/lib/icons";
+import { Escolha } from "./Escolha";
 import { cx } from "./primitives";
 
 /**
@@ -145,8 +146,8 @@ export function DialogField({
    */
   const soUmCampo =
     isValidElement(children) &&
-    typeof children.type === "string" &&
-    ["input", "select", "textarea"].includes(children.type) &&
+    // O menu com pesquisa (`Escolha`) conta como campo: era um `<select>` até 15/11/2026, e o rótulo continua a abri-lo.
+    ((typeof children.type === "string" && ["input", "select", "textarea"].includes(children.type)) || children.type === Escolha) &&
     !(children.props as { id?: string }).id;
 
   return (

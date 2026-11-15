@@ -1,38 +1,19 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { flushSync } from "react-dom";
-import { Routes, useLocation, useNavigationType, type Location } from "react-router-dom";
+import { useLayoutEffect, type ReactNode } from "react";
+import { Routes, useLocation } from "react-router-dom";
+import { ultimaTroca } from "@/lib/navegacao";
 
 /**
- * A troca de ecrã, animada.
+ * O sítio onde os ecrãs se desenham, com a entrada de cada um.
  *
- * ## O que faltava
+ * A troca em si (quando muda, se desliza, se funde) decide-se no router, em
+ * `lib/navegacao.tsx`, no instante do toque. Aqui só se lê o resultado:
  *
- * As rotas trocavam de um fotograma para o outro: o ecrã antigo desaparecia e
- * o novo aparecia, sem nada pelo meio. Abrir um jogo e voltar atrás pareciam a
- * mesma coisa. É o corte seco que se sente como "não é fluido", mesmo com a
- * app a responder depressa.
- *
- * ## Como se faz
- *
- * Com a View Transitions API do browser (`document.startViewTransition`): o
- * browser tira uma fotografia ao ecrã antigo, deixa o React desenhar o novo, e
- * anima um sobre o outro com o CSS de `styles.css` (`::view-transition-*`).
- * Nada da lógica de navegação muda — os `Link`, os `navigate(-1)` e o gesto de
- * voltar do telemóvel passam todos por aqui, porque o que se observa é a
- * própria `location`.
- *
- * O truque é desenhar as rotas com a **última localização mostrada**, e não
- * com a actual: quando a actual muda, pede-se ao browser a transição, e só
- * dentro dela (com `flushSync`, para o React desenhar já) é que a mostrada
- * passa a ser a actual. Sem a API (iOS antigo, "reduzir movimento" ligado)
- * a mostrada passa a actual na hora, e fica tudo como era.
- *
- * ## A direcção
- *
- * Entrar num detalhe desliza da direita; voltar desliza para a direita; trocar
- * de separador funde. A direcção vai em `data-nav` no `<html>`, que é o que o
- * CSS lê. Um "voltar" por gesto no iOS ou no Android já vem animado pelo
- * sistema (`hasUAVisualTransition`), e aí não se anima duas vezes.
+ *  - **Trocar de separador**: o `<main>` nasce de novo (`key` pelo ecrã) e
+ *    entra com um fundido curto em CSS (`[data-entra="funde"]`), sem
+ *    View Transition e sem fotografias pelo meio.
+ *  - **Entrar e voltar**: o browser anima o deslize com o CSS de
+ *    `styles.css` (`::view-transition-*`, `data-nav` no `<html>`); o `<main>`
+ *    não precisa de fazer nada.
  *
  * ## O scroll
  *
@@ -42,60 +23,6 @@ import { Routes, useLocation, useNavigationType, type Location } from "react-rou
  * scroll aplica-se depois de o ecrã novo estar desenhado (`useLayoutEffect`):
  * antes disso a página ainda é a antiga, e pode ser curta de mais para lá chegar.
  */
-
-type Direccao = "entrar" | "voltar" | "trocar";
-
-/** Os ecrãs de primeiro nível — os que vivem na barra de separadores. */
-const RAIZES = new Set([
-  "/",
-  "/agenda",
-  "/pagamentos",
-  "/atleta",
-  "/perfil",
-  "/socio",
-  "/socio/quotas",
-  "/socio/jogos",
-  "/socio/parcerias",
-  "/socio/novidades",
-]);
-
-const profundidade = (pathname: string): number =>
-  RAIZES.has(pathname) ? 0 : pathname.split("/").filter(Boolean).length;
-
-function direccao(de: string, para: string, tipo: "PUSH" | "POP" | "REPLACE"): Direccao {
-  const a = profundidade(de);
-  const b = profundidade(para);
-  if (tipo === "POP") return a === 0 && b === 0 ? "trocar" : "voltar";
-  if (b > a) return "entrar";
-  if (b < a) return "voltar";
-  return "trocar";
-}
-
-/*
- * Um "voltar" pelo gesto do sistema (arrastar da borda no iOS, o gesto de
- * voltar no Android) chega já animado pelo próprio sistema. O `popstate` diz-o
- * (`hasUAVisualTransition`), e ouve-se aqui, antes de o router o processar.
- */
-let ultimoPopFoiGesto = false;
-if (typeof window !== "undefined") {
-  window.addEventListener("popstate", (e) => {
-    ultimoPopFoiGesto = (e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition === true;
-  });
-}
-
-type DocumentoComTransicao = Document & {
-  startViewTransition?: (update: () => void) => { finished: Promise<void> };
-};
-
-/** O browser anima a troca de ecrã? Sem a API, ou com "reduzir movimento", não. */
-function animavel(): boolean {
-  const doc = document as DocumentoComTransicao;
-  if (typeof doc.startViewTransition !== "function") return false;
-  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-/** Onde cada ecrã estava quando se saiu dele, para voltar ao mesmo sítio. */
-const scrollPorEcra = new Map<string, number>();
 
 /**
  * Já se esteve neste ecrã desde que a app abriu?
@@ -123,58 +50,27 @@ function primeiraVisita(pathname: string): boolean {
 }
 
 export function Ecras({ children, className }: { children: ReactNode; className?: string }) {
-  const actual = useLocation();
-  const tipo = useNavigationType();
-  const [mostrada, setMostrada] = useState<Location>(actual);
-  /* Se o ecrã mostrado entrou a deslizar — e a cascata, por isso, não toca:
-     duas animações ao mesmo tempo é o contrário de fluidez. */
-  const [deslizou, setDeslizou] = useState(false);
-  const emCurso = useRef(false);
-  const scrollPendente = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (actual.key === mostrada.key) return;
-
-    scrollPorEcra.set(mostrada.key, window.scrollY);
-    const sentido = direccao(mostrada.pathname, actual.pathname, tipo);
-    const gesto = tipo === "POP" && ultimoPopFoiGesto;
-    ultimoPopFoiGesto = false;
-
-    const mudar = (animado: boolean) => {
-      scrollPendente.current = (tipo === "POP" ? scrollPorEcra.get(actual.key) : undefined) ?? 0;
-      setDeslizou(animado);
-      setMostrada(actual);
-    };
-
-    /*
-     * Uma transição a correr e outra a pedir (um `Navigate` de redirecção logo
-     * a seguir a um clique): a segunda entra sem animação, por cima.
-     */
-    if (emCurso.current || gesto || !animavel()) {
-      mudar(false);
-      return;
-    }
-
-    emCurso.current = true;
-    document.documentElement.dataset.nav = sentido;
-    const transicao = (document as DocumentoComTransicao).startViewTransition!(() => {
-      flushSync(() => mudar(true));
-    });
-    void transicao.finished.finally(() => {
-      emCurso.current = false;
-      delete document.documentElement.dataset.nav;
-    });
-  }, [actual, mostrada, tipo]);
+  const { key, pathname } = useLocation();
+  const troca = ultimaTroca();
 
   useLayoutEffect(() => {
-    if (scrollPendente.current === null) return;
-    window.scrollTo(0, scrollPendente.current);
-    scrollPendente.current = null;
-  }, [mostrada]);
+    window.scrollTo(0, troca.scroll);
+    // Só quando o ecrã muda: `troca` é o que estava guardado nesse momento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  /* A cascata só na primeira visita, e nunca por cima de outra animação:
+     duas ao mesmo tempo é o contrário de fluidez. */
+  const cascata = primeiraVisita(pathname) && !troca.animada;
 
   return (
-    <main data-anima={primeiraVisita(mostrada.pathname) && !deslizou ? "on" : "off"} className={className}>
-      <Routes location={mostrada}>{children}</Routes>
+    <main
+      key={key}
+      data-anima={cascata ? "on" : "off"}
+      data-entra={troca.sentido === "trocar" && troca.animada ? "funde" : undefined}
+      className={className}
+    >
+      <Routes>{children}</Routes>
     </main>
   );
 }

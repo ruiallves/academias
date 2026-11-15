@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
 import { Newspaper, Pencil, Plus, Star, Trash2 } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
@@ -175,11 +176,11 @@ function EditarNoticia({
           <textarea className={cx(dialogInputClass, "h-48 py-2")} value={n.corpo} onChange={(e) => setN({ ...n, corpo: e.target.value })} />
         </DialogField>
         <DialogField label="Categoria">
-          <select className={dialogInputClass} value={n.categoria} onChange={(e) => setN({ ...n, categoria: e.target.value })}>
+          <Escolha className={dialogInputClass} value={n.categoria} onChange={(e) => setN({ ...n, categoria: e.target.value })}>
             {[...new Set([...CATEGORIAS, n.categoria])].map((c) => (
               <option key={c}>{c}</option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
         <CampoDeImagem valor={n.imagem} onMudar={(imagem) => setN({ ...n, imagem })} />
       </div>

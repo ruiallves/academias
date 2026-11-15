@@ -76,7 +76,7 @@ const TENTATIVAS_MAXIMAS = 10;
 /** Quem reclama uma fatura tem este tempo para a tratar antes de outra volta a poder apanhar. */
 const RECLAMADA_MIN = 10;
 
-const ESTADO_PAGO_DA_ENCOMENDA = ["PAID", "READY", "SHIPPED", "DELIVERED"];
+const ESTADO_PAGO_DA_ENCOMENDA = ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"];
 
 export type EstadoDaFaturacao = {
   /** Que programas este servidor sabe ligar (os OAuth precisam das chaves da nossa aplicação no ambiente). */

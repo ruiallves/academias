@@ -12,7 +12,7 @@
  * Uso: npm run test:adjunto --workspace @academia/api
  */
 import * as XLSX from "xlsx";
-import { normalizar, resolverNome, resolverNomes, rotuloDe } from "../src/adjunto/nomes";
+import { acharEquipas, acharNaLista, formaDeComparar, normalizar, resolverNome, resolverNomes, rotuloDe } from "../src/adjunto/nomes";
 import { lerAcao, rotaDe, ROTA_GERAL, ROTA_REFORCO, ROTAS, subir } from "../src/adjunto/rotas";
 import { FERRAMENTAS, ferramentasDe, foiDito } from "../src/adjunto/ferramentas";
 import { ACOES, aplicaSe, descricaoDasAcoes, lerDiasDaSemana, lerValor, podeFazer, respondido, somarMinutos } from "../src/adjunto/acoes";
@@ -386,6 +386,50 @@ check("sem blocos é um erro, não um plano vazio", !lerPlanoGerado({ objetivo: 
 check("o esquema é estrito em todos os níveis", JSON.stringify(ESQUEMA_DO_PLANO).split('"type":"object"').length - 1 === JSON.stringify(ESQUEMA_DO_PLANO).split('"additionalProperties":false').length - 1);
 const pedido = pedidoDoPlaneador({ clube: "AD Fafe", equipa: "Sub-11", idade: 11, modalidade: "Futebol", terreno: "f7", quando: "quinta-feira, 13 de novembro, 18:00", duracaoMin: 75, foco: "físico, puxado", usarBiblioteca: null, biblioteca: [{ id: "ex1", nome: "Rondo 4v2", categoria: "Técnico", tipo: "Posse", minutos: 10, jogadores: "4v2", intensidade: 5, idadeMin: 9, idadeMax: 12, descricao: null, comDesenho: true }], pesquisar: true });
 check("o pedido leva a equipa, o terreno, a biblioteca e a pesquisa", pedido.includes("sub-11") && pedido.includes("55×37") && pedido.includes("ex1: Rondo 4v2") && pedido.includes("Procura na internet"));
+
+/* ---- Equipas ditas ------------------------------------------------------------ */
+
+// AD Fafe, 15/11/2026: "sub-19 de futebol" dava "Não encontrei a equipa".
+console.log("\nEquipas ditas");
+{
+  const fafe = ["Sub-11 Futebol", "Sub-13 Futebol", "Sub-15 Futebol", "Sub-19 Futebol", "Sub-19 Futsal", "Sub-12 Basquetebol", "Sub-14 Basquetebol", "Sub-16 Basquetebol"].map((name, i) => ({ id: "t" + i, name, sport: { name: name.split(" ")[1] } }));
+  const so = (dito: string) => acharEquipas(fafe, dito).map((e) => e.name);
+  check("\"sub-19 de futebol\" é o Sub-19 Futebol", JSON.stringify(so("sub-19 de futebol")) === '["Sub-19 Futebol"]', so("sub-19 de futebol"));
+  check("\"sub19 futebol\" é o Sub-19 Futebol", JSON.stringify(so("sub19 futebol")) === '["Sub-19 Futebol"]', so("sub19 futebol"));
+  check("\"futebol sub-19\" é o Sub-19 Futebol", JSON.stringify(so("futebol sub-19")) === '["Sub-19 Futebol"]', so("futebol sub-19"));
+  check("\"o sub 11\" é o Sub-11 Futebol", JSON.stringify(so("o sub 11")) === '["Sub-11 Futebol"]', so("o sub 11"));
+  check("\"a equipa do sub-13\" é o Sub-13 Futebol", JSON.stringify(so("a equipa do sub-13")) === '["Sub-13 Futebol"]', so("a equipa do sub-13"));
+  check("\"sub-19\" é uma pergunta (futebol ou futsal)", so("sub-19").length === 2, so("sub-19"));
+  check("o nome exato continua a ganhar", JSON.stringify(so("Sub-19 Futsal")) === '["Sub-19 Futsal"]');
+  check("uma equipa que não existe não inventa nada", so("juniores de andebol").length === 0, so("juniores de andebol"));
+}
+
+/* ---- Qualquer campo de lista ------------------------------------------------------ */
+
+// AD Fafe, 15/11/2026: "campo nº1" e "campo número um" não eram o "Campo 1".
+console.log("\nQualquer campo de lista");
+{
+  const locais = ["Campo 1", "Campo 2", "Pavilhão Municipal", "Campo 10"];
+  const um = (dito: string) => acharNaLista(locais, dito, (l) => [l]);
+  check("\"campo nº1\" é o Campo 1", JSON.stringify(um("campo nº1")) === '["Campo 1"]', um("campo nº1"));
+  check("\"campo n.º 1\" é o Campo 1", JSON.stringify(um("campo n.º 1")) === '["Campo 1"]', um("campo n.º 1"));
+  check("\"campo número um\" é o Campo 1", JSON.stringify(um("campo número um")) === '["Campo 1"]', um("campo número um"));
+  check("\"o primeiro campo\" é o Campo 1", JSON.stringify(um("o primeiro campo")) === '["Campo 1"]', um("o primeiro campo"));
+  check("\"campo dois\" é o Campo 2", JSON.stringify(um("campo dois")) === '["Campo 2"]', um("campo dois"));
+  check("\"campo dez\" é o Campo 10, não o 1", JSON.stringify(um("campo dez")) === '["Campo 10"]', um("campo dez"));
+  check("\"pavilhao\" sem acento é o Pavilhão Municipal", JSON.stringify(um("pavilhao")) === '["Pavilhão Municipal"]', um("pavilhao"));
+  check("\"campo\" sozinho é uma pergunta", um("campo").length === 3, um("campo"));
+  check("um local que não existe não inventa nada", um("estádio do dragão").length === 0, um("estádio do dragão"));
+  const balnearios = ["Balneário 1", "Balneário 2"];
+  check("\"balneário número dois\" é o Balneário 2", JSON.stringify(acharNaLista(balnearios, "balneário número dois", (b) => [b])) === '["Balneário 2"]');
+  check("\"quinta\" (o dia) não vira o número 5", !formaDeComparar("o treino de quinta").includes("5"), formaDeComparar("o treino de quinta"));
+  const local = ACOES.marcar_jogo.campos.find((c) => c.nome === "local")!;
+  check("dizer \"campo número um\" conta como ter dito o Campo 1", foiDito(local, "Campo 1", "o jogo é no campo número um"));
+  check("dizer \"uma lesão\" não conta como ter dito o Campo 1", !foiDito(local, "Campo 1", "o tiago teve uma lesão"));
+  const destaque = { nome: "destaque", rotulo: "Em destaque", tipo: "escolha" as const, obrigatorio: false, opcoes: [{ valor: "sim", label: "Sim" }, { valor: "nao", label: "Não" }] };
+  const lido = lerValor(destaque, "Não");
+  check("uma opção com acento lê-se (\"Não\" é \"nao\")", lido.ok && lido.valor === "nao", lido);
+}
 
 /* ---- A época ---------------------------------------------------------------- */
 

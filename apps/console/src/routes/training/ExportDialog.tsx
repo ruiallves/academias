@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
 import { Dialog, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
@@ -167,24 +168,24 @@ export function ExportDialog({
             </button>
             {tipo === "FASE" && o.v === "FASE" && (
               <div className="px-3.5 pb-3 pl-10">
-                <select className={dialogInputClass} value={mesoId} onChange={(e) => setMesoId(e.target.value)} aria-label="Mesociclo">
+                <Escolha className={dialogInputClass} value={mesoId} onChange={(e) => setMesoId(e.target.value)} aria-label="Mesociclo">
                   {mesos.map((m) => (
                     <option key={m.id} value={m.id}>
                       {(m.name ?? m.phase ?? "Fase") + " · " + rangeLabel(m.startsOn, m.endsOn)}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </div>
             )}
             {tipo === "MICRO" && o.v === "MICRO" && (
               <div className="px-3.5 pb-3 pl-10">
-                <select className={dialogInputClass} value={microId} onChange={(e) => setMicroId(e.target.value)} aria-label="Microciclo">
+                <Escolha className={dialogInputClass} value={microId} onChange={(e) => setMicroId(e.target.value)} aria-label="Microciclo">
                   {micros.map((m) => (
                     <option key={m.id} value={m.id}>
                       {`${microLabel(cycles, m)} · ${rangeLabel(m.startsOn, m.endsOn)}${mesoOf(cycles, m)?.name ? ` · ${mesoOf(cycles, m)!.name}` : ""}`}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </div>
             )}
           </div>

@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useState } from "react";
 import { Ban, Copy, KeyRound, Plus, Porta as IconePorta, Receipt, Send, Trash2, Undo2 } from "@/lib/icons";
 import { Empty, Loading, Pill, cx, type Tone } from "@/components/primitives";
@@ -560,13 +561,13 @@ function LeitorAPorta({ matchId }: { matchId: string }) {
         <h3 className="mb-2.5 text-panel text-ink">Novo acesso</h3>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
           <DialogField label="Porta">
-            <select className={dialogInputClass} value={gateId} onChange={(e) => setGateId(e.target.value)}>
+            <Escolha className={dialogInputClass} value={gateId} onChange={(e) => setGateId(e.target.value)}>
               {dados.portas.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.nome}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Nome (opcional)">
             <input className={dialogInputClass} maxLength={60} placeholder="Segurança Porta A" value={nome} onChange={(e) => setNome(e.target.value)} />

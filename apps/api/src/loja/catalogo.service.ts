@@ -51,7 +51,7 @@ export class CatalogoService {
       db.siteDiscountCode.findMany({ orderBy: [{ active: "desc" }, { createdAt: "desc" }] }),
       db.siteOrder.groupBy({
         by: ["discountCodeId"],
-        where: { discountCodeId: { not: null }, OR: [{ status: { in: ["PAID", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }] },
+        where: { discountCodeId: { not: null }, OR: [{ status: { in: ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }] },
         _count: { _all: true },
         _sum: { discountCents: true },
       }),
@@ -193,7 +193,7 @@ export class CatalogoService {
       }
       const agora = new Date();
       const u = await db.siteOrder.aggregate({
-        where: { discountCodeId: id, OR: [{ status: { in: ["PAID", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }] },
+        where: { discountCodeId: id, OR: [{ status: { in: ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }] },
         _count: { _all: true },
         _sum: { discountCents: true },
       });

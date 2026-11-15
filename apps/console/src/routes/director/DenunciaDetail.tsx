@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -200,7 +201,7 @@ function Decisoes({ caso, podeTratar, onChanged }: { caso: DenunciaCompleta; pod
           <label className="mb-1.5 block text-meta font-medium text-ink" htmlFor="denuncia-responsavel">
             Quem trata
           </label>
-          <select
+          <Escolha
             id="denuncia-responsavel"
             value={caso.assignee?.id ?? ""}
             disabled={!podeTratar || busy}
@@ -217,7 +218,7 @@ function Decisoes({ caso, podeTratar, onChanged }: { caso: DenunciaCompleta; pod
             {caso.assignee && !responsaveis.some((r) => r.id === caso.assignee?.id) && (
               <option value={caso.assignee.id}>{caso.assignee.name}</option>
             )}
-          </select>
+          </Escolha>
           <p className="mt-1.5 text-[11px] leading-relaxed text-ink-4">Só quem tem acesso às denúncias pode ficar responsável.</p>
         </div>
 

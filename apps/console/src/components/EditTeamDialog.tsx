@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -195,14 +196,14 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
         )}
 
         <DialogField label="Género" hint="opcional">
-          <select value={genero} onChange={(e) => setGenero(e.target.value as "" | TeamGender)} className={dialogInputClass}>
+          <Escolha value={genero} onChange={(e) => setGenero(e.target.value as "" | TeamGender)} className={dialogInputClass}>
             <option value="">Por indicar</option>
             {TEAM_GENDERS.map((g) => (
               <option key={g} value={g}>
                 {TEAM_GENDER_LABEL[g]}
               </option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
 
         <div className={cx("grid gap-3", perfil ? "grid-cols-3" : "grid-cols-2")}>

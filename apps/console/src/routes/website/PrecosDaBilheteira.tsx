@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
 import { Ticket } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
@@ -290,13 +291,13 @@ export function PrecosPorOmissao({
         <div className="space-y-4 px-5 py-4">
           {recintos.length > 1 && (
             <DialogField label="Recinto">
-              <select className={dialogInputClass} value={recinto.id} onChange={(e) => setRecintoId(e.target.value)}>
+              <Escolha className={dialogInputClass} value={recinto.id} onChange={(e) => setRecintoId(e.target.value)}>
                 {recintos.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.nome}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
           )}
           {recinto.bancadas.length === 0 ? (

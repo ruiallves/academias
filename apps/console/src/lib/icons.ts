@@ -207,5 +207,5 @@ export const Basketball = createLucideIcon("Basketball", [
 
 export const Futsal = GoalIcon;
 
-/* A loja do site: as setas de ordenar as categorias e os códigos promocionais. */
-export { ArrowDown, Percent, Tags } from "lucide-react";
+/* A loja do site: as setas de ordenar as categorias, os códigos promocionais e a encomenda no produtor. */
+export { ArrowDown, Percent, Tags, Factory } from "lucide-react";

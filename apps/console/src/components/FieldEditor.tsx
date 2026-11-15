@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_VOCABULARY,
@@ -1661,7 +1662,7 @@ export function FieldEditor({
           */}
           {/* Um terreno só (basquetebol, futsal) não é uma escolha — o seletor sai. */}
           {vocabulary.formats.length > 1 && (
-            <select
+            <Escolha
               aria-label="Variante"
               value={formatOf(diagram.field)}
               onChange={(e) => setField(fieldFor(e.target.value as GameFormat, isHalfField(diagram.field)))}
@@ -1672,7 +1673,7 @@ export function FieldEditor({
                   {FORMAT_LABEL[f]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           )}
           <SelectPill
             value={isHalfField(diagram.field) ? "half" : "full"}

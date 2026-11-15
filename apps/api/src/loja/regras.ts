@@ -191,7 +191,95 @@ export function destinoDoPagamento(input: { status: string; reservedUntil: Date;
 }
 
 /** Os estados em que a encomenda ainda está viva para o clube (há algo para fazer ou entregar). */
-export const ESTADOS_VIVOS = ["PAID", "READY", "SHIPPED"] as const;
+export const ESTADOS_VIVOS = ["PAID", "IN_PRODUCTION", "READY", "SHIPPED"] as const;
+
+/** Os estados em que o dinheiro entrou e a encomenda seguiu (ou está a seguir): o que conta como venda. */
+export const ESTADOS_PAGOS = ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"] as const;
+
+/* -------------------------------------------------------------------------- */
+/* A referência e o percurso                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Sem 0/O nem 1/I: o mesmo alfabeto dos identificadores de pagamento. */
+const ALFABETO_REF = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+/**
+ * A referência única de uma encomenda: "ENC-7K2F-9QXA". Oito caracteres de
+ * um alfabeto de 32 são 2^40 combinações; o índice único da base apanha o
+ * resto. A migração de 15/11/2026 deu uma às encomendas que já existiam.
+ */
+export function referenciaNova(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < 8; i++) s += ALFABETO_REF[bytes[i] % 32];
+  return `ENC-${s.slice(0, 4)}-${s.slice(4)}`;
+}
+
+/** Uma referência escrita à mão: maiúsculas, sem espaços, "enc7k2f9qxa" → "ENC-7K2F-9QXA". */
+export function referenciaNormalizada(escrita: string): string | null {
+  const s = escrita.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^ENC/, "");
+  return /^[2-9A-HJ-NP-Z]{8}$/.test(s) ? `ENC-${s.slice(0, 4)}-${s.slice(4)}` : null;
+}
+
+/** Os passos do percurso que o clube muda à mão, pela ordem. */
+export type PassoDaEncomenda = "PAID" | "IN_PRODUCTION" | "READY" | "SHIPPED" | "DELIVERED";
+
+/**
+ * Os passos possíveis de uma encomenda, pela ordem: o levantamento passa
+ * pela pronta, o envio pela enviada; a preparação (IN_PRODUCTION) é opcional nos dois.
+ */
+export function passosDaEncomenda(entrega: Entrega): PassoDaEncomenda[] {
+  return entrega === "SHIPPING" ? ["PAID", "IN_PRODUCTION", "SHIPPED", "DELIVERED"] : ["PAID", "IN_PRODUCTION", "READY", "DELIVERED"];
+}
+
+/** A coluna da data de cada passo. */
+const DATA_DO_PASSO = {
+  PAID: "paidAt",
+  IN_PRODUCTION: "productionAt",
+  READY: "readyAt",
+  SHIPPED: "shippedAt",
+  DELIVERED: "deliveredAt",
+} as const;
+
+export type DatasDaEncomenda = { paidAt: Date | null; productionAt: Date | null; readyAt: Date | null; shippedAt: Date | null; deliveredAt: Date | null };
+
+/**
+ * Mudar uma encomenda de um passo para outro, para a frente ou para trás.
+ *
+ * - Só entre passos vivos (paga, em preparação, pronta/enviada, entregue). Uma
+ *   anulada não volta: o stock já voltou e há reembolso por fazer.
+ * - O passo de chegada ganha a data de agora se ainda não a tinha (voltar de
+ *   entregue a pronta guarda o dia em que ficou pronta).
+ * - Os passos depois do de chegada perdem a data: a encomenda já lá não está.
+ *   Os de antes ficam como estão (saltar do pago para o entregue não inventa
+ *   um "pronta").
+ * - A paga nunca perde a data: é quando o dinheiro entrou.
+ *
+ * Devolve as datas novas e se é para a frente (o que decide o email), ou o
+ * erro em português.
+ */
+export function mudancaDeEstado(input: {
+  atual: string;
+  destino: PassoDaEncomenda;
+  entrega: Entrega;
+  datas: DatasDaEncomenda;
+  agora: Date;
+}): { ok: true; datas: DatasDaEncomenda; paraAFrente: boolean } | { ok: false; erro: string } {
+  const passos = passosDaEncomenda(input.entrega);
+  const de = passos.indexOf(input.atual as PassoDaEncomenda);
+  const para = passos.indexOf(input.destino);
+  if (de < 0) return { ok: false, erro: input.atual === "CANCELLED" ? "Uma encomenda cancelada não muda de estado" : "Esta encomenda ainda não está paga" };
+  if (para < 0) return { ok: false, erro: input.entrega === "SHIPPING" ? "Esta encomenda é para enviar, não para levantar" : "Esta encomenda é para levantar, não para enviar" };
+  if (de === para) return { ok: false, erro: "A encomenda já está nesse estado" };
+
+  const datas: DatasDaEncomenda = { ...input.datas };
+  passos.forEach((p, i) => {
+    const campo = DATA_DO_PASSO[p];
+    if (i > para && p !== "PAID") datas[campo] = null;
+  });
+  const campo = DATA_DO_PASSO[input.destino];
+  if (!datas[campo]) datas[campo] = input.agora;
+  return { ok: true, datas, paraAFrente: para > de };
+}
 
 /** Os estados que contam para o stock guardado: só a reserva dentro do prazo. */
 export function estaGuardada(o: { status: string; reservedUntil: Date }, agora: Date): boolean {

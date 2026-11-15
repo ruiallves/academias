@@ -282,7 +282,20 @@
 }
 
 /* ---------------------------------------------------------------------------
-   A troca de ecrã (View Transitions API) — ver `Ecras.tsx`.
+   A troca de ecrã — ver `lib/navegacao.tsx` e `Ecras.tsx`.
+
+   Trocar de separador não espera por ninguém: o ecrã novo é desenhado no
+   fotograma a seguir ao toque e entra com este fundido curto, em CSS puro,
+   sobre o <main> acabado de nascer. Sem View Transition: as duas fotografias
+   que ela custa eram metade do atraso que se sentia na barra.
+   --------------------------------------------------------------------------- */
+
+main[data-entra="funde"] {
+  animation: ecra-funde-entra 150ms ease-out both;
+}
+
+/* ---------------------------------------------------------------------------
+   Entrar num detalhe e voltar (View Transitions API).
 
    O browser fotografa o ecrã antigo, deixa o React desenhar o novo e anima um
    sobre o outro com o que está aqui. `data-nav` no <html> diz a direcção:
@@ -290,7 +303,6 @@
      entrar  — o detalhe desliza da direita; o ecrã de trás afasta-se um quarto
                para a esquerda, como no iOS.
      voltar  — o inverso: o detalhe sai pela direita, o ecrã de trás volta.
-     trocar  — de separador para separador: um fundido curto, sem deslizar.
 
    O cabeçalho e a barra têm nome próprio (`cabecalho`, `barra`) e por isso não
    vão na fotografia do ecrã: ficam parados enquanto o conteúdo desliza por
@@ -324,10 +336,6 @@
 @keyframes ecra-funde-entra {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-@keyframes ecra-funde-sai {
-  from { opacity: 1; }
-  to { opacity: 0; }
 }
 
 /* O fundo não anima de tamanho nem de posição — só o que está lá dentro. */
@@ -376,16 +384,6 @@ html[data-nav="voltar"]::view-transition-new(partilhado):only-child {
   animation: ecra-volta 300ms var(--ease-out) both;
 }
 
-/* Trocar de separador: um fundido curto. */
-html[data-nav="trocar"]::view-transition-old(root),
-html[data-nav="trocar"]::view-transition-old(partilhado):only-child {
-  animation: ecra-funde-sai 160ms ease-out both;
-}
-html[data-nav="trocar"]::view-transition-new(root),
-html[data-nav="trocar"]::view-transition-new(partilhado):only-child {
-  animation: ecra-funde-entra 200ms ease-out both;
-}
-
 /* O cartão a transformar-se no cabeçalho (e o contrário): a posição e o
    tamanho animam-se com a curva da app, e as duas imagens fundem-se. */
 ::view-transition-group(partilhado) {
@@ -402,6 +400,7 @@ html[data-nav="trocar"]::view-transition-new(partilhado):only-child {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  main[data-entra="funde"],
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) {

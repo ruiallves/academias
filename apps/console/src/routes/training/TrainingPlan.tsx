@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -547,7 +548,7 @@ export default function TrainingPlan() {
                   browser desenha à maneira dele — sem seta, com um menu de
                   sugestões que não é o dos outros campos. */}
               <DialogField label="Objetivo principal">
-                <select
+                <Escolha
                   className={dialogInputClass}
                   value={plan.objective ?? ""}
                   onChange={(e) => patch({ objective: e.target.value || null })}
@@ -568,7 +569,7 @@ export default function TrainingPlan() {
                   {plan.objective && !allObjectiveValues.includes(plan.objective) && (
                     <option value={plan.objective}>{plan.objective}</option>
                   )}
-                </select>
+                </Escolha>
               </DialogField>
 
               <DialogField label="Objetivos secundários" hint="escolhe e junta">
@@ -581,7 +582,7 @@ export default function TrainingPlan() {
 
               {/* Sem "Atletas esperados": o PDF calcula-os do plantel, das baixas e dos avisos. */}
               <DialogField label="Tipo de treino">
-                <select
+                <Escolha
                   className={dialogInputClass}
                   value={plan.sessionType ?? ""}
                   onChange={(e) => patch({ sessionType: e.target.value || null })}
@@ -596,7 +597,7 @@ export default function TrainingPlan() {
                   {plan.sessionType && !SESSION_TYPES.includes(plan.sessionType as (typeof SESSION_TYPES)[number]) && (
                     <option value={plan.sessionType}>{plan.sessionType}</option>
                   )}
-                </select>
+                </Escolha>
               </DialogField>
 
               <DialogField label="Intensidade planeada" hint={plan.intensity ? `${plan.intensity}/10` : "por definir"}>
@@ -1022,7 +1023,7 @@ function BlockRow({
 
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
             <DialogField label="Objetivo">
-              <select
+              <Escolha
                 className={dialogInputClass}
                 value={block.category && block.objective ? `${block.category}::${block.objective}` : block.category ? `${block.category}::` : ""}
                 onChange={(e) => {
@@ -1042,7 +1043,7 @@ function BlockRow({
                     ))}
                   </optgroup>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
             <DialogField label="Nº de jogadores">
               <input
@@ -1273,7 +1274,7 @@ function ObjectiveChips({
         </div>
       )}
       {!disabled && (
-        <select
+        <Escolha
           className={dialogInputClass}
           value=""
           onChange={(e) => {
@@ -1293,7 +1294,7 @@ function ObjectiveChips({
                 ))}
             </optgroup>
           ))}
-        </select>
+        </Escolha>
       )}
     </div>
   );
@@ -1844,7 +1845,7 @@ function ModelosDialog({
                   {rotulo}
                 </button>
               ))}
-              <select
+              <Escolha
                 aria-label="Ordenar os modelos"
                 value={ordem}
                 onChange={(e) => setOrdem(e.target.value as OrdemDeModelos)}
@@ -1853,7 +1854,7 @@ function ModelosDialog({
                 <option value="usados">Mais usados</option>
                 <option value="recentes">Mais recentes</option>
                 <option value="nome">Por nome</option>
-              </select>
+              </Escolha>
             </div>
             <div className="relative">
               <Search className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />

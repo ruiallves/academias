@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Porta as IconePorta, Recinto as LandPlot, Trash2 } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
@@ -232,7 +233,7 @@ export function Estadio() {
                   <label htmlFor="bancada-lado" className="mb-1.5 block text-meta font-medium text-ink-2">
                     Lado
                   </label>
-                  <select
+                  <Escolha
                     id="bancada-lado"
                     className={dialogInputClass}
                     value={bancada.lado}
@@ -247,7 +248,7 @@ export function Estadio() {
                         {l.nome}
                       </option>
                     ))}
-                  </select>
+                  </Escolha>
                 </div>
                 <div>
                   <label htmlFor="bancada-lotacao" className="mb-1.5 block text-meta font-medium text-ink-2">

@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -238,45 +239,45 @@ function NewModelDialog({ onClose, onCreated }: { onClose: () => void; onCreated
         </DialogField>
         {kinds && (
           <DialogField label="Tipo">
-            <select className={dialogInputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
+            <Escolha className={dialogInputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
               {kinds.map((k) => (
                 <option key={k.key} value={k.key}>
                   {k.label}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         )}
         {formats.length > 1 && (
           <DialogField label="Variante" hint="a equipa sugere, tu decides">
-            <select className={dialogInputClass} value={pitch} onChange={(e) => choosePitch(e.target.value as LineupPitch)}>
+            <Escolha className={dialogInputClass} value={pitch} onChange={(e) => choosePitch(e.target.value as LineupPitch)}>
               {formats.map((f) => (
                 <option key={f} value={f}>
                   {FORMAT_LABEL[f]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         )}
         <div className="grid grid-cols-2 gap-3">
           <DialogField label="Equipa">
-            <select className={dialogInputClass} value={teamId} onChange={(e) => chooseTeam(e.target.value)}>
+            <Escolha className={dialogInputClass} value={teamId} onChange={(e) => chooseTeam(e.target.value)}>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
               ))}
               <option value="">Todo o clube</option>
-            </select>
+            </Escolha>
           </DialogField>
           <DialogField label="Sistema de partida">
-            <select className={dialogInputClass} value={system} onChange={(e) => setSystem(e.target.value)}>
+            <Escolha className={dialogInputClass} value={system} onChange={(e) => setSystem(e.target.value)}>
               {systemsFor(pitch).map((s) => (
                 <option key={s.label} value={s.label}>
                   {s.label}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         </div>
       </div>
@@ -514,25 +515,25 @@ export function GameModelDetail() {
               </DialogField>
               {kinds && (
                 <DialogField label="Tipo">
-                  <select className={dialogInputClass} value={model.kind ?? ""} onChange={(e) => patch({ kind: e.target.value || null })} disabled={!editable}>
+                  <Escolha className={dialogInputClass} value={model.kind ?? ""} onChange={(e) => patch({ kind: e.target.value || null })} disabled={!editable}>
                     <option value="">Sem tipo</option>
                     {kinds.map((k) => (
                       <option key={k.key} value={k.key}>
                         {k.label}
                       </option>
                     ))}
-                  </select>
+                  </Escolha>
                 </DialogField>
               )}
               <DialogField label="Equipa">
-                <select className={dialogInputClass} value={model.teamId ?? ""} onChange={(e) => patch({ teamId: e.target.value || null })} disabled={!editable}>
+                <Escolha className={dialogInputClass} value={model.teamId ?? ""} onChange={(e) => patch({ teamId: e.target.value || null })} disabled={!editable}>
                   <option value="">Todo o clube</option>
                   {teams.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </DialogField>
               {editable && (
                 <DialogField label="Quem o vê">

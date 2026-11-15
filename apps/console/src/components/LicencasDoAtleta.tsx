@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useState } from "react";
 import { academy, teamById } from "@/lib/api";
 import { reloadAcademy, seasonList } from "@/lib/store";
@@ -53,7 +54,7 @@ export function LicencasDoAtleta({ athlete }: { athlete: Athlete }) {
     <Panel>
       <PanelHead title="Licenças">
         {seasonList.length > 1 && (
-          <select
+          <Escolha
             aria-label="Época"
             value={epocaId}
             onChange={(e) => setEpocaId(e.target.value)}
@@ -64,7 +65,7 @@ export function LicencasDoAtleta({ athlete }: { athlete: Athlete }) {
                 Época {s.label}
               </option>
             ))}
-          </select>
+          </Escolha>
         )}
       </PanelHead>
       <ul>

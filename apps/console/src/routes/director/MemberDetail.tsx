@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -1093,7 +1094,7 @@ function QuotaPanel({
         <div className="border-t border-line px-5 py-3">
           <label className="block">
             <span className="mb-1.5 block text-meta font-medium text-ink">Categoria</span>
-            <select
+            <Escolha
               value={member.tier?.id ?? ""}
               disabled={busy}
               onChange={(e) => onChange({ tierId: e.target.value })}
@@ -1106,7 +1107,7 @@ function QuotaPanel({
                   {t.feeCents != null ? ` — ${money(t.feeCents)}${t.billing === "ANNUAL" ? "/ano" : "/mês"}` : ""}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </label>
         </div>
       )}
@@ -1590,13 +1591,13 @@ function EditPanel({
                 />
               </DialogField>
               <DialogField label="Sexo" hint="opcional">
-                <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
+                <Escolha value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
                   {(Object.keys(SEX_LABEL) as Sex[]).map((k) => (
                     <option key={k} value={k}>
                       {SEX_LABEL[k]}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </DialogField>
             </div>
 
@@ -1604,7 +1605,7 @@ function EditPanel({
                 um recibo, e um sócio inscrito ao balcão nasce sem ele. */}
             <div className="grid grid-cols-[130px_minmax(0,1fr)] gap-3">
               <DialogField label="Documento">
-                <select
+                <Escolha
                   value={documentKind}
                   onChange={(e) => setDocumentKind(e.target.value as DocumentKind)}
                   className={dialogInputClass}
@@ -1614,7 +1615,7 @@ function EditPanel({
                       {DOC_LABEL[k]}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </DialogField>
               <DialogField label="N.º do documento" hint="opcional">
                 <input

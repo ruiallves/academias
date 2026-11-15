@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useState } from "react";
 import { Bar, Empty, Panel, PanelHead, Pill } from "./primitives";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -214,14 +215,14 @@ export function AddToShortlistDialog({
     >
       <div className="space-y-3 px-5 py-4">
         <DialogField label="Lista">
-          <select value={pick} onChange={(e) => setPick(e.target.value)} className={dialogInputClass}>
+          <Escolha value={pick} onChange={(e) => setPick(e.target.value)} className={dialogInputClass}>
             {lists.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name} ({l.count})
               </option>
             ))}
             <option value="__new">+ Criar lista nova</option>
-          </select>
+          </Escolha>
         </DialogField>
 
         {creating && (
@@ -356,13 +357,13 @@ export function RecruitDialog({
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <DialogField label="Equipa">
-              <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className={dialogInputClass}>
+              <Escolha value={teamId} onChange={(e) => setTeamId(e.target.value)} className={dialogInputClass}>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
 
             <DialogField label="Camisola" hint="opcional">

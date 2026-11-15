@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -301,7 +302,7 @@ export default function Matches() {
           <SearchInput value={procura} onChange={setProcura} placeholder="Procurar adversário…" />
           {/* Só com mais do que uma equipa: uma caixa com uma opção é ruído. */}
           {equipas.length > 1 && (
-            <select
+            <Escolha
               aria-label="Equipa"
               value={equipa}
               onChange={(e) => setEquipa(e.target.value)}
@@ -313,7 +314,7 @@ export default function Matches() {
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Escolha>
           )}
           <button
             type="button"
@@ -345,7 +346,7 @@ export default function Matches() {
           </span>
           <span className="flex items-center gap-2">
             <span className="text-meta text-ink-3">Estado</span>
-            <select
+            <Escolha
               aria-label="Estado do jogo"
               value={estadoFiltro}
               onChange={(e) => setEstadoFiltro(e.target.value)}
@@ -368,7 +369,7 @@ export default function Matches() {
                   {l}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </span>
           {filtrosAtivos > 0 && (
             <button

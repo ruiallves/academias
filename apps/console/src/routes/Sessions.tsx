@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -117,7 +118,7 @@ export default function Sessions() {
         {/* ------------------------------------------------------------ as equipas */}
         <div className="min-w-0">
           {/* Em ecrãs estreitos, uma coluna de equipas empurrava a lista para fora do ecrã. */}
-          <select
+          <Escolha
             value={teamId}
             onChange={(e) => escolherEquipa(e.target.value)}
             aria-label="Equipa"
@@ -129,7 +130,7 @@ export default function Sessions() {
                 {t.name}
               </option>
             ))}
-          </select>
+          </Escolha>
           <div className="max-lg:hidden lg:sticky lg:top-4">
             <EquipasRail equipas={equipas} teamId={teamId} todasLabel={todasLabel} cores={cores} onEscolher={escolherEquipa} />
           </div>

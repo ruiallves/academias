@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState } from "react";
 import { cx, Pill } from "@/components/primitives";
 import { mostrarErro, mostrarOk, textoDoErro } from "@/lib/avisos";
@@ -174,7 +175,7 @@ export function PainelImportacao({ imp }: { imp: Importacao }) {
             <span>Esta folha:</span>
             <label className="inline-flex items-center gap-1.5">
               <span className="sr-only">Entidade</span>
-              <select
+              <Escolha
                 value={folha.entidade}
                 disabled={ocupado}
                 onChange={(ev) => void patch(() => ({ entidade: ev.target.value }))}
@@ -183,7 +184,7 @@ export function PainelImportacao({ imp }: { imp: Importacao }) {
                 {Object.entries(ENTIDADES).map(([v, r]) => (
                   <option key={v} value={v}>{r}</option>
                 ))}
-              </select>
+              </Escolha>
             </label>
             {folha.entidade !== "atletas" && folha.entidade !== "ignorar" && <span>Por agora o Adjunto só importa atletas; esta folha fica mapeada para depois.</span>}
             <span className="ml-auto">Confiança da leitura: {folha.confianca}</span>
@@ -234,7 +235,7 @@ export function PainelImportacao({ imp }: { imp: Importacao }) {
                   <span className="flex items-center gap-2">
                     <label className="min-w-0 flex-1">
                       <span className="sr-only">Destino de {c.origem}</span>
-                      <select
+                      <Escolha
                         value={c.destino}
                         disabled={ocupado || folha.entidade !== "atletas"}
                         onChange={(ev) => void patch((f) => ({ colunas: f.colunas.map((x) => (x.origem === c.origem ? { ...x, destino: ev.target.value } : x)) }))}
@@ -244,7 +245,7 @@ export function PainelImportacao({ imp }: { imp: Importacao }) {
                           <option key={d.valor} value={d.valor}>{d.rotulo}</option>
                         ))}
                         {!DESTINOS.some((d) => d.valor === c.destino) && <option value={c.destino}>{c.destino}</option>}
-                      </select>
+                      </Escolha>
                     </label>
                     {TRANSFORMACOES[c.transformacao] && <span className="shrink-0 text-meta text-ink-3">{TRANSFORMACOES[c.transformacao]}</span>}
                   </span>

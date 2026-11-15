@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useState } from "react";
 import { Loading, Panel, PanelHead, cx } from "@/components/primitives";
 import { dialogInputClass } from "@/components/Dialog";
@@ -116,20 +117,20 @@ export function LugarAnualPanel({ memberId, mayWrite }: { memberId: string; mayW
               <label htmlFor="lugar-epoca" className="mb-1.5 block text-meta font-medium text-ink">
                 Época
               </label>
-              <select id="lugar-epoca" className={cx(dialogInputClass, "h-8")} value={seasonId} onChange={(e) => setSeasonId(e.target.value)}>
+              <Escolha id="lugar-epoca" className={cx(dialogInputClass, "h-8")} value={seasonId} onChange={(e) => setSeasonId(e.target.value)}>
                 {epocas.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.label}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </div>
             {recintos.length > 1 && (
               <div>
                 <label htmlFor="lugar-recinto" className="mb-1.5 block text-meta font-medium text-ink">
                   Recinto
                 </label>
-                <select
+                <Escolha
                   id="lugar-recinto"
                   className={cx(dialogInputClass, "h-8")}
                   value={recinto.id}
@@ -143,21 +144,21 @@ export function LugarAnualPanel({ memberId, mayWrite }: { memberId: string; mayW
                       {r.nome}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               </div>
             )}
             <div>
               <label htmlFor="lugar-bancada" className="mb-1.5 block text-meta font-medium text-ink">
                 Bancada
               </label>
-              <select id="lugar-bancada" className={cx(dialogInputClass, "h-8")} value={bancada?.id ?? ""} disabled={!bancadas.length} onChange={(e) => setBancadaId(e.target.value)}>
+              <Escolha id="lugar-bancada" className={cx(dialogInputClass, "h-8")} value={bancada?.id ?? ""} disabled={!bancadas.length} onChange={(e) => setBancadaId(e.target.value)}>
                 {bancadas.length === 0 && <option value="">Sem bancadas</option>}
                 {bancadas.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.nome}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </div>
             <div>
               <label htmlFor="lugar-numero" className="mb-1.5 block text-meta font-medium text-ink">

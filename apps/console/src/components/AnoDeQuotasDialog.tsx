@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useMemo, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
@@ -140,7 +141,7 @@ export function AnoDeQuotasDialog({
 
         <DialogField label="Abre a" hint={herdar ? "a do clube" : "a deste sócio"}>
           <div className="flex items-end gap-1.5">
-            <select
+            <Escolha
               aria-label="Dia"
               value={efetivo.dia}
               disabled={herdar}
@@ -152,8 +153,8 @@ export function AnoDeQuotasDialog({
                   {d}
                 </option>
               ))}
-            </select>
-            <select
+            </Escolha>
+            <Escolha
               aria-label="Mês"
               value={efetivo.mes}
               disabled={herdar}
@@ -170,7 +171,7 @@ export function AnoDeQuotasDialog({
                   {nome}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </div>
         </DialogField>
 

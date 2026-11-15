@@ -57,11 +57,13 @@ export type RespostaDaEncomenda = {
   pagamento: { metodo: Metodo; entidade: string | null; referencia: string | null; valorCents: number } | null;
 };
 
-export type EstadoDaEncomenda = "a-pagar" | "paga" | "pronta" | "enviada" | "entregue" | "expirada" | "fora-do-prazo" | "anulada";
+export type EstadoDaEncomenda = "a-pagar" | "paga" | "em-producao" | "pronta" | "enviada" | "entregue" | "expirada" | "fora-do-prazo" | "anulada";
 
 /** `GET /api/clubes/:slug/loja/encomendas/:token`. */
 export type Encomenda = {
   numero: number;
+  /** A referência única ("ENC-7K2F-9QXA"). Ausente num servidor antigo. */
+  referencia?: string;
   estado: EstadoDaEncomenda;
   comprador: string;
   email: string;
@@ -77,7 +79,8 @@ export type Encomenda = {
   entrega: { tipo: "PICKUP"; local: string; nota: string } | { tipo: "SHIPPING"; morada: string[]; nota: string; rastreio: string | null };
   nota: string | null;
   linhas: { nome: string; tamanho: string; quantidade: number; unitPriceCents: number; imageUrl: string | null }[];
-  datas: { paga: string | null; pronta: string | null; enviada: string | null; entregue: string | null };
+  /** `producao` é quando o clube a entregou ao produtor (artigos personalizados). Ausente num servidor antigo. */
+  datas: { paga: string | null; producao?: string | null; pronta: string | null; enviada: string | null; entregue: string | null };
 };
 
 /** Os máximos da API. */

@@ -97,14 +97,15 @@ export function PaginaDaEncomenda({ slug, token, api, demonstracao }: Props) {
   const titulos: Record<Encomenda["estado"], string> = {
     "a-pagar": "Falta pagar",
     paga: `Encomenda n.º ${e.numero} confirmada`,
+    "em-producao": `A encomenda n.º ${e.numero} está em preparação`,
     pronta: `A encomenda n.º ${e.numero} está pronta`,
     enviada: `A encomenda n.º ${e.numero} seguiu`,
     entregue: `Encomenda n.º ${e.numero} entregue`,
     expirada: "O prazo para pagar acabou",
     "fora-do-prazo": "O pagamento chegou tarde demais",
-    anulada: `A encomenda n.º ${e.numero} foi anulada`,
+    anulada: `A encomenda n.º ${e.numero} foi cancelada`,
   };
-  const confirmada = e.estado === "paga" || e.estado === "pronta" || e.estado === "enviada" || e.estado === "entregue";
+  const confirmada = e.estado === "paga" || e.estado === "em-producao" || e.estado === "pronta" || e.estado === "enviada" || e.estado === "entregue";
 
   return (
     <>
@@ -127,7 +128,7 @@ export function PaginaDaEncomenda({ slug, token, api, demonstracao }: Props) {
         )}
         {e.estado === "anulada" && (
           <Explicacao>
-            <p>O clube anulou esta encomenda.</p>
+            <p>O clube cancelou esta encomenda.</p>
             <Reembolso reembolso={e.reembolso} />
           </Explicacao>
         )}
@@ -306,24 +307,33 @@ function Dado({ rotulo, valor, copiar }: { rotulo: string; valor: string; copiar
 
 /** Uma encomenda paga: onde está, como se entrega, e o que leva. */
 function Confirmada({ encomenda: e }: { encomenda: Encomenda }) {
-  const passos: { chave: string; rotulo: string; data: string | null; feito: boolean }[] =
-    e.entrega.tipo === "PICKUP"
+  // "Em preparação" aparece sempre. O clube pode saltar o botão, mas uma
+  // encomenda pronta, enviada ou entregue foi preparada: conta como feito, sem data.
+  const depoisDaProducao = e.estado === "pronta" || e.estado === "enviada" || e.estado === "entregue";
+  const preparada = e.estado === "em-producao" || depoisDaProducao;
+  const passos: { chave: string; rotulo: string; data: string | null; feito: boolean }[] = [
+    { chave: "paga", rotulo: "Paga", data: e.datas.paga, feito: true },
+    { chave: "producao", rotulo: "Em preparação", data: e.datas.producao ?? null, feito: preparada },
+    ...(e.entrega.tipo === "PICKUP"
       ? [
-          { chave: "paga", rotulo: "Paga", data: e.datas.paga, feito: true },
-          { chave: "pronta", rotulo: "Pronta para levantar", data: e.datas.pronta, feito: e.estado === "pronta" || e.estado === "entregue" },
-          { chave: "entregue", rotulo: "Levantada", data: e.datas.entregue, feito: e.estado === "entregue" },
+          { chave: "pronta", rotulo: "Pronta para levantamento", data: e.datas.pronta, feito: depoisDaProducao },
+          { chave: "entregue", rotulo: "Entregue", data: e.datas.entregue, feito: e.estado === "entregue" },
         ]
       : [
-          { chave: "paga", rotulo: "Paga", data: e.datas.paga, feito: true },
-          { chave: "enviada", rotulo: "Enviada", data: e.datas.enviada, feito: e.estado === "enviada" || e.estado === "entregue" },
-          { chave: "entregue", rotulo: "Recebida", data: e.datas.entregue, feito: e.estado === "entregue" },
-        ];
+          { chave: "enviada", rotulo: "Enviada", data: e.datas.enviada, feito: depoisDaProducao },
+          { chave: "entregue", rotulo: "Entregue", data: e.datas.entregue, feito: e.estado === "entregue" },
+        ]),
+  ];
 
   const frase =
     e.estado === "paga"
       ? e.entrega.tipo === "PICKUP"
         ? "Recebemos o pagamento. O clube vai preparar a encomenda e avisa-te por email quando estiver pronta para levantar."
         : "Recebemos o pagamento. O clube vai preparar a encomenda e avisa-te por email quando seguir pelo correio."
+      : e.estado === "em-producao"
+        ? e.entrega.tipo === "PICKUP"
+          ? "A encomenda está em preparação. O clube avisa-te por email quando estiver pronta para levantamento."
+          : "A encomenda está em preparação. O clube avisa-te por email quando seguir pelo correio."
       : e.estado === "pronta"
         ? "Já podes levantá-la. Leva este email ou o número da encomenda."
         : e.estado === "enviada"
@@ -333,6 +343,12 @@ function Confirmada({ encomenda: e }: { encomenda: Encomenda }) {
   return (
     <div className="space-y-6">
       <p className="text-xl font-semibold text-ink">{frase}</p>
+      {/* A referência única: é a que se diz ao clube se for preciso ligar. */}
+      {e.referencia && (
+        <p className="-mt-3 text-sm text-ink-3">
+          Referência <span className="font-semibold tracking-wide tabular text-ink">{e.referencia}</span>
+        </p>
+      )}
 
       <ol className="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Estado da encomenda">
         {passos.map((p) => (

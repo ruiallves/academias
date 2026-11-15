@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Empty, Loading, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
@@ -455,7 +456,7 @@ function LojaDoSite({
     <Panel>
       <PanelHead title="Loja do site" hint={produto ? (produto.visivel ? "à venda" : "escondido") : "por vender"}>
         {produto && (
-          <Link to="/website?secao=loja" className="ctl-ghost">
+          <Link to="/website/loja" className="ctl-ghost">
             <ShoppingBag className="size-3.5" strokeWidth={1.75} />
             Loja
             <ExternalLink className="size-3" strokeWidth={1.75} />
@@ -617,14 +618,14 @@ function ProdutoDoSiteDialog({
             <input inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} className={cx(dialogInputClass, "tabular")} autoFocus />
           </DialogField>
           <DialogField label="Categoria">
-            <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={dialogInputClass}>
+            <Escolha value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={dialogInputClass}>
               <option value="">Sem categoria</option>
               {categorias.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nome}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         </div>
         <DialogField label="Descrição" hint="o que o site mostra">

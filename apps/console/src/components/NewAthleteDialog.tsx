@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useState, type FormEvent } from "react";
 import { listTeams } from "@/lib/api";
 import { apiGet, apiPost } from "@/lib/http";
@@ -164,14 +165,14 @@ export function NewAthleteDialog({
           </DialogField>
 
           <DialogField label="Sexo" hint="opcional · como está inscrito na federação">
-            <select value={sex} onChange={(e) => setSex(e.target.value)} className={dialogInputClass}>
+            <Escolha value={sex} onChange={(e) => setSex(e.target.value)} className={dialogInputClass}>
               <option value="">Por indicar</option>
               {ATHLETE_SEXES.map((s) => (
                 <option key={s} value={s}>
                   {ATHLETE_SEX_LABEL[s]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
 
           {/*

@@ -256,8 +256,8 @@ export class SitePublicoService {
     if (para) {
       const base = this.config.get<string>("PUBLIC_BASE_URL");
       const link = base
-        ? `${base.replace(/\/$/, "").replace("{slug}", clube.slug)}/consola/website?secao=mensagens`
-        : `https://${clube.slug}.academias.pt/consola/website?secao=mensagens`;
+        ? `${base.replace(/\/$/, "").replace("{slug}", clube.slug)}/consola/website/mensagens`
+        : `https://${clube.slug}.academias.pt/consola/website/mensagens`;
       const corpo = siteMensagemEmail({
         brand: { shortName: clube.shortName, name: clube.name, signalColor: clube.signalColor, logoUrl: clube.logoUrl },
         nome,

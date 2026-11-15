@@ -38,6 +38,28 @@ export function Sidebar({
   const nested = new Set(all.filter((to) => all.some((other) => other !== to && other.startsWith(`${to}/`))));
   const showSettings = permissionsOf(session).has(SETTINGS_ITEM.requires);
 
+  /*
+   * Chegar a uma página de um grupo fechado abre-o.
+   *
+   * Quem entra em Website › Loja pelo link do email de uma encomenda, com o
+   * grupo fechado, ficava sem nada aceso no menu e sem ver as outras quatro
+   * páginas. Abre-se ao chegar (e fica lembrado, como se tivesse carregado no
+   * cabeçalho); fechá-lo depois continua a ser possível.
+   */
+  const grupoAqui = groups.find((g) => g.label && g.items.some((it) => pathname === it.to || pathname.startsWith(`${it.to}/`)))?.label;
+  useEffect(() => {
+    if (grupoAqui && !estaAberto(grupoAqui)) alternar(grupoAqui);
+    // Só ao mudar de grupo: fechar o grupo onde se está não o reabre logo a seguir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grupoAqui]);
+
+  // O item aceso fica à vista: num ecrã baixo, a Bilheteira e as Mensagens do Website ficavam por baixo da conta, fora da barra.
+  const navRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => navRef.current?.querySelector(".nav-active")?.scrollIntoView({ block: "nearest" }));
+    return () => cancelAnimationFrame(id);
+  }, [pathname]);
+
   return (
     <aside
       className={cx(
@@ -55,7 +77,7 @@ export function Sidebar({
           `pt-2`: sem ele o primeiro item ("Visão geral") ficava colado à pesquisa
           (aberto) ou à borda do cabeçalho (fechado), enquanto os grupos seguintes
           respiram com 18px entre si — a folga no topo repõe esse ritmo. */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav ref={navRef} className="flex-1 overflow-y-auto p-2">
         {/* A classe `nav-group` vai em todos: o espaçamento é
             `.nav-group + .nav-group`, que só separa irmãos e por isso não põe
             margem antes do primeiro. */}

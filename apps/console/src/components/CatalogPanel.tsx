@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 // O menu do "Oficial / Não oficial" abre num portal, para a caixa da modalidade não o cortar.
 import { createPortal } from "react-dom";
@@ -449,7 +450,7 @@ function AddForm({
         />
       )}
       {escolheDesporto && (
-        <select
+        <Escolha
           value={sportId}
           onChange={(e) => setSportId(e.target.value)}
           aria-label="Modalidade"
@@ -461,7 +462,7 @@ function AddForm({
               {sp.name}
             </option>
           ))}
-        </select>
+        </Escolha>
       )}
       <button type="submit" className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-ok hover:bg-ok-soft" aria-label="Adicionar">
         <Check className="size-3.5" strokeWidth={2} />

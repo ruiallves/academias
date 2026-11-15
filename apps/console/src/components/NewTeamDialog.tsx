@@ -1,4 +1,5 @@
 ﻿import { cargoDe } from "@/lib/staff";
+import { Escolha } from "@/components/Escolha";
 import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { academy, listCoachCandidates } from "@/lib/api";
@@ -233,14 +234,14 @@ export function NewTeamDialog({
         )}
 
         <DialogField label="Género" hint="opcional">
-          <select value={gender} onChange={(e) => setGender(e.target.value as "" | TeamGender)} className={dialogInputClass}>
+          <Escolha value={gender} onChange={(e) => setGender(e.target.value as "" | TeamGender)} className={dialogInputClass}>
             <option value="">Por indicar</option>
             {TEAM_GENDERS.map((g) => (
               <option key={g} value={g}>
                 {TEAM_GENDER_LABEL[g]}
               </option>
             ))}
-          </select>
+          </Escolha>
         </DialogField>
 
         <DialogField label="Nome" hint="opcional">

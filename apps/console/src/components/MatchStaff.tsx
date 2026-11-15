@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Dialog } from "./Dialog";
 import { Loading, cx } from "./primitives";
@@ -270,7 +271,7 @@ function AddStaff({
         <span className="mb-1 block text-meta font-medium text-ink-2">
           {passou ? "Quem esteve no jogo?" : "Quem vai estar no jogo?"}
         </span>
-        <select
+        <Escolha
           autoFocus
           value={quem}
           onChange={(e) => {
@@ -287,7 +288,7 @@ function AddStaff({
               {p.role ? ` — ${p.role}` : ""}
             </option>
           ))}
-        </select>
+        </Escolha>
       </label>
 
       <label className="block">

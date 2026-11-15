@@ -1574,14 +1574,14 @@ export function encomendaForaDoPrazoEmail(input: { brand: MailBrand; nome: strin
 
 /** Anulada pelo clube, com o motivo e o reembolso a caminho. */
 export function encomendaAnuladaEmail(input: { brand: MailBrand; nome: string; numero: number; motivo: string; valor: string | null }): { subject: string; html: string; text: string } {
-  const heading = `A encomenda n.º ${input.numero} foi anulada`;
+  const heading = `A encomenda n.º ${input.numero} foi cancelada`;
   const paragraphs = [
-    "O clube anulou a tua encomenda. " + esc(input.motivo),
+    "O clube cancelou a tua encomenda. " + esc(input.motivo),
     input.valor ? "O clube vai devolver-te <strong>" + esc(input.valor) + "</strong>." : "Não houve pagamento a devolver.",
   ];
   const notes = ["Se tiveres dúvidas, fala com o clube pelos contactos do site."];
   return {
-    subject: `${input.brand.shortName} · encomenda n.º ${input.numero} anulada`,
+    subject: `${input.brand.shortName} · encomenda n.º ${input.numero} cancelada`,
     html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, notes }),
     text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", paragraphs.map(semTags), undefined, notes),
   };

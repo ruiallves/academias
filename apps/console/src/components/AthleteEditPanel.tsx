@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useId, useState } from "react";
 import { apiPatch } from "@/lib/http";
 import { listTeams, sportById, teamById } from "@/lib/api";
@@ -283,21 +284,21 @@ export function AthleteEditPanel({
             {/* Como está inscrito na federação. Fica "por indicar" até alguém
                 o dizer: a ficha não adivinha pelo nome. */}
             <Field label="Sexo" hint="como está inscrito na federação">
-              <select value={sex} onChange={(e) => setSex(e.target.value)} className={dialogInputClass}>
+              <Escolha value={sex} onChange={(e) => setSex(e.target.value)} className={dialogInputClass}>
                 <option value="">Por indicar</option>
                 {ATHLETE_SEXES.map((s) => (
                   <option key={s} value={s}>
                     {ATHLETE_SEX_LABEL[s]}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </Field>
 
             {/* O rótulo vem da modalidade: "Pé dominante" no futebol, "Mão
                 dominante" no basquetebol, e nada na natação. */}
             {sport?.dominantSideLabel && (
               <Field label={sport.dominantSideLabel} hint="opcional">
-                <select
+                <Escolha
                   value={dominantSide}
                   onChange={(e) => setDominantSide(e.target.value)}
                   className={dialogInputClass}
@@ -306,7 +307,7 @@ export function AthleteEditPanel({
                   <option value="RIGHT">Direito</option>
                   <option value="LEFT">Esquerdo</option>
                   <option value="BOTH">Ambidestro</option>
-                </select>
+                </Escolha>
               </Field>
             )}
           </div>

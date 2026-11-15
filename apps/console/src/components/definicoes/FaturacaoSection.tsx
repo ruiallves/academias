@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DataTable, Empty, Pill, cx, type Column, type Tone } from "@/components/primitives";
@@ -641,7 +642,7 @@ function Passos({
 
             {!bloqueado && (
               <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-10">
-                <select
+                <Escolha
                   id={id}
                   value={valor}
                   disabled={busy || lista.length === 0}
@@ -656,7 +657,7 @@ function Passos({
                       {o.detalhe ? ` · ${o.detalhe}` : ""}
                     </option>
                   ))}
-                </select>
+                </Escolha>
                 {/*
                   Sem nada guardado, a lista mostra a opção por omissão do programa
                   e um botão confirma-a: uma escolha pré-feita que ninguém gravou
@@ -735,7 +736,7 @@ function RegrasDeIva({
                   </label>
                   <p className="mt-0.5 text-meta leading-relaxed text-ink-3">{t.explicacao}</p>
                 </div>
-                <select
+                <Escolha
                   id={idIva}
                   value={r.iva}
                   disabled={!mayWrite || busy}
@@ -747,13 +748,13 @@ function RegrasDeIva({
                       {x} %
                     </option>
                   ))}
-                </select>
+                </Escolha>
                 {r.iva === 0 ? (
                   <div className="min-w-0">
                     <label htmlFor={idMotivo} className="sr-only">
                       Motivo de isenção de {t.label}
                     </label>
-                    <select
+                    <Escolha
                       id={idMotivo}
                       value={r.isencao ?? ""}
                       disabled={!mayWrite || busy}
@@ -766,7 +767,7 @@ function RegrasDeIva({
                           {m.label}
                         </option>
                       ))}
-                    </select>
+                    </Escolha>
                   </div>
                 ) : (
                   <span className="hidden text-meta text-ink-4 md:block">com IVA</span>

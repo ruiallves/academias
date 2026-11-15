@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, dialogInputClass } from "@/components/Dialog";
 import { Bar, Monogram, cx } from "@/components/primitives";
@@ -202,7 +203,7 @@ export function LeiturasDaConduta({ documentId, title, onClose }: { documentId: 
                     />
                   </div>
                   {equipas.length > 0 && (
-                    <select
+                    <Escolha
                       value={equipa}
                       onChange={(e) => setEquipa(e.target.value)}
                       aria-label="Escalão"
@@ -214,7 +215,7 @@ export function LeiturasDaConduta({ documentId, title, onClose }: { documentId: 
                           {t.name}
                         </option>
                       ))}
-                    </select>
+                    </Escolha>
                   )}
                 </div>
 

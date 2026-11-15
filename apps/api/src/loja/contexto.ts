@@ -174,7 +174,7 @@ export async function codigoComUsos(db: ScopedClient, codigo: string, caixa: str
   // Tipado como o filtro do Prisma: um `as const` aqui dava uma lista só de leitura, que o `in` recusa.
   const contam: Prisma.SiteOrderWhereInput = {
     discountCodeId: c.id,
-    OR: [{ status: { in: ["PAID", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }],
+    OR: [{ status: { in: ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"] } }, { status: "RESERVED", reservedUntil: { gt: agora } }],
   };
   const [usos, daPessoa] = await Promise.all([
     db.siteOrder.count({ where: contam }),

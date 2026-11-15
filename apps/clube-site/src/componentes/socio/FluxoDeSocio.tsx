@@ -332,7 +332,7 @@ export function FluxoDeSocio({
   );
 
   const cartao = (
-    <CartaoDeSocio nome={c.name} categoria={categoria?.name ?? "Sócio"} clube={clube} className="lg:[transform:perspective(1100px)_rotateY(-9deg)_rotateX(4deg)]" />
+    <CartaoDeSocio nome={c.name} categoria={categoria?.name ?? "Sócio"} clube={clube} />
   );
 
   return (
@@ -377,7 +377,7 @@ export function FluxoDeSocio({
                     ))}
                   </ul>
                 )}
-                <div className="mt-6 lg:hidden">{cartao}</div>
+                <div className="mt-6 max-w-[20rem] lg:hidden">{cartao}</div>
                 <div className="mt-8 flex justify-end">
                   <button type="button" onClick={() => ir(1)} className={`${botaoPrincipal} w-full sm:w-auto`}>
                     Começar{desde ? ` · desde ${dinheiro(desde.cents)}${desde.anual ? "/ano" : "/mês"}` : ""}
@@ -472,7 +472,7 @@ export function FluxoDeSocio({
                     {erro("birth")}
                   </fieldset>
                 </div>
-                <div className="mt-8 lg:hidden">{cartao}</div>
+                <div className="mt-8 max-w-[20rem] lg:hidden">{cartao}</div>
                 {acoes(
                   <button type="button" onClick={seguinte} className={botaoPrincipal}>
                     Seguinte
@@ -666,7 +666,7 @@ export function FluxoDeSocio({
                     </li>
                   ))}
                 </ol>
-                <div className="mt-8 lg:hidden">{cartao}</div>
+                <div className="mt-8 max-w-[20rem] lg:hidden">{cartao}</div>
                 <div className="mt-10">
                   <a href="/" className={botaoPrincipal}>
                     Voltar ao site
@@ -677,11 +677,12 @@ export function FluxoDeSocio({
           </div>
         </div>
 
-        {/* O cartão, ao lado, em ecrã grande. */}
-        <aside className={`relative hidden overflow-hidden lg:sticky lg:top-28 lg:flex lg:flex-col lg:items-center lg:justify-center lg:self-start bg-sunken px-8 py-14 ${quadrado ? "" : "rounded-card"}`}>
-          <Estilhacos />
-          <div className="relative w-full max-w-[17rem]">{cartao}</div>
-          <p className="relative mt-6 max-w-[16rem] text-center text-sm text-ink-3">O teu cartão fica ativo assim que a direção aprovar a adesão.</p>
+        {/* O cartão, ao lado, em ecrã grande. Direto na página, sem moldura,
+            como na adesão da API. */}
+        {/* lg:mt-13 = a fila dos passos (h-6 + mb-7): o cartão começa à altura do "Faz-te sócio". */}
+        <aside className="hidden lg:sticky lg:top-36 lg:mt-13 lg:block lg:self-start">
+          {cartao}
+          <p className="mt-3.5 px-0.5 text-[0.8125rem] text-ink-4">O teu cartão fica ativo assim que a direção aprovar.</p>
         </aside>
       </div>
     </div>
@@ -696,19 +697,6 @@ function Cabeca({ titulo, refTitulo, id }: { titulo: string; refTitulo: React.Re
         {titulo}
       </h2>
     </>
-  );
-}
-
-/** Os estilhaços da página de adesão, na cor do clube, por trás do cartão. */
-function Estilhacos() {
-  return (
-    <svg className="pointer-events-none absolute inset-0 size-full text-signal" viewBox="0 0 340 640" preserveAspectRatio="xMidYMid slice" aria-hidden>
-      <polygon points="250,40 340,10 340,150" fill="currentColor" opacity="0.28" />
-      <polygon points="270,170 340,215 220,330" fill="currentColor" opacity="0.2" />
-      <polygon points="0,470 70,500 30,600" fill="currentColor" opacity="0.24" />
-      <polygon points="40,520 120,540 0,640" fill="currentColor" opacity="0.14" />
-      <polygon points="300,560 340,540 340,620" fill="currentColor" opacity="0.18" />
-    </svg>
   );
 }
 

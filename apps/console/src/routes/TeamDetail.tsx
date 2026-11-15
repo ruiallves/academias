@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -1248,7 +1249,7 @@ function StaffTab({
               </div>
 
               {mayRole ? (
-                <select
+                <Escolha
                   value={c.title}
                   disabled={aGravar !== null}
                   onChange={(e) => void definir(c.id, e.target.value)}
@@ -1266,7 +1267,7 @@ function StaffTab({
                       {r}
                     </option>
                   ))}
-                </select>
+                </Escolha>
               ) : (
                 <Pill tone={isHeadCoach(c.title) ? "signal" : "neutral"}>{c.title}</Pill>
               )}

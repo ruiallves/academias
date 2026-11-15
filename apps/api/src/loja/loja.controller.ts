@@ -4,7 +4,7 @@ import { Public, type AuthedRequest } from "../auth/auth.guard";
 import { LojaService } from "./loja.service";
 import { CatalogoService } from "./catalogo.service";
 import { CategoriaDto, CodigoDto, OrdemDto } from "./catalogo.dto";
-import { AnularEncomendaDto, CarrinhoDto, EncomendarDto, EnviadaDto, ReembolsoEncomendaDto } from "./loja.dto";
+import { AnularEncomendaDto, CarrinhoDto, EncomendarDto, EnviadaDto, EstadoDaEncomendaDto, ReembolsoEncomendaDto } from "./loja.dto";
 
 /**
  * A loja, do lado de fora: quem compra no site.
@@ -58,6 +58,18 @@ export class LojaConsolaController {
   @Get("encomendas")
   listar(@Req() req: AuthedRequest) {
     return this.loja.listar(req.ctx);
+  }
+
+  /** Qualquer passo do percurso, para a frente ou para trás. Os quatro endereços seguintes ficam para clientes antigos. */
+  @Post("encomendas/:id/estado")
+  estado(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: EstadoDaEncomendaDto) {
+    return this.loja.mudarEstado(req.ctx, id, dto.estado, { rastreio: dto.rastreio, avisar: dto.avisar });
+  }
+
+  /** Em preparação (IN_PRODUCTION; era "no produtor" até 15/11): passo opcional entre a paga e a pronta ou enviada. */
+  @Post("encomendas/:id/producao")
+  producao(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.loja.producao(req.ctx, id);
   }
 
   @Post("encomendas/:id/pronta")

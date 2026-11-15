@@ -1,7 +1,7 @@
 import { Check } from "@/lib/icons";
 import { Pill, cx } from "./primitives";
 import { ADMIN_AREAS, AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area, type Level } from "@/lib/access";
-import { NAV_CATALOG, SETTINGS_ITEM } from "@/lib/nav";
+import { NAV_CATALOG, SETTINGS_ITEM, chaveDoMenu } from "@/lib/nav";
 import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import type { Permission } from "@/lib/permissions";
 
@@ -185,7 +185,7 @@ export function applyLevel(current: Set<Permission>, area: Area, level: Level): 
 export function possibleNavKeys(permissions: Set<Permission>): Set<string> {
   const keys = new Set<string>();
   for (const group of NAV_CATALOG) {
-    for (const item of group.items) if (permissions.has(item.requires)) keys.add(item.key);
+    for (const item of group.items) if (permissions.has(item.requires)) keys.add(chaveDoMenu(item));
   }
   if (permissions.has(SETTINGS_ITEM.requires)) keys.add(SETTINGS_ITEM.key);
   return keys;
@@ -213,7 +213,10 @@ export function NavPicker({
   const items = [...NAV_CATALOG, { label: undefined, items: [SETTINGS_ITEM] }]
     .flatMap((g) => g.items)
     // Fora desta versão: ver `lib/funcionalidades.ts`. Só se esconde a linha; o que já estiver gravado fica.
-    .filter((i) => i.key !== "registrations" || INSCRICOES_FPF);
+    .filter((i) => i.key !== "registrations" || INSCRICOES_FPF)
+    // As páginas que partilham um menu (as cinco do Website) são uma linha só: a do item que dá nome ao menu.
+    .filter((i) => chaveDoMenu(i) === i.key)
+    .map((i) => (i.menuLabel ? { ...i, label: i.menuLabel } : i));
 
   return (
     <div className="space-y-3">

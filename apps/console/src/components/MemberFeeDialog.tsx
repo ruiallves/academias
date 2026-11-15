@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
@@ -378,7 +379,7 @@ function ExtremoDoIntervalo({
   return (
     <label className="flex items-end gap-1.5">
       <span className="pb-2 text-meta text-ink-3">{rotulo}</span>
-      <select
+      <Escolha
         aria-label={`${rotulo} — mês`}
         value={valor.mes}
         onChange={(e) => onChange({ ...valor, mes: Number(e.target.value) })}
@@ -389,8 +390,8 @@ function ExtremoDoIntervalo({
             {nome}
           </option>
         ))}
-      </select>
-      <select
+      </Escolha>
+      <Escolha
         aria-label={`${rotulo} — ano`}
         value={valor.ano}
         onChange={(e) => onChange({ ...valor, ano: Number(e.target.value) })}
@@ -401,7 +402,7 @@ function ExtremoDoIntervalo({
             {a}
           </option>
         ))}
-      </select>
+      </Escolha>
     </label>
   );
 }

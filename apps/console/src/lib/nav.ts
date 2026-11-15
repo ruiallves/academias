@@ -32,6 +32,11 @@ import {
   Award,
   FileSignature,
   Globe,
+  Newspaper,
+  ShoppingBag,
+  Package,
+  Ticket,
+  Inbox,
   ShieldAlert,
   Handshake,
   type LucideIcon,
@@ -103,7 +108,21 @@ export type NavItem = {
    * futsal **ou** basquetebol (os boletins da FPF e da FPB).
    */
   discipline?: SportCode | SportCode[];
+  /**
+   * A chave com que o cargo mostra ou esconde este item, quando não é a
+   * própria. As seis páginas do Website são um menu só para os cargos
+   * (`website`): mostram-se ou escondem-se juntas, e o editor de cargos tem
+   * uma linha só, a do item cuja `key` é igual a `menu` (com `menuLabel`).
+   */
+  menu?: string;
+  /** O nome dessa linha no editor de cargos, quando não é o `label` do item. */
+  menuLabel?: string;
 };
+
+/** A chave de configuração de um item: a que o cargo guarda em `navKeys`. */
+export function chaveDoMenu(item: NavItem): string {
+  return item.menu ?? item.key;
+}
 
 export type NavGroup = {
   /** Sem rótulo = o primeiro bloco, colado ao topo. Como nas referências. */
@@ -186,7 +205,21 @@ const GRUPO_AI: NavGroup = {
  */
 const GRUPO_WEBSITE: NavGroup = {
   label: "Website",
-  items: [{ key: "website", label: "Website", to: "/website", icon: Globe, requires: "website:read" }],
+  /*
+   * Seis páginas desde 15/11/2026 (era uma só, com treze secções num submenu
+   * próprio). Para os cargos continuam a ser um menu só, `website`: os cargos
+   * gravados antes mostram as seis, e o editor de cargos tem uma linha só.
+   * Endereços em `routes/website/rotas.ts`.
+   */
+  items: [
+    { key: "website", menu: "website", menuLabel: "Website", label: "Site", to: "/website", icon: Globe, requires: "website:read" },
+    { key: "website-content", menu: "website", label: "Conteúdo", to: "/website/conteudo", icon: Newspaper, requires: "website:read" },
+    { key: "website-shop", menu: "website", label: "Loja", to: "/website/loja", icon: ShoppingBag, requires: "website:read" },
+    // Era um separador da Loja; o trabalho de todos os dias merece a sua página (15/11/2026).
+    { key: "website-orders", menu: "website", label: "Encomendas", to: "/website/encomendas", icon: Package, requires: "website:read" },
+    { key: "website-tickets", menu: "website", label: "Bilheteira", to: "/website/bilheteira", icon: Ticket, requires: "website:read" },
+    { key: "website-messages", menu: "website", label: "Mensagens", to: "/website/mensagens", icon: Inbox, requires: "website:read" },
+  ],
 };
 
 export const NAV_CATALOG: NavGroup[] = [
@@ -359,6 +392,12 @@ export const NAV_CATALOG: NavGroup[] = [
       { key: "sponsors", label: "Patrocinadores", to: "/patrocinadores", icon: Handshake, requires: "sponsor:read" },
     ],
   },
+  /*
+    O Website logo a seguir à Gestão (estava no fim da barra, depois do
+    Clínico, e com cinco páginas ficava fora do ecrã): vender, escrever e
+    responder ao público é a continuação da comunicação e dos patrocinadores.
+  */
+  GRUPO_WEBSITE,
   {
     label: "Desenvolvimento",
     items: [
@@ -412,7 +451,6 @@ export const NAV_CATALOG: NavGroup[] = [
     ],
   },
   ...(import.meta.env.DEV ? [GRUPO_AI] : []),
-  GRUPO_WEBSITE,
 ];
 
 export const SETTINGS_ITEM: NavItem = {
@@ -440,11 +478,11 @@ export function navFor(session: Session): NavGroup[] {
   return NAV_CATALOG.map((group) => ({
     ...group,
     items: group.items
-      .filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key)))
+      .filter((i) => perms.has(i.requires) && (!chosen || chosen.has(chaveDoMenu(i))))
       // Fora desta versão: ver `lib/funcionalidades.ts`.
       .filter((i) => i.key !== "registrations" || INSCRICOES_FPF)
-      // O site do clube é do plano Connect Pro. Ver `GRUPO_WEBSITE`.
-      .filter((i) => i.key !== "website" || storeAcademy.websiteIncluido)
+      // O site do clube é do plano Connect Pro (as cinco páginas). Ver `GRUPO_WEBSITE`.
+      .filter((i) => chaveDoMenu(i) !== "website" || storeAcademy.websiteIncluido)
       /*
        * O Assistente IA só aparece quando o servidor diz que está ligado neste
        * clube. `=== true` e não `!== false`: enquanto a resposta não chega (ou

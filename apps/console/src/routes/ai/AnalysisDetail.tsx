@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -471,7 +472,7 @@ function ReviewRow({
           {track.identityConfidence != null ? `confiança ${pct(track.identityConfidence)}` : "sem proposta"}
         </div>
       </div>
-      <select
+      <Escolha
         aria-label="Quem é este jogador"
         className="h-8 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink"
         value={choice}
@@ -485,7 +486,7 @@ function ReviewRow({
             {s.name}
           </option>
         ))}
-      </select>
+      </Escolha>
       <button type="button" className="ctl-primary gap-1" disabled={!choice || saving} onClick={() => apply(choice)}>
         <Check className="size-3.5" strokeWidth={2} />
         Confirmar
@@ -725,7 +726,7 @@ function IdentityChooser({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
+      <Escolha
         aria-label="Quem é este jogador"
         className="h-8 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink"
         value={choice}
@@ -739,7 +740,7 @@ function IdentityChooser({
             {s.name}
           </option>
         ))}
-      </select>
+      </Escolha>
       <button type="button" className="ctl-primary gap-1" disabled={!choice || saving} onClick={() => apply(choice)}>
         <Check className="size-3.5" strokeWidth={2} />
         Confirmar

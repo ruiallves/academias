@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { LugarAnual as IconeLugarAnual } from "@/lib/icons";
@@ -67,13 +68,13 @@ export function LugaresAnuais({ recintos }: { recintos: Recinto[] }) {
           <label htmlFor="lugares-epoca" className="text-meta font-medium text-ink-2">
             Época
           </label>
-          <select id="lugares-epoca" className={`${dialogInputClass} w-auto`} value={seasonId} onChange={(e) => setSeasonId(e.target.value)}>
+          <Escolha id="lugares-epoca" className={`${dialogInputClass} w-auto`} value={seasonId} onChange={(e) => setSeasonId(e.target.value)}>
             {epocas.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.label}
               </option>
             ))}
-          </select>
+          </Escolha>
         </div>
         <p className="text-meta text-ink-3">Atribuem-se na ficha de cada sócio.</p>
       </div>

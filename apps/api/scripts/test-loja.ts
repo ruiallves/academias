@@ -30,6 +30,10 @@ import {
   resumoDoCodigo,
   slugDoTexto,
   slugLivre,
+  mudancaDeEstado,
+  passosDaEncomenda,
+  referenciaNormalizada,
+  referenciaNova,
   type CodigoPromocional,
   type ProdutoParaVenda,
 } from "../src/loja/regras";
@@ -175,7 +179,7 @@ console.log("\nO pagamento");
   check("pago dentro do prazo confirma", destinoDoPagamento({ status: "RESERVED", reservedUntil: ate, pagoEm: new Date("2026-10-24T10:05:00Z"), aindaHaStock: true }) === "confirmar");
   check("pago depois do prazo com stock confirma na mesma", destinoDoPagamento({ status: "EXPIRED", reservedUntil: ate, pagoEm: new Date("2026-10-24T10:20:00Z"), aindaHaStock: true }) === "confirmar");
   check("pago depois do prazo sem stock é reembolso", destinoDoPagamento({ status: "EXPIRED", reservedUntil: ate, pagoEm: new Date("2026-10-24T10:20:00Z"), aindaHaStock: false }) === "reembolso");
-  for (const s of ["PAID", "READY", "SHIPPED", "DELIVERED", "LATE_PAYMENT", "CANCELLED"]) {
+  for (const s of ["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED", "LATE_PAYMENT", "CANCELLED"]) {
     check(`uma encomenda ${s} não se trata duas vezes`, destinoDoPagamento({ status: s, reservedUntil: ate, pagoEm: new Date(), aindaHaStock: true }) === "ja-tratado");
   }
   const agora = new Date("2026-10-24T10:00:00Z");
@@ -183,6 +187,33 @@ console.log("\nO pagamento");
   check("uma reserva passada já não está", !estaGuardada({ status: "RESERVED", reservedUntil: new Date("2026-10-24T09:00:00Z") }, agora));
   check("uma encomenda paga não está guardada (o stock já desceu)", !estaGuardada({ status: "PAID", reservedUntil: ate }, agora));
   check("a primeira encomenda é a n.º 1, e segue", proximoNumero(null) === 1 && proximoNumero(41) === 42);
+}
+
+console.log("\nReferência e mudanças de estado (15/11/2026)");
+{
+  const ref = referenciaNova(new Uint8Array([0, 1, 2, 3, 31, 30, 29, 28]));
+  check("a referência tem o formato ENC-XXXX-XXXX", /^ENC-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/.test(ref), ref);
+  check("a referência não tem 0, O, 1 nem I", !/[01OI]/.test(ref.slice(4)));
+  check("uma referência escrita à mão normaliza", referenciaNormalizada(" enc 234 5zyxw ") === "ENC-2345-ZYXW");
+  check("uma referência com O ou 1 recusa", referenciaNormalizada("ENC-O1AB-CDEF") === null);
+
+  const agora = new Date("2026-11-15T12:00:00Z");
+  const ontem = new Date("2026-11-14T12:00:00Z");
+  const base = { paidAt: ontem, productionAt: null, readyAt: null, shippedAt: null, deliveredAt: null };
+  const a = mudancaDeEstado({ atual: "PAID", destino: "READY", entrega: "PICKUP", datas: base, agora });
+  check("paga para pronta é para a frente e ganha a data", a.ok && a.paraAFrente && a.datas.readyAt === agora);
+  const b = mudancaDeEstado({ atual: "DELIVERED", destino: "READY", entrega: "PICKUP", datas: { ...base, readyAt: ontem, deliveredAt: agora }, agora });
+  check("entregue para pronta volta atrás, apaga a entrega e guarda o dia da pronta", b.ok && !b.paraAFrente && b.datas.deliveredAt === null && b.datas.readyAt === ontem);
+  const c = mudancaDeEstado({ atual: "READY", destino: "PAID", entrega: "PICKUP", datas: { ...base, productionAt: ontem, readyAt: ontem }, agora });
+  check("voltar a paga apaga o produtor e a pronta, e nunca a data do pagamento", c.ok && c.datas.productionAt === null && c.datas.readyAt === null && c.datas.paidAt === ontem);
+  const d = mudancaDeEstado({ atual: "PAID", destino: "DELIVERED", entrega: "SHIPPING", datas: base, agora });
+  check("saltar da paga para a entregue não inventa a enviada", d.ok && d.datas.shippedAt === null && d.datas.deliveredAt === agora);
+  check("pronta num envio recusa", !mudancaDeEstado({ atual: "PAID", destino: "READY", entrega: "SHIPPING", datas: base, agora }).ok);
+  check("enviada num levantamento recusa", !mudancaDeEstado({ atual: "PAID", destino: "SHIPPED", entrega: "PICKUP", datas: base, agora }).ok);
+  check("uma anulada não muda", !mudancaDeEstado({ atual: "CANCELLED", destino: "PAID", entrega: "PICKUP", datas: base, agora }).ok);
+  check("uma por pagar não muda", !mudancaDeEstado({ atual: "RESERVED", destino: "READY", entrega: "PICKUP", datas: base, agora }).ok);
+  check("o mesmo estado recusa", !mudancaDeEstado({ atual: "READY", destino: "READY", entrega: "PICKUP", datas: base, agora }).ok);
+  check("os passos do envio", passosDaEncomenda("SHIPPING").join(",") === "PAID,IN_PRODUCTION,SHIPPED,DELIVERED");
 }
 
 console.log("\nEndereços (11/11/2026)");

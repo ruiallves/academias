@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
@@ -224,7 +225,7 @@ function KindSelect({
 
   return (
     <div className="space-y-2">
-      <select
+      <Escolha
         className={dialogInputClass}
         value={custom ? CUSTOM : value}
         disabled={disabled}
@@ -246,7 +247,7 @@ function KindSelect({
               </optgroup>
             ))}
         <option value={CUSTOM}>Outra…</option>
-      </select>
+      </Escolha>
       {custom && (
         <input
           className={dialogInputClass}
@@ -330,24 +331,24 @@ function NewSetPieceDialog({ onClose, onCreated }: { onClose: () => void; onCrea
         </DialogField>
         {formats.length > 1 && (
           <DialogField label="Variante" hint="a equipa sugere, tu decides">
-            <select className={dialogInputClass} value={pitch} onChange={(e) => setPitch(e.target.value as GameFormat)}>
+            <Escolha className={dialogInputClass} value={pitch} onChange={(e) => setPitch(e.target.value as GameFormat)}>
               {formats.map((f) => (
                 <option key={f} value={f}>
                   {FORMAT_LABEL[f]}
                 </option>
               ))}
-            </select>
+            </Escolha>
           </DialogField>
         )}
         <DialogField label="Equipa">
-          <select className={dialogInputClass} value={teamId} onChange={(e) => chooseTeam(e.target.value)}>
+          <Escolha className={dialogInputClass} value={teamId} onChange={(e) => chooseTeam(e.target.value)}>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
             <option value="">Todo o clube</option>
-          </select>
+          </Escolha>
         </DialogField>
       </div>
     </Dialog>
@@ -554,14 +555,14 @@ export function SetPieceDetail() {
               <KindSelect groups={groups} value={piece.kind} onChange={(k) => patch({ kind: k })} disabled={!editable} />
             </DialogField>
             <DialogField label="Equipa">
-              <select className={dialogInputClass} value={piece.teamId ?? ""} onChange={(e) => patch({ teamId: e.target.value || null })} disabled={!editable}>
+              <Escolha className={dialogInputClass} value={piece.teamId ?? ""} onChange={(e) => patch({ teamId: e.target.value || null })} disabled={!editable}>
                 <option value="">Todo o clube</option>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
                 ))}
-              </select>
+              </Escolha>
             </DialogField>
             {/*
               O sistema de que a situação parte — "a reposição de fundo que
@@ -570,7 +571,7 @@ export function SetPieceDetail() {
             */}
             {(models.length > 0 || piece.gameModelId) && (
               <DialogField label={playbookOne[0].toUpperCase() + playbookOne.slice(1)} hint="de que parte">
-                <select
+                <Escolha
                   className={dialogInputClass}
                   value={piece.gameModelId ?? ""}
                   disabled={!editable}
@@ -588,7 +589,7 @@ export function SetPieceDetail() {
                   {piece.gameModelId && !models.some((m) => m.id === piece.gameModelId) && (
                     <option value={piece.gameModelId}>{piece.gameModelName ?? "Sistema"}</option>
                   )}
-                </select>
+                </Escolha>
                 {piece.gameModelId && (
                   <Link to={path("playbook", piece.gameModelId)} className="mt-1 inline-block text-meta text-signal-ink hover:underline">
                     Abrir {playbookOne}

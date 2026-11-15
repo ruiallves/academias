@@ -3,7 +3,7 @@ import type { PrismaService, ScopedClient } from "../prisma/prisma.service";
 import { can, teamScopeFilter, teamScopeForRoster, type RequestContext } from "../common/permissions";
 import { equipasDaEpocaAtual } from "../common/seasons";
 import { formatarNoFuso, instanteNoFuso, partesNoFuso } from "../common/fuso";
-import { normalizar, resolverNome, resolverNomes, rotuloDe, type Pessoa } from "./nomes";
+import { acharEquipas, acharNaLista, formaDeComparar, normalizar, resolverNome, resolverNomes, rotuloDe, type Pessoa } from "./nomes";
 import { ACOES, aplicaSe, descricaoDasAcoes, lerDiasDaSemana, lerValor, podeFazer, RECUSADO, respondido, SECCOES_DO_SITE, somarMinutos, type Acao, type Campo, type Condicao, type TipoDeCampo } from "./acoes";
 import { ESQUEMA_DO_EXERCICIO, ESQUEMA_DO_PLANO, instrucoesDoExercicio, instrucoesDoPlaneador, lerExercicioNovo, lerPlanoGerado, miniatura, pedidoDoExercicio, pedidoDoPlaneador, terrenoDaEquipa, type ExercicioDaBiblioteca } from "./planos";
 import { siteIncluido } from "../site/plano";
@@ -286,9 +286,14 @@ export function foiDito(campo: Campo, valor: unknown, falado: string): boolean {
     .split(/\s*[,;]\s*/)
     .flatMap((parte) => normalizar(parte).split(" "))
     .filter((p) => p && !GENERICAS.has(p) && !["de", "da", "do", "das", "dos", "e", "o", "a"].includes(p));
-  if (palavrasDoValor.length === 0) return false;
   const ditas = new Set(texto.trim().split(" "));
-  return palavrasDoValor.some((p) => ditas.has(p));
+  if (palavrasDoValor.some((p) => ditas.has(p))) return true;
+  // "campo número um", "campo nº1": o nome inteiro, na forma de comparar, aparece seguido no que foi dito.
+  const falada = ` ${formaDeComparar(falado).join(" ")} `;
+  return String(valor)
+    .split(/\s*[,;]\s*/)
+    .map((parte) => formaDeComparar(parte).join(" "))
+    .some((f) => f.length > 0 && falada.includes(` ${f} `));
 }
 
 /** As ferramentas de uma rota, pelo nome. */
@@ -346,16 +351,8 @@ function seccoesEscondidas(inicio: Inicio): { id: string; label: string; banner:
 function escolher<T extends { id: string; label: string }>(lista: T[], dito: string, oQue: string): { ok: true; item: T } | { ok: false; erro: string } {
   const porId = lista.find((x) => x.id === dito);
   if (porId) return { ok: true, item: porId };
-  const alvo = normalizar(dito);
-  if (!alvo) return { ok: false, erro: `Falta dizer qual ${oQue}.` };
-  const iguais = lista.filter((x) => normalizar(x.label) === alvo);
-  const palavras = alvo.split(" ").filter((p) => p.length > 2);
-  const parecidos = iguais.length
-    ? iguais
-    : lista.filter((x) => {
-        const l = normalizar(x.label);
-        return l.includes(alvo) || (palavras.length > 0 && palavras.every((p) => l.includes(p)));
-      });
+  if (!normalizar(dito)) return { ok: false, erro: `Falta dizer qual ${oQue}.` };
+  const parecidos = acharNaLista(lista, dito, (x) => [x.label]);
   if (parecidos.length === 1) return { ok: true, item: parecidos[0] };
   if (parecidos.length > 1) return { ok: false, erro: `Há mais do que um ${oQue} parecido com "${dito}": ${parecidos.map((x) => x.label).join("; ")}. Pergunta à pessoa qual é e volta a chamar com o id.` };
   return { ok: false, erro: `Não encontrei nenhum ${oQue} "${dito}". ${lista.length ? `Os que há: ${lista.slice(0, 12).map((x) => x.label).join("; ")}.` : `Não há nenhum ${oQue}.`}` };
@@ -885,7 +882,10 @@ export class Executor {
     });
 
     // A equipa já dita estreita as provas (as da modalidade) e sugere o local do horário.
-    const equipaDita = dados.equipa ? escolhas.equipas.find((e) => e.id === dados.equipa || normalizar(e.name) === normalizar(String(dados.equipa))) : undefined;
+    // A equipa dita como a pessoa a disse ("sub-19 de futebol") fica a equipa do clube, e o formulário mostra-a escolhida na lista.
+    const achadas = dados.equipa ? acharEquipas(escolhas.equipas, String(dados.equipa)) : [];
+    const equipaDita = achadas.length === 1 ? achadas[0] : undefined;
+    if (equipaDita && acao.campos.some((c) => c.nome === "equipa" && c.tipo === "equipa")) dados = { ...dados, equipa: equipaDita.name };
     const doCatalogo = (kind: string) =>
       escolhas.catalogo.filter((i) => i.kind === kind && (!equipaDita || !i.sportId || i.sportId === equipaDita.sportId)).map((i) => ({ valor: i.label, label: i.label }));
     const horario = Array.isArray(equipaDita?.schedule) ? (equipaDita!.schedule as { venue?: string }[]).find((h) => h.venue)?.venue : undefined;
@@ -923,12 +923,22 @@ export class Executor {
         : c.tipo === "jogo" && escolhas.site ? escolhas.site.jogos.map((j) => ({ valor: j.id, label: j.label }))
         : acao.nome === "criar_produto_na_loja" && c.nome === "categoria" && escolhas.site ? escolhas.site.categorias.map((n) => ({ valor: n, label: n }))
         : undefined;
+      // O que a pessoa disse ("campo nº1") passa a ser a opção do clube ("Campo 1"), e o formulário mostra-a escolhida.
+      // Só quando há uma opção certa; várias, ou nenhuma, ficam como foram ditas para a pessoa ver e corrigir.
+      const valorDaLista = (dito: string) => {
+        if (!opcoesDoCampo?.length || !dito) return dito;
+        const achadas = acharNaLista(opcoesDoCampo, dito, (o) => [o.valor, o.label]);
+        return achadas.length === 1 ? achadas[0].valor : dito;
+      };
+      const valorFinal = c.tipo === "balneario" || c.tipo === "equipas"
+        ? valor.split(/\s*[,;]\s*|\s+e\s+/).filter(Boolean).map(valorDaLista).join(", ")
+        : c.tipo === "treino" ? valor : valorDaLista(valor);
       return {
         nome: c.nome,
         rotulo: c.rotulo,
         tipo: c.tipo,
         obrigatorio: c.obrigatorio || (acao.nome === "inscrever_atleta" && c.nome === "nif" && !dados.numero_documento),
-        valor,
+        valor: valorFinal,
         ...(sugestao && !valor ? { sugestao } : {}),
         ...(opcoesDoCampo ? { opcoes: opcoesDoCampo } : {}),
         multiplo: c.tipo === "balneario" || c.tipo === "equipas",
@@ -964,11 +974,7 @@ export class Executor {
       where: { ...(await equipasDaEpocaAtual(db)), ...(scope ? { id: scope } : {}) },
       select: { id: true, name: true, sportId: true, schedule: true, sport: { select: { name: true } } },
     });
-    const porId = equipas.find((e) => e.id === dito);
-    if (porId) return { ok: true, equipa: porId };
-    const alvo = normalizar(dito);
-    const iguais = equipas.filter((e) => normalizar(e.name) === alvo);
-    const parecidas = iguais.length ? iguais : equipas.filter((e) => normalizar(e.name).includes(alvo) || alvo.includes(normalizar(e.name)));
+    const parecidas = acharEquipas(equipas, dito);
     if (parecidas.length === 1) return { ok: true, equipa: parecidas[0] };
     if (parecidas.length > 1) {
       return {
@@ -985,9 +991,11 @@ export class Executor {
   private async localResolvido(db: ScopedClient, dito: string | undefined, equipa: { schedule: unknown } | null): Promise<{ ok: true; local: string } | { ok: false; resultado: ResultadoDaFerramenta }> {
     const locais = (await db.catalogItem.findMany({ where: { kind: "venues", archivedAt: null }, orderBy: [{ order: "asc" }, { label: "asc" }], select: { label: true } })).map((l) => l.label);
     if (dito) {
-      const alvo = normalizar(dito);
-      const certo = locais.find((l) => normalizar(l) === alvo) ?? locais.find((l) => normalizar(l).includes(alvo) || alvo.includes(normalizar(l)));
-      if (certo) return { ok: true, local: certo };
+      const achados = acharNaLista(locais, dito, (l) => [l]);
+      if (achados.length === 1) return { ok: true, local: achados[0] };
+      if (achados.length > 1) {
+        return { ok: false, resultado: { dados: { pergunta: `Há mais do que um local parecido com "${dito}"; a pessoa vai escolher.` }, pergunta: { texto: "Qual é o local?", opcoes: achados.slice(0, 8).map((l) => ({ id: l, label: l })), campo: "local" } } };
+      }
       // Um local que não está no catálogo aceita-se tal como foi dito: o calendário também o aceita.
       return { ok: true, local: dito.slice(0, 80) };
     }
@@ -1035,8 +1043,9 @@ export class Executor {
         const provas = daEquipa.length
           ? daEquipa.map((x) => x.competition)
           : await db.catalogItem.findMany({ where: { kind: "competitions", archivedAt: null, OR: [{ sportId: null }, { sportId: equipa!.sportId }] }, select: { id: true, label: true } });
-        const dita = normalizar(String(d.prova ?? ""));
-        const escolhida = provas.find((p) => normalizar(p.label) === dita) ?? provas.find((p) => normalizar(p.label).includes(dita));
+        const achadas = acharNaLista(provas, String(d.prova ?? ""), (p) => [p.label]);
+        if (achadas.length > 1) return { dados: { pergunta: "Há mais do que uma prova parecida." }, pergunta: { texto: "Qual é a prova?", opcoes: achadas.slice(0, 8).map((p) => ({ id: p.label, label: p.label })), campo: "prova" } };
+        const escolhida = achadas[0];
         if (!escolhida) return { dados: { erro: `O ${equipa!.name} não disputa nenhuma prova "${String(d.prova ?? "")}". As dele: ${provas.map((p) => p.label).join(", ")}.` } };
         competitionId = escolhida.id;
         prova = escolhida.label;
@@ -1060,7 +1069,9 @@ export class Executor {
       if (d.balnearios && !(kind === "MATCH" && d.casa === false)) {
         const doCatalogo = (await db.catalogItem.findMany({ where: { kind: "dressingRooms", archivedAt: null }, select: { label: true } })).map((b) => b.label);
         for (const dito of String(d.balnearios).split(/\s*[,;]\s*|\s+e\s+/).map((s) => s.trim()).filter(Boolean)) {
-          const certo = doCatalogo.find((b) => normalizar(b) === normalizar(dito)) ?? doCatalogo.find((b) => normalizar(b).includes(normalizar(dito)));
+          const achados = acharNaLista(doCatalogo, dito, (b) => [b]);
+          if (achados.length > 1) return { dados: { erro: `"${dito}" serve a mais do que um balneário (${achados.join(", ")}). Pergunta à pessoa qual.` } };
+          const certo = achados[0];
           if (!certo) return { dados: { erro: `Não há nenhum balneário "${dito}" no catálogo. Os que existem: ${doCatalogo.join(", ") || "nenhum"}.` } };
           if (!balnearios.includes(certo)) balnearios.push(certo);
         }
@@ -1071,7 +1082,9 @@ export class Executor {
       let tipoLabel: string | null = null;
       if (kind === "OTHER" && d.tipo) {
         const tipos = await db.catalogItem.findMany({ where: { kind: "eventTypes", archivedAt: null }, select: { id: true, label: true } });
-        const t = tipos.find((x) => normalizar(x.label) === normalizar(String(d.tipo))) ?? tipos.find((x) => normalizar(x.label).includes(normalizar(String(d.tipo))));
+        const achados = acharNaLista(tipos, String(d.tipo), (x) => [x.label]);
+        if (achados.length > 1) return { dados: { pergunta: "Há mais do que um tipo parecido." }, pergunta: { texto: "Que tipo de evento?", opcoes: achados.slice(0, 8).map((x) => ({ id: x.label, label: x.label })), campo: "tipo" } };
+        const t = achados[0];
         if (!t) return { dados: { erro: `Não há nenhum tipo de evento "${String(d.tipo)}". Os que existem: ${tipos.map((x) => x.label).join(", ") || "nenhum"}.` } };
         typeId = t.id;
         tipoLabel = t.label;
@@ -1292,7 +1305,7 @@ export class Executor {
         rotulo: "Notícia no site",
         linhas,
         avisos: dto.estado === "publicada" ? ["Ao confirmar, a notícia fica logo no site do clube."] : [],
-        abrir: { rotulo: "Abrir as notícias do site", to: "/website?secao=noticias" },
+        abrir: { rotulo: "Abrir as notícias do site", to: "/website/conteudo" },
       },
     };
     return { dados: { ok: true, proposta: { titulo: dto.titulo, estado: dto.estado, nota: "A pessoa revê o texto no cartão e confirma. Não digas que ficou publicada." } }, proposta };
@@ -1465,7 +1478,7 @@ export class Executor {
             title: publicado ? "Pôr o site no ar" : "Tirar o site do ar",
             summary: publicado ? "O site passa a estar acessível" : "O site deixa de estar acessível",
             payload: { op: "config", data: { publicado }, antes: { publicado: site.publicado } },
-            view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Site", valor: publicado ? "No ar" : "Fora do ar" }], avisos, abrir: { rotulo: "Abrir o Website", to: "/website" } },
+            view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Site", valor: publicado ? "No ar" : "Fora do ar" }], avisos, abrir: { rotulo: "Abrir o site", to: "/website" } },
           },
         };
       }
@@ -1501,7 +1514,7 @@ export class Executor {
                 { rotulo: "Na loja", valor: dto.visivel ? "Visível" : "Escondido" },
               ],
               avisos,
-              abrir: { rotulo: "Abrir a loja", to: "/website?secao=loja" },
+              abrir: { rotulo: "Abrir a loja", to: "/website/loja" },
             },
           },
         };
@@ -1538,7 +1551,7 @@ export class Executor {
             title: `Produto · ${antes.nome}`,
             summary: mudancas.join(" · "),
             payload: { op: "produto_editar", id: r.item.id, dto, antes },
-            view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Produto", valor: antes.nome }, ...mudancas.map((m) => ({ rotulo: "Muda", valor: m }))], avisos, abrir: { rotulo: "Abrir a loja", to: "/website?secao=loja" } },
+            view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Produto", valor: antes.nome }, ...mudancas.map((m) => ({ rotulo: "Muda", valor: m }))], avisos, abrir: { rotulo: "Abrir a loja", to: "/website/loja" } },
           },
         };
       }
@@ -1553,7 +1566,7 @@ export class Executor {
             title: `Remover produto · ${r.item.dto.nome}`,
             summary: "Sai da loja do site",
             payload: { op: "produto_apagar", id: r.item.id, antes: r.item.dto },
-            view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Produto", valor: r.item.label }], avisos, abrir: { rotulo: "Abrir a loja", to: "/website?secao=loja" } },
+            view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Produto", valor: r.item.label }], avisos, abrir: { rotulo: "Abrir a loja", to: "/website/loja" } },
           },
         };
       }
@@ -1627,7 +1640,7 @@ export class Executor {
           title: `Fechar bilheteira · ${jogo.label}`,
           summary: "A venda fecha; os bilhetes comprados ficam válidos",
           payload: { op: "bilheteira", matchId: jogo.id, dto: { ...antes, aberta: false }, antes },
-          view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Jogo", valor: jogo.label }], avisos, abrir: { rotulo: "Abrir a bilheteira", to: "/website?secao=bilheteira" } },
+          view: { rotulo: acao.rotulo, linhas: [{ rotulo: "Jogo", valor: jogo.label }], avisos, abrir: { rotulo: "Abrir a bilheteira", to: "/website/bilheteira" } },
         },
       };
     }
@@ -1686,7 +1699,7 @@ export class Executor {
             ...(dto.nota ? [{ rotulo: "Nota", valor: dto.nota }] : []),
           ],
           avisos,
-          abrir: { rotulo: "Abrir a bilheteira", to: "/website?secao=bilheteira" },
+          abrir: { rotulo: "Abrir a bilheteira", to: "/website/bilheteira" },
         },
       },
     };
@@ -1700,9 +1713,9 @@ export class Executor {
     return this.prisma.runAs(this.ctx.academyId, async (db) => {
       let sportId: string | undefined;
       if (modalidade) {
-        const alvo = normalizar(modalidade);
         const sports = await db.sport.findMany({ select: { id: true, name: true } });
-        sportId = sports.find((s) => normalizar(s.name) === alvo)?.id ?? sports.find((s) => normalizar(s.name).includes(alvo))?.id;
+        const achadas = acharNaLista(sports, modalidade, (x) => [x.name]);
+        sportId = achadas.length === 1 ? achadas[0].id : undefined;
         if (!sportId) return { erro: `Não há nenhuma modalidade "${modalidade}". As do clube: ${sports.map((s) => s.name).join(", ")}.` };
       }
       const lista = await this.biblioteca(db, sportId);

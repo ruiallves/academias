@@ -1,5 +1,6 @@
 import type { AdjuntoProposalKind } from "@prisma/client";
 import type { Permission } from "../common/permissions";
+import { acharNaLista } from "./nomes";
 
 /**
  * O registo das ações do Adjunto: o que ele sabe fazer, campo a campo.
@@ -623,8 +624,9 @@ export function lerValor(campo: Campo, bruto: string | null | undefined): Lido {
       return /^\+?\d{9,15}$/.test(d) ? { ok: true, valor: d } : { ok: false, erro: `${campo.rotulo}: "${s}" não é um número de telefone` };
     }
     case "escolha": {
-      const n = s.toLowerCase();
-      const o = (campo.opcoes ?? []).find((x) => x.valor.toLowerCase() === n || x.label.toLowerCase() === n);
+      // Como em todos os campos: a opção como a pessoa a disse, sem acentos, com números por extenso, por outra ordem.
+      const achadas = acharNaLista(campo.opcoes ?? [], s, (x) => [x.valor, x.label]);
+      const o = achadas.length === 1 ? achadas[0] : undefined;
       return o ? { ok: true, valor: o.valor } : { ok: false, erro: `${campo.rotulo}: escolhe entre ${(campo.opcoes ?? []).map((x) => x.label).join(", ")}` };
     }
   }

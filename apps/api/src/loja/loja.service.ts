@@ -19,12 +19,17 @@ import {
   codigoNormalizado,
   custoDeEnvio,
   entregaPossivel,
+  ESTADOS_PAGOS,
+  ESTADOS_VIVOS,
   juntarLinhas,
   lojaVende,
   moradaValida,
+  mudancaDeEstado,
   proximoNumero,
+  referenciaNova,
   verificarCarrinho,
   type CarrinhoAceite,
+  type PassoDaEncomenda,
   type DescontoAceite,
   type Entrega,
   type LinhaDoCarrinho,
@@ -309,6 +314,7 @@ export class LojaService {
           data: {
             academyId,
             number: proximoNumero(maior._max.number),
+            reference: referenciaNova(randomBytes(8)),
             status: "RESERVED",
             delivery: p.entrega,
             buyerName: p.nome,
@@ -395,6 +401,8 @@ export class LojaService {
     switch (e.status) {
       case "PAID":
         return "paga" as const;
+      case "IN_PRODUCTION":
+        return "em-producao" as const;
       case "READY":
         return "pronta" as const;
       case "SHIPPED":
@@ -417,6 +425,7 @@ export class LojaService {
     const morada = moradaValida(e.address);
     return {
       numero: e.number,
+      referencia: e.reference,
       estado,
       comprador: e.buyerName,
       email: e.buyerEmail,
@@ -434,7 +443,13 @@ export class LojaService {
           : { tipo: "PICKUP" as const, local: loja.levantamento.local, nota: loja.levantamento.nota },
       nota: e.note,
       linhas: e.items.map((i) => ({ nome: i.productName, tamanho: i.size, quantidade: i.quantity, unitPriceCents: i.unitPriceCents, imageUrl: i.imageUrl })),
-      datas: { paga: e.paidAt?.toISOString() ?? null, pronta: e.readyAt?.toISOString() ?? null, enviada: e.shippedAt?.toISOString() ?? null, entregue: e.deliveredAt?.toISOString() ?? null },
+      datas: {
+        paga: e.paidAt?.toISOString() ?? null,
+        producao: e.productionAt?.toISOString() ?? null,
+        pronta: e.readyAt?.toISOString() ?? null,
+        enviada: e.shippedAt?.toISOString() ?? null,
+        entregue: e.deliveredAt?.toISOString() ?? null,
+      },
     };
   }
 
@@ -463,7 +478,11 @@ export class LojaService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const lista = await db.siteOrder.findMany({
         where: { status: { not: "EXPIRED" } },
-        include: { items: { orderBy: { createdAt: "asc" } }, payments: { where: { status: "PAID" }, select: { amountCents: true, method: true } } },
+        include: {
+          items: { orderBy: { createdAt: "asc" } },
+          payments: { where: { status: "PAID" }, select: { amountCents: true, method: true } },
+          events: { orderBy: { createdAt: "asc" }, select: { fromStatus: true, toStatus: true, byName: true, note: true, createdAt: true } },
+        },
         orderBy: { createdAt: "desc" },
         take: LISTA_MAX,
       });
@@ -473,6 +492,9 @@ export class LojaService {
         .map((e) => ({
           id: e.id,
           numero: e.number,
+          referencia: e.reference,
+          /** As mudanças de estado feitas na consola, com quem as fez. */
+          mudancas: e.events.map((m) => ({ de: m.fromStatus, para: m.toStatus, quem: m.byName, nota: m.note, em: m.createdAt.toISOString() })),
           estado: e.status,
           entrega: e.delivery,
           morada: LojaEmissao.moradaEmLinhas(moradaValida(e.address)),
@@ -488,6 +510,7 @@ export class LojaService {
           rastreio: e.trackingCode,
           criadaEm: e.createdAt.toISOString(),
           pagaEm: e.paidAt?.toISOString() ?? null,
+          producaoEm: e.productionAt?.toISOString() ?? null,
           prontaEm: e.readyAt?.toISOString() ?? null,
           enviadaEm: e.shippedAt?.toISOString() ?? null,
           entregueEm: e.deliveredAt?.toISOString() ?? null,
@@ -504,41 +527,77 @@ export class LojaService {
     return e;
   }
 
-  /** Levantamento: pronta para levantar. Avisa quem comprou. */
-  async pronta(ctx: RequestContext, id: string) {
+  /** O nome de quem está a mexer, para o registo das mudanças. */
+  private async nomeDe(db: ScopedClient, ctx: RequestContext): Promise<string | null> {
+    const u = await db.user.findFirst({ where: { id: ctx.userId }, select: { name: true } });
+    return u?.name ?? null;
+  }
+
+  /**
+   * Mudar uma encomenda para qualquer passo do percurso, para a frente ou para
+   * trás: paga, em preparação, pronta (levantamento) ou enviada (envio),
+   * entregue. As regras das datas estão em `mudancaDeEstado`.
+   *
+   * - Cada mudança fica em `SiteOrderEvent`, com quem a fez: voltar atrás
+   *   apaga as datas dos passos seguintes, e a história fica aqui.
+   * - O email a quem comprou só sai para a frente, ao chegar a pronta ou
+   *   enviada, e só com `avisar` (por omissão sim). Voltar atrás não avisa
+   *   ninguém: foi um engano do clube, quem comprou não tem de saber.
+   * - Ao voltar para antes da enviada, o código de seguimento sai: já não
+   *   segue nada.
+   * - O `updateMany` com o estado lido protege de duas pessoas a mexer na
+   *   mesma encomenda ao mesmo tempo.
+   * - O stock não mexe: em todos estes passos os artigos já são de quem pagou.
+   */
+  async mudarEstado(ctx: RequestContext, id: string, destino: PassoDaEncomenda, opcoes: { rastreio?: string; avisar?: boolean } = {}) {
     await this.escreverSite(ctx);
-    await this.prisma.runAs(ctx.academyId, async (db) => {
+    const r = await this.prisma.runAs(ctx.academyId, async (db) => {
       const e = await this.encomendaDoClube(db, id);
-      if (e.delivery !== "PICKUP") throw new BadRequestException("Esta encomenda é para enviar, não para levantar");
-      if (e.status !== "PAID") throw new BadRequestException("Só uma encomenda paga passa a pronta");
-      await db.siteOrder.update({ where: { id }, data: { status: "READY", readyAt: new Date() } });
+      const m = mudancaDeEstado({
+        atual: e.status,
+        destino,
+        entrega: e.delivery,
+        datas: { paidAt: e.paidAt, productionAt: e.productionAt, readyAt: e.readyAt, shippedAt: e.shippedAt, deliveredAt: e.deliveredAt },
+        agora: new Date(),
+      });
+      if (!m.ok) throw new BadRequestException(m.erro);
+      const rastreio = destino === "SHIPPED" ? opcoes.rastreio?.trim() || (m.paraAFrente ? null : e.trackingCode) : destino === "DELIVERED" ? e.trackingCode : null;
+      const mudou = await db.siteOrder.updateMany({
+        where: { id, status: e.status },
+        data: { status: destino, ...m.datas, trackingCode: rastreio },
+      });
+      if (mudou.count === 0) throw new BadRequestException("Alguém mudou esta encomenda entretanto. Abre-a outra vez.");
+      await db.siteOrderEvent.create({
+        data: { academyId: ctx.academyId, orderId: id, fromStatus: e.status, toStatus: destino, byUserId: ctx.userId, byName: await this.nomeDe(db, ctx), note: rastreio && destino === "SHIPPED" ? `Seguimento ${rastreio}` : null },
+      });
+      return { paraAFrente: m.paraAFrente };
     });
-    await this.emissao.enviarPronta(ctx.academyId, id).catch((e: unknown) => this.log.warn(`Email «pronta» falhou: ${e}`));
+
+    if (r.paraAFrente && opcoes.avisar !== false) {
+      if (destino === "READY") await this.emissao.enviarPronta(ctx.academyId, id).catch((e: unknown) => this.log.warn(`Email «pronta» falhou: ${e}`));
+      if (destino === "SHIPPED") await this.emissao.enviarEnviada(ctx.academyId, id).catch((e: unknown) => this.log.warn(`Email «enviada» falhou: ${e}`));
+    }
     return { ok: true as const };
+  }
+
+  /** Em preparação (o valor IN_PRODUCTION vem de quando era "no produtor"). Sem email. Endereço antigo: ver `mudarEstado`. */
+  producao(ctx: RequestContext, id: string) {
+    return this.mudarEstado(ctx, id, "IN_PRODUCTION");
+  }
+
+  /** Levantamento: pronta para levantar. Avisa quem comprou. Endereço antigo: ver `mudarEstado`. */
+  pronta(ctx: RequestContext, id: string) {
+    return this.mudarEstado(ctx, id, "READY");
   }
 
   /** Envio: seguiu pelo correio, com o código de seguimento se houver. Avisa quem comprou. */
-  async enviada(ctx: RequestContext, id: string, rastreio?: string) {
-    await this.escreverSite(ctx);
-    await this.prisma.runAs(ctx.academyId, async (db) => {
-      const e = await this.encomendaDoClube(db, id);
-      if (e.delivery !== "SHIPPING") throw new BadRequestException("Esta encomenda é para levantar, não para enviar");
-      if (e.status !== "PAID") throw new BadRequestException("Só uma encomenda paga passa a enviada");
-      await db.siteOrder.update({ where: { id }, data: { status: "SHIPPED", shippedAt: new Date(), trackingCode: rastreio?.trim() || null } });
-    });
-    await this.emissao.enviarEnviada(ctx.academyId, id).catch((e: unknown) => this.log.warn(`Email «enviada» falhou: ${e}`));
-    return { ok: true as const };
+  enviada(ctx: RequestContext, id: string, rastreio?: string) {
+    return this.mudarEstado(ctx, id, "SHIPPED", { rastreio });
   }
 
-  /** Levantada ou recebida: acabou. */
-  async entregue(ctx: RequestContext, id: string) {
-    await this.escreverSite(ctx);
-    await this.prisma.runAs(ctx.academyId, async (db) => {
-      const e = await this.encomendaDoClube(db, id);
-      if (e.status !== "PAID" && e.status !== "READY" && e.status !== "SHIPPED") throw new BadRequestException("Só uma encomenda paga se dá por entregue");
-      await db.siteOrder.update({ where: { id }, data: { status: "DELIVERED", deliveredAt: new Date() } });
-    });
-    return { ok: true as const };
+  /** Levantada ou recebida. */
+  entregue(ctx: RequestContext, id: string) {
+    return this.mudarEstado(ctx, id, "DELIVERED");
   }
 
   /**
@@ -553,7 +612,7 @@ export class LojaService {
       if (e.status === "CANCELLED" || e.status === "EXPIRED" || e.status === "DELIVERED") {
         throw new BadRequestException(e.status === "DELIVERED" ? "Uma encomenda entregue não se anula" : "Esta encomenda já não está ativa");
       }
-      const paga = e.status === "PAID" || e.status === "READY" || e.status === "SHIPPED";
+      const paga = (ESTADOS_VIVOS as readonly string[]).includes(e.status);
       const pago = e.payments.reduce((n, x) => n + x.amountCents, 0);
       if (paga) await this.emissao.reporStock(db, ctx.academyId, e);
       await db.siteOrder.update({
@@ -564,6 +623,9 @@ export class LojaService {
           cancelReason: motivo.trim(),
           refundDueCents: paga || e.status === "LATE_PAYMENT" ? Math.max(pago, e.refundDueCents ?? 0) || null : e.refundDueCents,
         },
+      });
+      await db.siteOrderEvent.create({
+        data: { academyId: ctx.academyId, orderId: id, fromStatus: e.status, toStatus: "CANCELLED", byUserId: ctx.userId, byName: await this.nomeDe(db, ctx), note: motivo.trim() },
       });
       return paga;
     });
@@ -590,7 +652,7 @@ export class LojaService {
 
   async reenviar(ctx: RequestContext, id: string) {
     await this.escreverSite(ctx);
-    const paga = await this.prisma.runAs(ctx.academyId, (db) => db.siteOrder.findFirst({ where: { id, status: { in: ["PAID", "READY", "SHIPPED", "DELIVERED"] } }, select: { id: true } }));
+    const paga = await this.prisma.runAs(ctx.academyId, (db) => db.siteOrder.findFirst({ where: { id, status: { in: [...ESTADOS_PAGOS] } }, select: { id: true } }));
     if (!paga) throw new BadRequestException("Só se reenvia a confirmação de encomendas pagas");
     await this.emissao.enviarConfirmacao(ctx.academyId, id);
     return { ok: true as const };

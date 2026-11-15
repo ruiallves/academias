@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useMemo, useState } from "react";
 import { cx } from "@/components/primitives";
 import { mostrarErro, textoDoErro } from "@/lib/avisos";
@@ -163,7 +164,7 @@ function CampoLocal({ campo, valor, onChange, fora, temCasaFora, casaEscolhida }
   } else {
     controlo = (
       <div className="flex flex-col gap-1.5">
-        <select
+        <Escolha
           id={id}
           value={outro ? "__outro" : doClube ? valor : ""}
           onChange={(e) => {
@@ -182,7 +183,7 @@ function CampoLocal({ campo, valor, onChange, fora, temCasaFora, casaEscolhida }
             <option key={o.valor} value={o.valor}>{o.label}</option>
           ))}
           <option value="__outro">Outro local…</option>
-        </select>
+        </Escolha>
         {outro && <input type="text" value={valor} onChange={(e) => onChange(e.target.value)} placeholder="Escreve o local" aria-label="Outro local" className={cx(base, borda)} />}
       </div>
     );
@@ -249,12 +250,12 @@ function CampoDoForm({ campo, valor, onChange, largo, compacto }: { campo: Campo
     );
   } else if (campo.opcoes?.length && !campo.livre) {
     controlo = (
-      <select id={id} value={valor} onChange={(e) => onChange(e.target.value)} className={cx(base, borda)}>
+      <Escolha id={id} value={valor} onChange={(e) => onChange(e.target.value)} className={cx(base, borda)}>
         <option value="">Escolher…</option>
         {campo.opcoes.map((o) => (
           <option key={o.valor} value={o.valor}>{o.label}</option>
         ))}
-      </select>
+      </Escolha>
     );
   } else if (campo.tipo === "textoLongo") {
     controlo = <textarea id={id} value={valor} onChange={(e) => onChange(e.target.value)} rows={compacto ? 3 : 4} className={cx("w-full resize-y rounded-[var(--radius-control)] border bg-surface px-2.5 py-2 text-body text-ink outline-none focus:border-signal-strong", borda)} />;

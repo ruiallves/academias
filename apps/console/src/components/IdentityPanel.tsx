@@ -1,3 +1,4 @@
+import { Escolha } from "@/components/Escolha";
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/components/primitives";
 import { Bloco, Campo, Erro, Leitura, campoClass } from "@/components/definicoes/ui";
@@ -464,7 +465,7 @@ function AssociacaoBloco({ mayWrite, onError }: { mayWrite: boolean; onError: (m
       estado={saving ? <span className="text-meta text-ink-3">a gravar…</span> : undefined}
     >
       <Campo label="Associação distrital">
-        <select
+        <Escolha
           aria-label="Associação distrital"
           value={academy.association}
           disabled={!mayWrite || saving}
@@ -477,7 +478,7 @@ function AssociacaoBloco({ mayWrite, onError }: { mayWrite: boolean; onError: (m
               {a}
             </option>
           ))}
-        </select>
+        </Escolha>
       </Campo>
     </Bloco>
   );

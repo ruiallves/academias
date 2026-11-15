@@ -1,15 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot, hydrateRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { RouterComTransicao } from "./lib/transicao";
 import "./brand.css";
 
 const raiz = document.getElementById("root")!;
 const arvore = (
   <StrictMode>
-    <BrowserRouter>
+    <RouterComTransicao>
       <App />
-    </BrowserRouter>
+    </RouterComTransicao>
   </StrictMode>
 );
 

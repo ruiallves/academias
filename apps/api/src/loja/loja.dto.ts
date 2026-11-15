@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 /**
  * O que chega à loja de fora. A forma passa aqui; as regras (o que há, por
@@ -45,6 +45,15 @@ export class EncomendarDto {
 
 export class EnviadaDto {
   @IsOptional() @IsString() @MaxLength(80) rastreio?: string;
+}
+
+/** Mudar uma encomenda para qualquer passo do percurso (para a frente ou para trás). */
+export class EstadoDaEncomendaDto {
+  @IsIn(["PAID", "IN_PRODUCTION", "READY", "SHIPPED", "DELIVERED"]) estado!: "PAID" | "IN_PRODUCTION" | "READY" | "SHIPPED" | "DELIVERED";
+  /** Só ao passar a enviada. */
+  @IsOptional() @IsString() @MaxLength(80) rastreio?: string;
+  /** Mandar o email a quem comprou ao chegar a pronta ou enviada. Por omissão, sim. */
+  @IsOptional() @IsBoolean() avisar?: boolean;
 }
 
 export class AnularEncomendaDto {
