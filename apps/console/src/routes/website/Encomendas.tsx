@@ -1001,30 +1001,40 @@ function Percurso({ e, onEscolher }: { e: Encomenda; onEscolher?: (p: PassoDaEnc
   const atual = passos.indexOf(e.estado as PassoDaEncomenda);
 
   return (
-    <ol className="grid grid-cols-4 gap-2" aria-label="Percurso da encomenda">
+    <ol className="grid grid-cols-1 gap-1 md:grid-cols-4 md:gap-2" aria-label="Percurso da encomenda">
       {passos.map((p, i) => {
         const quando = dataDoPasso(e, p);
         const agora = i === atual;
         const feito = i <= atual;
         const seguinte = i === atual + 1;
+        /*
+         * No telemóvel os quatro passos não cabem lado a lado sem cortar o nome
+         * ("Em prep…", "Pronta p…"): passam a uma lista de cima para baixo, com
+         * a barra de cor à esquerda, o nome inteiro e a data à direita. Do
+         * tablet para cima ficam em fila, como antes, com o nome em duas
+         * linhas quando não cabe numa.
+         */
         const conteudo = (
-          <>
+          <span className="flex items-stretch gap-3 md:block">
             <span
               className={cx(
-                "block h-1.5 rounded-full",
+                "block w-1.5 shrink-0 rounded-full md:h-1.5 md:w-auto",
                 feito ? "bg-ok" : seguinte ? "bg-signal/50" : "bg-line",
                 agora && "ring-2 ring-ok/25",
               )}
               aria-hidden
             />
-            <span className={cx("mt-2 flex items-center gap-1 text-meta font-semibold", feito ? "text-ink" : seguinte ? "text-signal-ink" : "text-ink-4")}>
-              {feito && <Check className="size-3.5 shrink-0 text-ok" strokeWidth={2.25} />}
-              <span className="truncate">{nomeDoPasso(p, envio)}</span>
+            <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3 py-1.5 md:block md:py-0">
+              <span className={cx("flex items-center gap-1 font-semibold max-md:text-body md:mt-2 md:items-start md:text-meta md:leading-snug", feito ? "text-ink" : seguinte ? "text-signal-ink" : "text-ink-4")}>
+                {feito && <Check className="size-3.5 shrink-0 text-ok md:mt-px" strokeWidth={2.25} />}
+                {/* Nunca cortado: na fila, "Pronta para levantamento" parte em duas linhas. */}
+                <span>{nomeDoPasso(p, envio)}</span>
+              </span>
+              <span className="block shrink-0 text-right text-meta text-ink-3 tabular md:truncate md:text-left">
+                {quando && i <= atual ? dataHora(quando) : agora ? "agora" : i < atual ? " " : p === "IN_PRODUCTION" ? "opcional" : seguinte ? "a seguir" : ""}
+              </span>
             </span>
-            <span className="block truncate text-meta text-ink-3 tabular">
-              {quando && i <= atual ? dataHora(quando) : agora ? "agora" : i < atual ? " " : p === "IN_PRODUCTION" ? "opcional" : seguinte ? "a seguir" : ""}
-            </span>
-          </>
+          </span>
         );
         return (
           <li key={p} className="min-w-0">
