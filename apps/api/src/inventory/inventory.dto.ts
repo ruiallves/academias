@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 /**
@@ -157,6 +157,8 @@ export class AssignDto {
   @IsInt() @Min(1) @Max(1000) quantity!: number;
   @IsOptional() @IsString() @Length(0, 500) notes?: string;
   @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
+  /** `false`: fica por entregar (guardado para o atleta). Ausente = entregue agora. */
+  @IsOptional() @IsBoolean() entregue?: boolean;
 }
 
 /** Um artigo de uma entrega de vários: o tamanho, quantas, e o pagamento dele. */
@@ -176,12 +178,16 @@ export class AssignLoteDto {
   @IsOptional() @IsString() @Length(0, 500) notes?: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => LinhaDeEntregaDto)
   linhas!: LinhaDeEntregaDto[];
+  /** `false`: tudo fica por entregar (guardado para o atleta). Ausente = entregue agora. */
+  @IsOptional() @IsBoolean() entregue?: boolean;
 }
 
-/** Editar uma entrega: as notas e o pagamento. A devolução tem rota própria. */
+/** Editar uma entrega: as notas, o pagamento e se já foi entregue. A devolução tem rota própria. */
 export class UpdateAssignmentDto {
   @IsOptional() @IsString() @Length(0, 500) notes?: string;
   @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
+  /** `true`: por entregar → entregue. `false`: entregue → por entregar (marcado por engano). */
+  @IsOptional() @IsBoolean() entregue?: boolean;
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   type ValorDoPagamento,
 } from "./PagamentoDaEntrega";
 import { useSession } from "@/session";
+import { CampoDaEntrega } from "./PorEntregar";
 import { assignLote, listItems, textoDoPreco, type Item, type PagamentoPedido } from "@/lib/inventory";
 
 /**
@@ -55,6 +56,14 @@ import { assignLote, listItems, textoDoPreco, type Item, type PagamentoPedido } 
  * nos Pagamentos, com notificação) ou pago (com o método, e cai nas Contas). O
  * **valor** escreve-se em cada artigo, porque cada um é uma cobrança. Depois
  * muda-se em "Editar", na ficha do atleta ou nas Entregas.
+ *
+ * ## Entregue agora, ou por entregar
+ *
+ * Uma peça pode ser do atleta, e até estar paga, sem lhe ter sido entregue: o
+ * tamanho que chega na semana seguinte, o kit pago pela app que se levanta no
+ * treino (Rui, 16/11/2026). "Por entregar" guarda-a para ele: sai do stock
+ * disponível, para não se dar a outro, e entrega-se depois com um toque na
+ * ficha do atleta ou no Inventário.
  *
  * ## Os tamanhos sem stock aparecem, mas não se escolhem
  *
@@ -122,6 +131,8 @@ export function DeliverDialog({
   const podeCobrar = can(session, "billing:write");
   const [pagamento, setPagamento] = useState<ValorDoPagamento>(PAGAMENTO_VAZIO);
   const cobrar = podeCobrar && pagamento.modo !== "nenhum";
+  /** Entregue agora (o normal ao balcão) ou guardado para o atleta, por entregar. */
+  const [entregueAgora, setEntregueAgora] = useState(true);
 
   const campoProcura = useRef<HTMLInputElement>(null);
 
@@ -223,6 +234,7 @@ export function DeliverDialog({
           const p = pedido(l);
           return { variantId: l.variantId, quantity: l.quantity, ...(p ? { pagamento: p } : {}) };
         }),
+        ...(entregueAgora ? {} : { entregue: false }),
       });
 
       const falhas = r.entregas.filter((x) => x.erroDoPagamento);
@@ -241,7 +253,11 @@ export function DeliverDialog({
               : " Fica por pagar no Equipamento da app.";
       if (r.entregas.some((x) => x.pagamento)) void reloadFees();
       const nomes = r.entregas.map((x) => `${x.itemName} · ${x.variantLabel}${x.quantity > 1 ? ` (${x.quantity})` : ""}`);
-      setFeito(`${nomes.join(", ")} ${nomes.length === 1 ? "entregue" : "entregues"} a ${r.athleteName}.${cobranca}`);
+      setFeito(
+        entregueAgora
+          ? `${nomes.join(", ")} ${nomes.length === 1 ? "entregue" : "entregues"} a ${r.athleteName}.${cobranca}`
+          : `${nomes.join(", ")} ${nomes.length === 1 ? "fica" : "ficam"} por entregar a ${r.athleteName}.${cobranca}`,
+      );
       /*
        * Fica aberto depois de entregar, com o atleta escolhido: às vezes
        * lembra-se de mais uma peça já depois de confirmar.
@@ -249,6 +265,7 @@ export function DeliverDialog({
       setLinhas([linhaVazia()]);
       setNotas("");
       setPagamento(PAGAMENTO_VAZIO);
+      setEntregueAgora(true);
       const frescos = await listItems();
       setItens(frescos);
       onDone();
@@ -260,13 +277,14 @@ export function DeliverDialog({
   }
 
   const n = escolhidas.length;
+  const verbo = entregueAgora ? "Entregar" : "Guardar";
   const rotuloDoBotao = busy
-    ? "A entregar…"
+    ? entregueAgora ? "A entregar…" : "A guardar…"
     : cobrar && totalCents > 0
-      ? `Entregar ${n > 1 ? `${n} artigos ` : ""}· ${euros(totalCents)} ${pagamento.modo === "pago" ? "pago" : "por pagar"}`
+      ? `${verbo} ${n > 1 ? `${n} artigos ` : ""}· ${euros(totalCents)} ${pagamento.modo === "pago" ? "pago" : "por pagar"}`
       : n > 1
-        ? `Entregar ${n} artigos`
-        : "Confirmar entrega";
+        ? `${verbo} ${n} artigos`
+        : entregueAgora ? "Confirmar entrega" : "Guardar por entregar";
 
   /* Só se abre outro cartão quando todos os que existem têm artigo. */
   const podeAdicionar = linhas.every((l) => l.itemId) && comStock.length > 0;
@@ -417,7 +435,11 @@ export function DeliverDialog({
           )}
         </DialogField>
 
-        {/* 3. O que vale para a entrega toda: as observações e o pagamento. */}
+        {/* 3. O que vale para a entrega toda: se já sai, as observações e o pagamento. */}
+        {n > 0 && (
+          <CampoDaEntrega value={entregueAgora} onChange={setEntregueAgora} primeiroNome={atleta?.name.split(" ")[0]} rotuloEntregue="Entregue agora" />
+        )}
+
         {n > 0 && (
           <DialogField label="Observações" hint="opcional">
             <input

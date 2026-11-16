@@ -30,7 +30,9 @@ export const STATUS_TONE: Record<StockStatus, "ok" | "warn" | "risk"> = {
   out: "risk",
 };
 
-export type MovementType = "ENTRY" | "EXIT" | "ADJUSTMENT" | "ASSIGNMENT" | "RETURN" | "DAMAGE" | "LOSS";
+export type MovementType =
+  | "ENTRY" | "EXIT" | "ADJUSTMENT" | "ASSIGNMENT" | "RETURN" | "DAMAGE" | "LOSS"
+  | "RESERVE" | "UNRESERVE" | "HANDOVER";
 
 export const MOVEMENT_LABEL: Record<MovementType, string> = {
   ENTRY: "Entrada",
@@ -40,6 +42,9 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   RETURN: "Devolução",
   DAMAGE: "Danificado",
   LOSS: "Perdido",
+  RESERVE: "Por entregar",
+  UNRESERVE: "Não entregue",
+  HANDOVER: "Entrega",
 };
 
 /**
@@ -48,20 +53,28 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
  * Uma entrada e uma devolução somam à prateleira; uma entrega e uma saída
  * tiram. O ajuste não tem sinal — é uma correcção, e dizer "+2" a uma contagem
  * seria inventar uma direcção que quem contou não deu.
+ *
+ * Guardar para um atleta tira do disponível; entregar o que estava guardado já
+ * não tira nada (saiu ao guardar), e por isso não tem sinal.
  */
 export const MOVEMENT_SIGN: Record<MovementType, "+" | "−" | ""> = {
   ENTRY: "+",
   RETURN: "+",
+  UNRESERVE: "+",
   EXIT: "−",
   ASSIGNMENT: "−",
+  RESERVE: "−",
   DAMAGE: "−",
   LOSS: "−",
   ADJUSTMENT: "",
+  HANDOVER: "",
 };
 
-export type AssignmentStatus = "ACTIVE" | "RETURNED" | "DAMAGED" | "LOST";
+/** `RESERVED`: por entregar. É do atleta (pode estar pago), mas ainda está no clube. */
+export type AssignmentStatus = "RESERVED" | "ACTIVE" | "RETURNED" | "DAMAGED" | "LOST";
 
 export const ASSIGNMENT_LABEL: Record<AssignmentStatus, string> = {
+  RESERVED: "Por entregar",
   ACTIVE: "Entregue",
   RETURNED: "Devolvido",
   DAMAGED: "Danificado",
@@ -78,12 +91,26 @@ export type Variant = {
   /** O próprio, quando definido. Nulo = herda do artigo. */
   ownMinimum: number | null;
   total: number;
+  /** Com atletas **e** por entregar: o que já não se pode dar a outro. */
   assigned: number;
+  /** A parte de `assigned` que ainda está no clube, por entregar. Ausente num servidor antigo. */
+  reserved?: number;
   available: number;
   damaged: number;
   lost: number;
   status: StockStatus;
 };
+
+/**
+ * "3 com atletas · 1 por entregar": o que já não se pode dar a outro, dito em
+ * duas partes. `assigned` conta as duas; `reserved` é a que ainda está no clube.
+ */
+export function comAtletasTexto(x: { assigned: number; reserved?: number }, vazio = ""): string {
+  const guardadas = x.reserved ?? 0;
+  const comEles = x.assigned - guardadas;
+  const partes = [comEles > 0 ? `${comEles} com atletas` : null, guardadas > 0 ? `${guardadas} por entregar` : null].filter(Boolean);
+  return partes.length ? partes.join(" · ") : vazio;
+}
 
 export type Item = {
   id: string;
@@ -103,6 +130,7 @@ export type Item = {
   thumbnail?: string | null;
   total: number;
   assigned: number;
+  reserved?: number;
   available: number;
   status: StockStatus;
 };
@@ -157,6 +185,7 @@ export type Assignment = {
   id: string;
   quantity: number;
   status: AssignmentStatus;
+  /** Desde quando está no estado: guardada (por entregar) ou entregue. */
   assignedAt: string;
   returnedAt: string | null;
   notes: string | null;
@@ -195,7 +224,10 @@ export type PagamentoPedido = { modo: ModoDePagamento; priceCents?: number; meth
 export type Overview = {
   artigos: number;
   unidades: number;
+  /** Com atletas **e** por entregar. */
   atribuidas: number;
+  /** A parte de `atribuidas` ainda no clube. Ausente num servidor antigo. */
+  porEntregar?: number;
   disponiveis: number;
   stockBaixo: number;
   danificadas: number;
@@ -297,9 +329,12 @@ export const assignLote = (body: {
   athleteId: string;
   notes?: string;
   linhas: { variantId: string; quantity: number; pagamento?: PagamentoPedido }[];
+  /** `false`: fica tudo por entregar (guardado para o atleta). */
+  entregue?: boolean;
 }) =>
   apiPost<{
     athleteName: string;
+    porEntregar?: boolean;
     entregas: {
       id: string;
       itemName: string;
@@ -310,12 +345,26 @@ export const assignLote = (body: {
     }[];
   }>("/api/inventory/assignments/lote", body);
 
-/** Editar uma entrega: as notas e o pagamento. */
-export const updateAssignment = (id: string, body: { notes?: string; pagamento?: PagamentoPedido }) =>
+/**
+ * Editar uma entrega: as notas, o pagamento e se já foi entregue (`entregue`:
+ * por entregar ↔ entregue, nos dois sentidos).
+ */
+export const updateAssignment = (id: string, body: { notes?: string; pagamento?: PagamentoPedido; entregue?: boolean }) =>
   apiPatch<{ ok: true; pagamento?: PagamentoDaEntrega }>(`/api/inventory/assignments/${id}`, body);
 
 export const returnAssignment = (id: string, body: { condition: string; quantity?: number; notes?: string }) =>
   apiPost<{ ok: true; status: AssignmentStatus }>(`/api/inventory/assignments/${id}/return`, body);
+
+/** Entregar o que estava por entregar. O stock não mexe: já tinha saído ao guardar. */
+export const entregarGuardada = (id: string) =>
+  apiPost<{ ok: true; status: "ACTIVE" }>(`/api/inventory/assignments/${id}/entregar`, {});
+
+/**
+ * O que estava por entregar não vai ser entregue: volta ao disponível e a linha
+ * sai. Recusado se estiver pago (tira-se o pagamento primeiro, em Editar).
+ */
+export const naoEntregar = (id: string) =>
+  apiPost<{ ok: true }>(`/api/inventory/assignments/${id}/nao-entregar`, {});
 
 export const listMovements = (params: { itemId?: string } = {}) =>
   apiGet<Movement[]>("/api/inventory/movements", params);

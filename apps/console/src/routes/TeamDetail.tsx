@@ -26,8 +26,10 @@ import {
   Panel,
   PanelHead,
   Pill,
+  RowLink,
   type Column,
 } from "@/components/primitives";
+import { listMembers, STATUS_LABEL, type MemberRow } from "@/lib/members";
 import { Segmented } from "@/components/filters";
 import { Dialog } from "@/components/Dialog";
 import {
@@ -601,6 +603,32 @@ function RosterTab({
   const [aAdicionar, setAAdicionar] = useState(false);
   const [aInscrever, setAInscrever] = useState(false);
 
+  /*
+   * A ficha de sócio de cada atleta (pedido do Rui, 16/11/2026): o número de
+   * sócio, ou "Não é sócio". Conta só a ficha ligada ao atleta
+   * (`Member.athleteId`, o "sócio-atleta"); uma ficha solta com o mesmo nome
+   * não aparece. Só para quem pode ver sócios; se a lista falhar, a coluna
+   * não aparece e o plantel abre na mesma.
+   */
+  const verSocios = can(session, "member:read");
+  const [socios, setSocios] = useState<Map<string, MemberRow> | null>(null);
+  const [sociosFalharam, setSociosFalharam] = useState(false);
+  useEffect(() => {
+    if (!verSocios) return;
+    let vivo = true;
+    listMembers()
+      .then((r) => {
+        if (!vivo) return;
+        const porAtleta = new Map<string, MemberRow>();
+        for (const m of r.members) if (m.athlete?.id) porAtleta.set(m.athlete.id, m);
+        setSocios(porAtleta);
+      })
+      .catch(() => vivo && setSociosFalharam(true));
+    return () => {
+      vivo = false;
+    };
+  }, [verSocios]);
+
   const allColumns: Column<Athlete>[] = [
     {
       key: "name",
@@ -633,6 +661,24 @@ function RosterTab({
       },
     },
     {
+      key: "socio",
+      header: "Sócio",
+      hideBelow: "sm",
+      render: (a) => {
+        if (!socios) return null;
+        const m = socios.get(a.id);
+        if (!m) return <span className="text-meta text-ink-4">Não é sócio</span>;
+        return (
+          <div className="min-w-0">
+            <RowLink to={`/socios/${m.id}`} className="text-ink-2 tabular">
+              {m.number ? `n.º ${m.number}` : "Sócio, sem n.º"}
+            </RowLink>
+            {m.status !== "ACTIVE" && <div className="text-meta text-ink-3">{STATUS_LABEL[m.status]}</div>}
+          </div>
+        );
+      },
+    },
+    {
       key: "medical",
       header: "Ficha médica",
       hideBelow: "sm",
@@ -661,6 +707,7 @@ function RosterTab({
   const columns = allColumns.filter((c) => {
     if (c.key === "guardian") return canFamily;
     if (c.key === "fee") return canBill;
+    if (c.key === "socio") return verSocios && !sociosFalharam;
     return true;
   });
 

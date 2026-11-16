@@ -4,7 +4,11 @@ import { ChevronRight } from "lucide-react";
 import { apiGet } from "@/lib/http";
 import { cx } from "@/ui";
 
-export type EstadoDaPeca = "ACTIVE" | "RETURNED" | "DAMAGED" | "LOST";
+/** `RESERVED`: por entregar. É do atleta (pode estar paga), mas ainda está no clube. */
+export type EstadoDaPeca = "RESERVED" | "ACTIVE" | "RETURNED" | "DAMAGED" | "LOST";
+
+/** Ainda é assunto: por entregar, ou com o atleta. */
+export const atual = (s: EstadoDaPeca | undefined) => (s ?? "ACTIVE") === "ACTIVE" || s === "RESERVED";
 
 /** `pagamento` nulo: sem pagamento. Ausente num servidor antigo. */
 type Peca = {
@@ -26,7 +30,7 @@ export const dataCurta = (iso: string) =>
   new Date(iso).toLocaleDateString("pt-PT", { day: "numeric", month: "short", year: "numeric" });
 
 /** Como acabou uma peça que já não está com o atleta. */
-export const FIM: Record<Exclude<EstadoDaPeca, "ACTIVE">, string> = {
+export const FIM: Record<Exclude<EstadoDaPeca, "ACTIVE" | "RESERVED">, string> = {
   RETURNED: "Devolvido",
   DAMAGED: "Devolvido estragado",
   LOST: "Perdido",
@@ -39,7 +43,9 @@ const HISTORICO_VISIVEL = 3;
  * O equipamento do atleta: o que tem com ele e o que já teve.
  *
  * Em cima, o que o clube entregou e ainda não voltou, para a família saber o
- * que está em casa e o que devolver no fim da época. Por baixo, o histórico: o
+ * que está em casa e o que devolver no fim da época. Também o que o clube já
+ * guardou para o atleta mas ainda não entregou ("Por entregar"): pode estar
+ * pago e ainda não ter chegado às mãos dele. Por baixo, o histórico: o
  * que foi devolvido, estragado ou perdido, com a data. Cada linha abre a peça
  * (`EquipamentoPeca`), com as fotos, a época e o pagamento por inteiro.
  *
@@ -68,8 +74,11 @@ export function Equipamento({ childId }: { childId: string }) {
 
   if (!pecas || pecas.length === 0) return null;
 
-  const comEle = pecas.filter((p) => (p.status ?? "ACTIVE") === "ACTIVE");
-  const antigas = pecas.filter((p) => (p.status ?? "ACTIVE") !== "ACTIVE");
+  // Por entregar primeiro: é o que a família está à espera de receber.
+  const comEle = pecas
+    .filter((p) => atual(p.status))
+    .sort((a, b) => (a.status === "RESERVED" ? 0 : 1) - (b.status === "RESERVED" ? 0 : 1));
+  const antigas = pecas.filter((p) => !atual(p.status));
   const visiveis = tudo ? antigas : antigas.slice(0, HISTORICO_VISIVEL);
 
   return (
@@ -111,13 +120,17 @@ export function Equipamento({ childId }: { childId: string }) {
 }
 
 function Linha({ p, childId }: { p: Peca; childId: string }) {
-  const antiga = (p.status ?? "ACTIVE") !== "ACTIVE";
+  const antiga = !atual(p.status);
   const linha = antiga
     ? [
         `Tamanho ${p.variant}`,
-        `${FIM[p.status as Exclude<EstadoDaPeca, "ACTIVE">]}${p.returnedAt ? ` a ${dataCurta(p.returnedAt)}` : ""}`,
+        `${FIM[p.status as keyof typeof FIM]}${p.returnedAt ? ` a ${dataCurta(p.returnedAt)}` : ""}`,
       ]
-    : [`Tamanho ${p.variant}`, p.quantity > 1 ? `${p.quantity} unidades` : null, `entregue a ${dataCurta(p.assignedAt)}`];
+    : [
+        `Tamanho ${p.variant}`,
+        p.quantity > 1 ? `${p.quantity} unidades` : null,
+        p.status === "RESERVED" ? "por entregar" : `entregue a ${dataCurta(p.assignedAt)}`,
+      ];
 
   return (
     <li className="border-b border-line last:border-0">

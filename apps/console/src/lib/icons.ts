@@ -209,3 +209,6 @@ export const Futsal = GoalIcon;
 
 /* A loja do site: as setas de ordenar as categorias, os códigos promocionais e a encomenda no produtor. */
 export { ArrowDown, Percent, Tags, Factory } from "lucide-react";
+
+/* O equipamento por entregar: a ampulheta do estado. */
+export { Hourglass } from "lucide-react";

@@ -8,9 +8,10 @@ import { EditAssignmentDialog } from "@/components/inventory/EditAssignmentDialo
 import { ImportItemsDialog } from "@/components/inventory/ImportItemsDialog";
 import { NewItemDialog } from "@/components/inventory/NewItemDialog";
 import { PagamentoPill } from "@/components/inventory/PagamentoDaEntrega";
+import { BotaoEntregar, EstadoDaEntregaPill } from "@/components/inventory/PorEntregar";
 import { StockDialog } from "@/components/inventory/StockDialog";
 import { EstadoDoStock, Miniatura, Sinal, TamanhosCompactos } from "@/components/inventory/Prateleira";
-import { Boxes, LayoutGrid, List, PackageOpen, Plus, Search, TriangleAlert, Undo2, Upload } from "@/lib/icons";
+import { Boxes, LayoutGrid, List, PackageOpen, Pencil, Plus, Search, TriangleAlert, Undo2, Upload } from "@/lib/icons";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { athleteById, listTeams, naEquipa } from "@/lib/api";
 import { can } from "@/lib/permissions";
@@ -19,6 +20,7 @@ import { longDate, money, shortDate, time } from "@/lib/format";
 import {
   ASSIGNMENT_LABEL,
   MOVEMENT_LABEL,
+  comAtletasTexto,
   getOverview,
   listAssignments,
   listItems,
@@ -99,7 +101,8 @@ export default function Inventory() {
         getOverview(),
         listItems(),
         listMovements(),
-        listAssignments({ status: "ACTIVE" }),
+        // Sem estado: o que está com atletas e o que está por entregar.
+        listAssignments(),
       ]);
       setOverview(o);
       setItens(i);
@@ -283,8 +286,12 @@ function Resumo({
   onVer: (v: Vista, extra?: Record<string, string>) => void;
 }) {
   const total = Math.max(1, overview.disponiveis + overview.atribuidas);
+  /* `atribuidas` conta o que está com atletas e o que está por entregar; a barra separa os dois. */
+  const porEntregar = overview.porEntregar ?? 0;
+  const comAtletas = overview.atribuidas - porEntregar;
   const pDisp = (overview.disponiveis / total) * 100;
-  const pAtr = (overview.atribuidas / total) * 100;
+  const pAtr = (comAtletas / total) * 100;
+  const pGuard = (porEntregar / total) * 100;
   const baixas = overview.danificadas + overview.perdidas;
 
   return (
@@ -299,7 +306,15 @@ function Resumo({
         </div>
 
         <dl className="flex flex-wrap gap-x-8 gap-y-3">
-          <Numero rotulo="Com atletas" valor={fmt(overview.atribuidas)} onClick={() => onVer("atletas")} />
+          <Numero rotulo="Com atletas" valor={fmt(comAtletas)} onClick={() => onVer("atletas", { estado: "ACTIVE" })} />
+          {porEntregar > 0 && (
+            <Numero
+              rotulo="Por entregar"
+              valor={fmt(porEntregar)}
+              tom="warn"
+              onClick={() => onVer("atletas", { estado: "RESERVED" })}
+            />
+          )}
           <Numero
             rotulo="A repor"
             valor={String(repor)}
@@ -320,6 +335,7 @@ function Resumo({
 
       <div className="mt-5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-sunken" aria-hidden>
         {pDisp > 0 && <span className="h-full rounded-full bg-ink" style={{ width: `${pDisp}%` }} />}
+        {pGuard > 0 && <span className="h-full rounded-full bg-warn" style={{ width: `${pGuard}%` }} />}
         {pAtr > 0 && <span className="h-full rounded-full bg-signal" style={{ width: `${pAtr}%` }} />}
       </div>
       <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-meta text-ink-3">
@@ -327,9 +343,15 @@ function Resumo({
           <span className="size-2 rounded-full bg-ink" />
           Na prateleira <span className="font-medium text-ink-2 tabular">{fmt(overview.disponiveis)}</span>
         </span>
+        {porEntregar > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-full bg-warn" />
+            Por entregar <span className="font-medium text-ink-2 tabular">{fmt(porEntregar)}</span>
+          </span>
+        )}
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2 rounded-full bg-signal" />
-          Com atletas <span className="font-medium text-ink-2 tabular">{fmt(overview.atribuidas)}</span>
+          Com atletas <span className="font-medium text-ink-2 tabular">{fmt(comAtletas)}</span>
         </span>
       </div>
     </Panel>
@@ -580,7 +602,12 @@ function VistaArtigos({
                 header: "Com atletas",
                 align: "right",
                 hideBelow: "sm",
-                render: (i) => <span className="tabular text-ink-2">{i.assigned}</span>,
+                render: (i) => (
+                  <span className="tabular text-ink-2" title={comAtletasTexto(i) || undefined}>
+                    {i.assigned}
+                    {i.reserved ? <span className="text-warn"> · {i.reserved} por entregar</span> : null}
+                  </span>
+                ),
               },
               { key: "estado", header: "Estado", align: "right", render: (i) => <EstadoDoStock status={i.status} /> },
             ]}
@@ -665,7 +692,12 @@ function VistaAtletas({
   const equipas = listTeams(session);
   const categorias = useActiveCatalog("inventoryCategories");
 
-  const estado = params.get("estado") ?? "ACTIVE";
+  /*
+   * Vazio: o que ainda é assunto (por entregar e por devolver), que veio com a
+   * página. "ACTIVE" e "RESERVED" filtram-se daí; os fechados pedem-se.
+   */
+  const estado = params.get("estado") ?? "";
+  const dosAtivos = estado === "" || estado === "ACTIVE" || estado === "RESERVED";
   const equipa = params.get("equipa") ?? "";
   // "Por pagar" junta o que se cobra só no equipamento e o que se cobra na app.
   const pagamento = params.get("pagamento") === "app" ? "porPagar" : (params.get("pagamento") ?? "");
@@ -687,16 +719,16 @@ function VistaAtletas({
   const [devolver, setDevolver] = useState<Assignment | null>(null);
   const [editar, setEditar] = useState<Assignment | null>(null);
 
-  // "Por devolver" já veio com a página; os outros estados pedem-se quando se escolhem.
+  // Por entregar e por devolver já vieram com a página; os outros estados pedem-se quando se escolhem.
   useEffect(() => {
-    if (estado === "ACTIVE") return;
+    if (dosAtivos) return;
     setOutros(null);
     listAssignments({ status: estado })
       .then(setOutros)
       .catch(() => setOutros([]));
   }, [estado, ativos]);
 
-  const rows = estado === "ACTIVE" ? ativos : outros;
+  const rows = dosAtivos ? ativos.filter((a) => !estado || a.status === estado) : outros;
 
   const filtrados = useMemo(() => {
     const termo = fold(q);
@@ -781,9 +813,11 @@ function VistaAtletas({
         <SelectField
           aria-label="Estado"
           value={estado}
-          onChange={(v) => mexer("estado", v === "ACTIVE" ? "" : v)}
+          onChange={(v) => mexer("estado", v)}
           options={[
-            { value: "ACTIVE", label: "Por devolver" },
+            { value: "", label: "Por entregar e entregue" },
+            { value: "RESERVED", label: "Por entregar" },
+            { value: "ACTIVE", label: "Entregue (por devolver)" },
             { value: "RETURNED", label: "Devolvido" },
             { value: "DAMAGED", label: "Danificado" },
             { value: "LOST", label: "Perdido" },
@@ -797,11 +831,17 @@ function VistaAtletas({
       ) : grupos.length === 0 ? (
         <Panel>
           <Empty
-            title={estado === "ACTIVE" && !algumFiltro ? "Nada por devolver" : "Sem registos"}
+            title={
+              algumFiltro ? "Sem registos" : estado === "" || estado === "ACTIVE" ? "Nada por devolver" : estado === "RESERVED" ? "Nada por entregar" : "Sem registos"
+            }
             detail={
-              estado === "ACTIVE" && !algumFiltro
-                ? "Todo o equipamento entregue já voltou, ou ainda não se entregou nada."
-                : "Nenhuma entrega com esses filtros."
+              algumFiltro
+                ? "Nenhuma entrega com esses filtros."
+                : estado === "" || estado === "ACTIVE"
+                  ? "Todo o equipamento entregue já voltou, ou ainda não se entregou nada."
+                  : estado === "RESERVED"
+                    ? "Não há peças guardadas à espera de serem entregues."
+                    : "Nenhuma entrega com esses filtros."
             }
             icon={PackageOpen}
             compact
@@ -876,11 +916,31 @@ function VistaAtletas({
                             {a.quantity > 1 && <span className="text-ink-3 tabular"> ×{a.quantity}</span>}
                           </span>
                           <span className="ml-2 text-meta text-ink-4 whitespace-nowrap">
-                            {a.status === "ACTIVE" ? "desde" : ASSIGNMENT_LABEL[a.status].toLowerCase()}{" "}
-                            {shortDate(new Date(a.status === "ACTIVE" ? a.assignedAt : (a.returnedAt ?? a.assignedAt)))}
+                            {a.status === "ACTIVE" ? "desde" : a.status === "RESERVED" ? "guardado a" : ASSIGNMENT_LABEL[a.status].toLowerCase()}{" "}
+                            {shortDate(new Date(a.status === "ACTIVE" || a.status === "RESERVED" ? a.assignedAt : (a.returnedAt ?? a.assignedAt)))}
                           </span>
                         </span>
-                        <PagamentoPill p={a.pagamento} />
+                        {/* O estado e o pagamento sempre à vista; tocar em qualquer um abre o editor. */}
+                        <EstadoDaEntregaPill status={a.status} onClick={podeEscrever ? () => setEditar(a) : undefined} />
+                        <PagamentoPill
+                          p={a.pagamento}
+                          onClick={podeEscrever && (a.status === "ACTIVE" || a.status === "RESERVED" || (a.pagamento && a.pagamento.estado !== "nenhum")) ? () => setEditar(a) : undefined}
+                        />
+                        {podeEscrever && a.status === "RESERVED" && <BotaoEntregar assignment={a} onDone={onChange} />}
+                        {podeEscrever && (
+                          <button
+                            type="button"
+                            aria-label={`Editar ${a.itemName}`}
+                            title="Editar"
+                            className="ctl-ghost h-7 px-1.5 text-ink-3"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditar(a);
+                            }}
+                          >
+                            <Pencil className="size-3.5" strokeWidth={1.75} />
+                          </button>
+                        )}
                         {podeEscrever && a.status === "ACTIVE" && (
                           <button
                             type="button"
@@ -974,7 +1034,7 @@ function VistaRepor({
                   </span>
                   <span className="block truncate text-meta text-ink-3">
                     {v.available} {v.available === 1 ? "pronta" : "prontas"} · mínimo {v.minimumStock}
-                    {v.assigned > 0 && ` · ${v.assigned} com atletas`}
+                    {v.assigned > 0 && ` · ${comAtletasTexto(v)}`}
                   </span>
                 </span>
               </Link>

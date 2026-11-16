@@ -106,6 +106,7 @@ export default function EquipamentoPeca() {
 
   const filho = store.children.find((c) => c.id === athleteId);
   const comEle = peca.status === "ACTIVE";
+  const porEntregar = peca.status === "RESERVED";
   const pg = peca.pagamento;
 
   return (
@@ -125,23 +126,27 @@ export default function EquipamentoPeca() {
         </p>
       </header>
 
-      {/* Onde está a peça: em casa, ou já voltou (e como). */}
+      {/* Onde está a peça: ainda no clube (por entregar), em casa, ou já voltou (e como). */}
       <Estado
-        icone={comEle ? CalendarCheck : peca.status === "RETURNED" ? Undo2 : PackageX}
-        tom={comEle ? "signal" : peca.status === "RETURNED" ? "ok" : "risk"}
+        icone={porEntregar ? Hourglass : comEle ? CalendarCheck : peca.status === "RETURNED" ? Undo2 : PackageX}
+        tom={porEntregar ? "warn" : comEle ? "signal" : peca.status === "RETURNED" ? "ok" : "risk"}
         titulo={
-          comEle
-            ? store.atleta
-              ? "Está contigo"
-              : `Está com ${filho?.firstName ?? "o atleta"}`
-            : FIM[peca.status as Exclude<EstadoDaPeca, "ACTIVE">]
+          porEntregar
+            ? "Por entregar"
+            : comEle
+              ? store.atleta
+                ? "Está contigo"
+                : `Está com ${filho?.firstName ?? "o atleta"}`
+              : FIM[peca.status as keyof typeof FIM]
         }
         texto={
-          comEle
-            ? `Entregue a ${dataCurta(peca.assignedAt)}.`
-            : peca.returnedAt
-              ? `A ${dataCurta(peca.returnedAt)}.`
-              : ""
+          porEntregar
+            ? `O clube guardou esta peça para ${store.atleta ? "ti" : (filho?.firstName ?? "o atleta")} a ${dataCurta(peca.assignedAt)}. Ainda não foi entregue.`
+            : comEle
+              ? `Entregue a ${dataCurta(peca.assignedAt)}.`
+              : peca.returnedAt
+                ? `A ${dataCurta(peca.returnedAt)}.`
+                : ""
         }
       />
 
@@ -188,7 +193,7 @@ export default function EquipamentoPeca() {
       )}
 
       <section className="mt-3 overflow-hidden rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-soft)]">
-        <Facto icone={CalendarDays} rotulo="Entregue" valor={dataCurta(peca.assignedAt)} />
+        <Facto icone={CalendarDays} rotulo={porEntregar ? "Guardada" : "Entregue"} valor={dataCurta(peca.assignedAt)} />
         {peca.returnedAt && <Facto icone={Undo2} rotulo={peca.status === "LOST" ? "Dado como perdido" : "Devolvido"} valor={dataCurta(peca.returnedAt)} />}
         {peca.epoca && <Facto icone={CalendarCheck} rotulo="Época" valor={peca.epoca} />}
         {(peca.categoria || peca.marca) && (
@@ -237,8 +242,13 @@ function Fotos({ fotos }: { fotos: string[] }) {
   );
 }
 
-function Estado({ icone: Icone, tom, titulo, texto }: { icone: LucideIcon; tom: "signal" | "ok" | "risk"; titulo: string; texto: string }) {
-  const cor = { signal: "bg-signal-soft text-signal-ink", ok: "bg-ok-soft text-ok", risk: "bg-risk-soft text-risk" }[tom];
+function Estado({ icone: Icone, tom, titulo, texto }: { icone: LucideIcon; tom: "signal" | "ok" | "risk" | "warn"; titulo: string; texto: string }) {
+  const cor = {
+    signal: "bg-signal-soft text-signal-ink",
+    ok: "bg-ok-soft text-ok",
+    risk: "bg-risk-soft text-risk",
+    warn: "bg-warn-soft text-warn",
+  }[tom];
   return (
     <section className="mt-4 flex items-start gap-3 rounded-[var(--radius-xl)] bg-surface p-4 shadow-[var(--shadow-soft)]">
       <span className={cx("flex size-11 shrink-0 items-center justify-center rounded-[14px]", cor)}>

@@ -112,8 +112,8 @@ export function DeleteItemDialog({
           {naRua > 0 && (
             <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-warn-soft px-3 py-2.5 text-meta leading-relaxed text-warn">
               <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-              Há {naRua} {naRua === 1 ? "unidade" : "unidades"} com atletas. Recebe-{naRua === 1 ? "a" : "as"} antes de
-              tirar o artigo do armazém.
+              Há {naRua} {naRua === 1 ? "unidade" : "unidades"} com atletas ou por entregar. Recebe-{naRua === 1 ? "a" : "as"} (ou
+              diz que não {naRua === 1 ? "vai" : "vão"} ser {naRua === 1 ? "entregue" : "entregues"}) antes de tirar o artigo do armazém.
             </p>
           )}
 

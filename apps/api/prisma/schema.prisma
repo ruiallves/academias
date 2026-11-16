@@ -6070,7 +6070,8 @@ model InventoryVariant {
   /// Unidades utilizáveis: as que estão na prateleira mais as que estão com
   /// atletas. Baixas (danificado, perdido) já não contam aqui.
   totalQuantity    Int @default(0)
-  /// Unidades neste momento com atletas. Sobe na entrega, desce na devolução.
+  /// Unidades neste momento com atletas, ou guardadas para eles (por entregar).
+  /// Sobe na entrega ou ao guardar, desce na devolução ou se não for entregue.
   assignedQuantity Int @default(0)
   /// Baixas acumuladas — não voltam ao total.
   damagedQuantity  Int @default(0)
@@ -6105,6 +6106,14 @@ enum InventoryMovementType {
   DAMAGE
   /// Não voltou.
   LOSS
+  /// Guardado para um atleta, ainda por entregar: sai do disponível e fica na
+  /// prateleira. Ver `InventoryAssignmentStatus.RESERVED`.
+  RESERVE
+  /// O que estava por entregar não vai ser entregue: volta ao disponível.
+  UNRESERVE
+  /// O que estava por entregar foi entregue. Não mexe no disponível (já tinha
+  /// saído em `RESERVE`); fica para o histórico dizer quando e quem.
+  HANDOVER
 }
 
 /// O histórico. **Nunca se apaga.**
@@ -6150,6 +6159,11 @@ model InventoryMovement {
 }
 
 enum InventoryAssignmentStatus {
+  /// Por entregar: é do atleta (pode até estar pago), mas ainda está no clube.
+  /// Conta em `assignedQuantity`, para não se dar a outro. Passa a `ACTIVE` ao
+  /// entregar; se não for entregue, a linha apaga-se e a unidade volta ao
+  /// disponível (Rui, 16/11/2026).
+  RESERVED
   /// Está com o atleta.
   ACTIVE
   /// Voltou em condições de ser entregue a outro.
@@ -6179,6 +6193,9 @@ model InventoryAssignment {
 
   status InventoryAssignmentStatus @default(ACTIVE)
 
+  /// Desde quando está no estado atual: guardada (por entregar) ou entregue.
+  /// Ao entregar o que estava por entregar passa a ser o dia da entrega; o dia
+  /// em que se guardou fica no movimento `RESERVE`.
   assignedAt DateTime  @default(now())
   returnedAt DateTime?
 

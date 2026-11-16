@@ -828,6 +828,121 @@ check(
 const editarSemPermissao = await call(coach, "PATCH", `/api/inventory/items/${idEditar}`, { name: "ZI Roubado" });
 check("um treinador não edita artigos (403)", editarSemPermissao.status === 403, `${editarSemPermissao.status}`);
 
+console.log("\n=== Por entregar: é do atleta, mas ainda está no clube ===");
+/*
+ * Uma peça pode ser do atleta (até paga) sem lhe ter sido entregue (Rui,
+ * 16/11/2026). Guardada, sai do disponível — para não se dar a outro — mas não
+ * conta como entregue, não se devolve, e entrega-se depois com um gesto.
+ */
+const kit = await call(director, "POST", "/api/inventory/items", {
+  name: "ZI Kit por entregar",
+  variants: [{ label: "Único", quantity: 3 }],
+});
+const kitVar = (await call(director, "GET", `/api/inventory/items/${kit.body.id}`)).body.variants[0].id;
+const stockKit = async () =>
+  (await db.query(`SELECT "totalQuantity" t, "assignedQuantity" a FROM "InventoryVariant" WHERE id = $1`, [kitVar])).rows[0];
+
+const guardar = await call(director, "POST", "/api/inventory/assignments/lote", {
+  athleteId: atleta.id,
+  entregue: false,
+  linhas: [{ variantId: kitVar, quantity: 1 }],
+});
+check("guardar por entregar passa", guardar.status === 201, `${guardar.status} ${JSON.stringify(guardar.body).slice(0, 140)}`);
+check("e a resposta diz que ficou por entregar", guardar.body?.porEntregar === true, JSON.stringify(guardar.body?.porEntregar));
+const guardadaId = guardar.body?.entregas?.[0]?.id;
+
+const linhaGuardada = (await db.query(`SELECT status FROM "InventoryAssignment" WHERE id = $1`, [guardadaId])).rows[0];
+check("a linha nasce por entregar (RESERVED)", linhaGuardada?.status === "RESERVED", JSON.stringify(linhaGuardada));
+check("e sai do disponível, para não se dar a outro", (await stockKit()).a === 1, JSON.stringify(await stockKit()));
+check(
+  "com um movimento RESERVE no histórico",
+  (await db.query(`SELECT 1 FROM "InventoryMovement" WHERE "assignmentId" = $1 AND type = 'RESERVE'`, [guardadaId])).rowCount === 1,
+);
+
+const fichaKit = (await call(director, "GET", `/api/inventory/items/${kit.body.id}`)).body;
+check(
+  "a ficha do artigo separa o que está por entregar",
+  fichaKit.reserved === 1 && fichaKit.assigned === 1 && fichaKit.available === 2,
+  JSON.stringify({ r: fichaKit.reserved, a: fichaKit.assigned, d: fichaKit.available }),
+);
+const resumoKit = (await call(director, "GET", "/api/inventory/overview")).body;
+check("o resumo conta o que está por entregar", resumoKit.porEntregar >= 1, JSON.stringify(resumoKit));
+
+const listaAberta = (await call(director, "GET", `/api/inventory/assignments?itemId=${kit.body.id}`)).body;
+check("a lista por omissão mostra-a, com o estado", listaAberta.some((x) => x.id === guardadaId && x.status === "RESERVED"), JSON.stringify(listaAberta.map((x) => x.status)));
+const soEntregues = (await call(director, "GET", `/api/inventory/assignments?itemId=${kit.body.id}&status=ACTIVE`)).body;
+check("e o filtro 'entregue' deixa-a de fora", !soEntregues.some((x) => x.id === guardadaId), JSON.stringify(soEntregues.length));
+const estadoInventado = await call(director, "GET", `/api/inventory/assignments?status=QUALQUER`);
+check("um estado inventado é recusado (400), não rebenta", estadoInventado.status === 400, `${estadoInventado.status}`);
+
+const devolverGuardada = await call(director, "POST", `/api/inventory/assignments/${guardadaId}/return`, { condition: "GOOD" });
+check("o que não foi entregue não se devolve (400)", devolverGuardada.status === 400, `${devolverGuardada.status}`);
+
+const familiaVe = await call(director, "GET", `/api/inventory/assignments?athleteId=${atleta.id}`);
+check("aparece na lista do atleta", familiaVe.body.some((x) => x.id === guardadaId), `${familiaVe.status}`);
+
+const entregarSemPermissao = await call(coach, "POST", `/api/inventory/assignments/${guardadaId}/entregar`);
+check("um treinador sem inventário não a entrega (403)", entregarSemPermissao.status === 403, `${entregarSemPermissao.status}`);
+
+const [e1, e2] = await Promise.all([
+  call(director, "POST", `/api/inventory/assignments/${guardadaId}/entregar`),
+  call(director, "POST", `/api/inventory/assignments/${guardadaId}/entregar`),
+]);
+check("entregar duas vezes ao mesmo tempo dá uma entrega e um erro", [e1, e2].filter((r) => r.status === 201).length === 1, `${e1.status} e ${e2.status}`);
+const entregue = (await db.query(`SELECT status FROM "InventoryAssignment" WHERE id = $1`, [guardadaId])).rows[0];
+check("passa a entregue (ACTIVE)", entregue?.status === "ACTIVE", JSON.stringify(entregue));
+check("o stock não mexe: já tinha saído ao guardar", (await stockKit()).a === 1 && (await stockKit()).t === 3, JSON.stringify(await stockKit()));
+check(
+  "e fica um só movimento HANDOVER",
+  (await db.query(`SELECT 1 FROM "InventoryMovement" WHERE "assignmentId" = $1 AND type = 'HANDOVER'`, [guardadaId])).rowCount === 1,
+);
+
+console.log("\n=== O estado muda-se no Editar, para os dois lados ===");
+/*
+ * "Devia dar para alterar tanto no perfil do atleta como no Com atletas" (Rui,
+ * 16/11/2026): o mesmo PATCH do pagamento muda entregue ↔ por entregar.
+ */
+const voltaAtras = await call(director, "PATCH", `/api/inventory/assignments/${guardadaId}`, { entregue: false });
+check("entregue → por entregar passa", voltaAtras.status === 200, `${voltaAtras.status} ${JSON.stringify(voltaAtras.body).slice(0, 120)}`);
+check(
+  "a linha volta a RESERVED e o stock não mexe",
+  (await db.query(`SELECT status FROM "InventoryAssignment" WHERE id = $1`, [guardadaId])).rows[0]?.status === "RESERVED" && (await stockKit()).a === 1,
+  JSON.stringify(await stockKit()),
+);
+const deNovoEntregue = await call(director, "PATCH", `/api/inventory/assignments/${guardadaId}`, { entregue: true, notes: "Levou no treino" });
+check("por entregar → entregue, com as notas no mesmo pedido", deNovoEntregue.status === 200, `${deNovoEntregue.status}`);
+const depoisDoEditar = (await db.query(`SELECT status, notes FROM "InventoryAssignment" WHERE id = $1`, [guardadaId])).rows[0];
+check("fica entregue e com as notas", depoisDoEditar?.status === "ACTIVE" && depoisDoEditar?.notes === "Levou no treino", JSON.stringify(depoisDoEditar));
+const coachEdita = await call(coach, "PATCH", `/api/inventory/assignments/${guardadaId}`, { entregue: false });
+check("um treinador sem inventário não muda o estado (403)", coachEdita.status === 403, `${coachEdita.status}`);
+
+console.log("\n=== Por entregar, e afinal não vai ser entregue ===");
+const outraGuardada = await call(director, "POST", "/api/inventory/assignments/lote", {
+  athleteId: atleta.id,
+  entregue: false,
+  linhas: [{ variantId: kitVar, quantity: 2, pagamento: { modo: "porPagar", priceCents: 1500 } }],
+});
+const outraId = outraGuardada.body?.entregas?.[0]?.id;
+check("guardar 2 por pagar passa", outraGuardada.status === 201 && Boolean(outraId), `${outraGuardada.status} ${JSON.stringify(outraGuardada.body).slice(0, 160)}`);
+check("o disponível fica a zero", (await stockKit()).a === 3, JSON.stringify(await stockKit()));
+
+const naoEntregarEntregue = await call(director, "POST", `/api/inventory/assignments/${guardadaId}/nao-entregar`);
+check("o que já foi entregue não se 'desentrega' (400)", naoEntregarEntregue.status === 400, `${naoEntregarEntregue.status}`);
+
+const naoVai = await call(director, "POST", `/api/inventory/assignments/${outraId}/nao-entregar`);
+check("dizer que não vai ser entregue passa", naoVai.status === 201, `${naoVai.status} ${JSON.stringify(naoVai.body).slice(0, 140)}`);
+check("a linha sai", (await db.query(`SELECT 1 FROM "InventoryAssignment" WHERE id = $1`, [outraId])).rowCount === 0);
+check("e as unidades voltam ao disponível", (await stockKit()).a === 1 && (await stockKit()).t === 3, JSON.stringify(await stockKit()));
+check(
+  "com um movimento UNRESERVE, com o atleta",
+  (await db.query(`SELECT 1 FROM "InventoryMovement" WHERE "variantId" = $1 AND type = 'UNRESERVE' AND "athleteId" = $2 AND quantity = 2`, [kitVar, atleta.id])).rowCount === 1,
+);
+const segundaVez = await call(director, "POST", `/api/inventory/assignments/${outraId}/nao-entregar`);
+check("uma segunda vez dá 404, não devolve as unidades outra vez", segundaVez.status === 404 && (await stockKit()).a === 1, `${segundaVez.status}`);
+
+// O que estava entregue volta, para o artigo poder ser apagado na limpeza.
+await call(director, "POST", `/api/inventory/assignments/${guardadaId}/return`, { condition: "GOOD" });
+
 /* ------------------------------------------------------------------ limpeza */
 await limpar();
 await db.end();

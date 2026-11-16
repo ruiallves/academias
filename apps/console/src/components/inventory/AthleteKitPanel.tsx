@@ -5,6 +5,7 @@ import { DeliverDialog } from "@/components/inventory/DeliverDialog";
 import { ReturnDialog } from "@/components/inventory/ReturnDialog";
 import { EditAssignmentDialog } from "@/components/inventory/EditAssignmentDialog";
 import { PagamentoPill } from "@/components/inventory/PagamentoDaEntrega";
+import { BotaoEntregar, EstadoDaEntregaPill } from "@/components/inventory/PorEntregar";
 import { Boxes, PackageOpen, Pencil, Undo2 } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -16,8 +17,9 @@ import { ASSIGNMENT_LABEL, listAssignments, type Assignment } from "@/lib/invent
  *
  * ## Mostra o que ele tem, e o que já devolveu
  *
- * Primeiro o que está com ele — é a pergunta de Junho, quando se recolhe o
- * material. O que já voltou fica por baixo, mais discreto: serve para responder
+ * Primeiro o que está por entregar (é dele, pode estar pago, mas ainda está no
+ * clube: "Entregar" passa-o a entregue), depois o que está com ele — é a
+ * pergunta de Junho, quando se recolhe o material. O que já voltou fica por baixo, mais discreto: serve para responder
  * a "mas eu entreguei" sem ninguém ter de procurar no histórico do armazém.
  *
  * ## O pagamento de cada peça
@@ -55,16 +57,27 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
     void carregar();
   }, [athleteId]);
 
-  const comEle = (rows ?? []).filter((a) => a.status === "ACTIVE");
-  const fechados = (rows ?? []).filter((a) => a.status !== "ACTIVE");
+  /* Primeiro o que está por entregar (é o que pede um gesto), depois o que está com ele. */
+  const comEle = (rows ?? [])
+    .filter((a) => a.status === "ACTIVE" || a.status === "RESERVED")
+    .sort((a, b) => (a.status === "RESERVED" ? 0 : 1) - (b.status === "RESERVED" ? 0 : 1));
+  const fechados = (rows ?? []).filter((a) => a.status !== "ACTIVE" && a.status !== "RESERVED");
+  const nPorEntregar = comEle.filter((a) => a.status === "RESERVED").length;
+  const nComEle = comEle.length - nPorEntregar;
+  const resumo = [
+    nComEle ? `${nComEle} ${nComEle === 1 ? "entregue" : "entregues"}` : null,
+    nPorEntregar ? `${nPorEntregar} por entregar` : null,
+  ].filter(Boolean).join(" · ");
 
   return (
     <>
       <Panel>
-        <PanelHead
-          title="Equipamento atribuído"
-          hint={comEle.length ? `${comEle.length} ${comEle.length === 1 ? "artigo" : "artigos"}` : "nada por devolver"}
-        >
+        {/*
+          "Equipamento", e não "Equipamento atribuído": atribuído lia-se como
+          entregue, e uma peça pode ser do atleta (até paga) e estar por
+          entregar (Rui, 16/11/2026).
+        */}
+        <PanelHead title="Equipamento" hint={resumo || "nada por devolver"}>
           {podeEscrever && (
             <button type="button" className="ctl-ghost" onClick={() => setEntregar(true)}>
               <PackageOpen className="size-3.5" strokeWidth={1.75} />
@@ -92,28 +105,35 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
           <>
             <ul className="divide-y divide-line">
               {comEle.map((a) => (
-                <li key={a.id} className="flex items-center gap-3 px-5 py-3">
-                  <span className="min-w-0 flex-1">
+                <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 max-sm:px-3.5">
+                  <span className="min-w-0 flex-1 basis-56">
                     <Link to={`/inventario/artigos/${a.itemId}`} className="block truncate text-body font-medium text-ink hover:underline">
                       {a.itemName} <span className="font-normal text-ink-3">· {a.variantLabel}</span>
                     </Link>
                     <span className="block truncate text-meta text-ink-3">
-                      {a.quantity} {a.quantity === 1 ? "unidade" : "unidades"} · entregue em {shortDate(new Date(a.assignedAt))}
+                      {a.quantity} {a.quantity === 1 ? "unidade" : "unidades"} ·{" "}
+                      {a.status === "RESERVED" ? "guardado a" : "entregue a"} {shortDate(new Date(a.assignedAt))}
                       {a.assignedBy ? ` por ${a.assignedBy}` : ""}
                       {a.notes ? ` · ${a.notes}` : ""}
                     </span>
                   </span>
-                  <PagamentoPill p={a.pagamento} />
+                  {/* As pastilhas abrem o editor: é lá que se muda o estado e o pagamento. */}
+                  <EstadoDaEntregaPill status={a.status} onClick={podeEscrever ? () => setEditar(a) : undefined} />
+                  <PagamentoPill p={a.pagamento} onClick={podeEscrever ? () => setEditar(a) : undefined} />
                   {podeEscrever && (
                     <span className="flex shrink-0 items-center gap-0.5">
                       <button type="button" className="ctl-ghost h-7 text-meta" onClick={() => setEditar(a)}>
                         <Pencil className="size-3.5" strokeWidth={1.75} />
                         Editar
                       </button>
-                      <button type="button" className="ctl-ghost h-7 text-meta text-ink-3" onClick={() => setDevolver(a)}>
-                        <Undo2 className="size-3.5" strokeWidth={1.75} />
-                        Devolver
-                      </button>
+                      {a.status === "RESERVED" ? (
+                        <BotaoEntregar assignment={a} onDone={() => void carregar()} />
+                      ) : (
+                        <button type="button" className="ctl-ghost h-7 text-meta text-ink-3" onClick={() => setDevolver(a)}>
+                          <Undo2 className="size-3.5" strokeWidth={1.75} />
+                          Devolver
+                        </button>
+                      )}
                     </span>
                   )}
                 </li>
@@ -135,7 +155,7 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
                           {a.returnedBy ? ` · ${a.returnedBy}` : ""}
                         </span>
                       </span>
-                      <PagamentoPill p={a.pagamento} />
+                      <PagamentoPill p={a.pagamento} onClick={podeEscrever && a.pagamento && a.pagamento.estado !== "nenhum" ? () => setEditar(a) : undefined} />
                       <Pill tone={a.status === "RETURNED" ? "ok" : "risk"}>{ASSIGNMENT_LABEL[a.status]}</Pill>
                       {podeEscrever && (
                         <button type="button" className="ctl-ghost h-7 shrink-0 text-meta" onClick={() => setEditar(a)} aria-label="Editar entrega">

@@ -36,6 +36,8 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 /** Quatro chegam para mostrar um artigo. Mais do que isso é um catálogo. */
 const IMAGE_MAX_COUNT = 4;
 
+const ESTADOS_DA_ENTREGA: InventoryAssignmentStatus[] = ["RESERVED", "ACTIVE", "RETURNED", "DAMAGED", "LOST"];
+
 /**
  * O armazém do clube.
  *
@@ -111,10 +113,18 @@ export class InventoryService {
       const variantes = await this.variantesComMinimo(db);
       const baixo = variantes.filter((v) => this.nivel(v) !== "ok").length;
 
+      /* O que está guardado para atletas e ainda no clube. Já conta em `atribuidas`. */
+      const guardadas = await db.inventoryAssignment.aggregate({
+        where: { status: "RESERVED", variant: { archivedAt: null, item: { archivedAt: null } } },
+        _sum: { quantity: true },
+      });
+
       return {
         artigos,
         unidades: total,
+        /** Com atletas **e** por entregar: tudo o que já não se pode dar a outro. */
         atribuidas,
+        porEntregar: guardadas._sum.quantity ?? 0,
         disponiveis: total - atribuidas,
         stockBaixo: baixo,
         danificadas: somas._sum.damagedQuantity ?? 0,
@@ -167,9 +177,10 @@ export class InventoryService {
        * sessenta assinaturas para mostrar quarenta quadrados. A ficha do artigo
        * é que traz o resto.
        */
+      const guardadas = await this.porEntregarPorVariante(db);
       const lista = await Promise.all(
         rows.map(async (it) => ({
-          ...this.serializeItem(it),
+          ...this.serializeItem(it, guardadas),
           thumbnail: it.imageKeys[0]
             ? await this.storage.signDownload(INVENTORY_BUCKET, it.imageKeys[0], IMAGE_TTL)
             : null,
@@ -226,7 +237,7 @@ export class InventoryService {
       );
 
       return {
-        ...this.serializeItem(row),
+        ...this.serializeItem(row, await this.porEntregarPorVariante(db, id)),
         notes: row.notes,
         images: imagens.filter((i) => i.url !== null),
         /**
@@ -372,21 +383,28 @@ export class InventoryService {
     if (!ambito.in.includes(athleteId)) throw new ForbiddenException("Esse atleta não é teu");
   }
 
-  /** O que está com atletas — a lista de "equipamento atribuído". */
+  /** O que está com atletas, ou guardado para eles (por entregar). */
   async assignments(
     ctx: RequestContext,
     params: { teamId?: string; athleteId?: string; itemId?: string; status?: string } = {},
   ) {
     this.mustRead(ctx);
+    if (params.status && params.status !== "all" && !ESTADOS_DA_ENTREGA.includes(params.status as InventoryAssignmentStatus)) {
+      throw new BadRequestException("Estado desconhecido");
+    }
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.inventoryAssignment.findMany({
         where: {
           ...(params.athleteId ? { athleteId: params.athleteId } : {}),
           ...(params.itemId ? { variant: { itemId: params.itemId } } : {}),
-          // Por omissão só o que está por devolver: é a pergunta que se faz a
-          // esta lista. O histórico completo pede-se com `status=all`.
-          ...(params.status === "all" ? {} : { status: (params.status as InventoryAssignmentStatus) ?? "ACTIVE" }),
+          // Por omissão o que ainda é assunto: por entregar e por devolver. O
+          // histórico completo pede-se com `status=all`.
+          ...(params.status === "all"
+            ? {}
+            : params.status
+              ? { status: params.status as InventoryAssignmentStatus }
+              : { status: { in: ["RESERVED", "ACTIVE"] as InventoryAssignmentStatus[] } }),
           ...(params.teamId ? { athlete: { teams: { some: { leftAt: null, teamId: params.teamId } } } } : {}),
         },
         orderBy: { assignedAt: "desc" },
@@ -786,7 +804,7 @@ export class InventoryService {
       const porDevolver = item.variants.reduce((a, v) => a + v.assignedQuantity, 0);
       if (porDevolver > 0) {
         throw new BadRequestException(
-          `Ainda há ${porDevolver} ${porDevolver === 1 ? "unidade" : "unidades"} por devolver. Recebe-as primeiro.`,
+          `Ainda há ${porDevolver} ${porDevolver === 1 ? "unidade" : "unidades"} com atletas ou por entregar. Recebe-as ou cancela-as primeiro.`,
         );
       }
 
@@ -842,7 +860,7 @@ export class InventoryService {
       const naRua = item.variants.reduce((a, v) => a + v.assignedQuantity, 0);
       if (naRua > 0) {
         throw new BadRequestException(
-          `Ainda há ${naRua} ${naRua === 1 ? "unidade" : "unidades"} com atletas. Recebe-as antes de apagar.`,
+          `Ainda há ${naRua} ${naRua === 1 ? "unidade" : "unidades"} com atletas ou por entregar. Recebe-as ou cancela-as antes de apagar.`,
         );
       }
 
@@ -1263,7 +1281,7 @@ export class InventoryService {
       }
       if (novoTotal < v.assignedQuantity) {
         throw new BadRequestException(
-          `Há ${v.assignedQuantity} unidades entregues a atletas: o total não pode ficar abaixo disso`,
+          `Há ${v.assignedQuantity} unidades com atletas ou por entregar: o total não pode ficar abaixo disso`,
         );
       }
 
@@ -1302,10 +1320,18 @@ export class InventoryService {
    * `prefixo` põe o nome do artigo à frente das recusas: com vários artigos,
    * "Só há 2 unidades disponíveis" não dizia de qual.
    */
+  /*
+   * `entregue: false` guarda a peça para o atleta sem lha entregar: o stock sai
+   * do disponível na mesma (para não se dar a outro), a linha nasce `RESERVED`
+   * e o movimento é `RESERVE`. Entrega-se depois em `entregarGuardada`.
+   */
   private async entregarUma(
     db: ScopedClient,
     ctx: RequestContext,
-    p: { athleteId: string; variantId: string; quantity: number; notes: string | null; seasonId: string | null; prefixo?: boolean },
+    p: {
+      athleteId: string; variantId: string; quantity: number; notes: string | null; seasonId: string | null;
+      entregue: boolean; prefixo?: boolean;
+    },
   ) {
     const variante = await db.inventoryVariant.findFirst({
       where: { id: p.variantId, archivedAt: null },
@@ -1328,6 +1354,7 @@ export class InventoryService {
         athleteId: p.athleteId,
         variantId: p.variantId,
         quantity: p.quantity,
+        status: p.entregue ? "ACTIVE" : "RESERVED",
         notes: p.notes,
         seasonId: p.seasonId,
         assignedById: ctx.membershipId ?? null,
@@ -1337,7 +1364,7 @@ export class InventoryService {
 
     await this.registarMovimento(db, ctx, {
       variantId: p.variantId,
-      type: "ASSIGNMENT",
+      type: p.entregue ? "ASSIGNMENT" : "RESERVE",
       quantity: p.quantity,
       athleteId: p.athleteId,
       assignmentId: entrega.id,
@@ -1370,9 +1397,10 @@ export class InventoryService {
         quantity: dto.quantity,
         notes: dto.notes?.trim() || null,
         seasonId: season?.id ?? null,
+        entregue: dto.entregue !== false,
       });
 
-      return { id: e.id, athleteName: atleta.name, itemName: e.itemName, variantLabel: e.variantLabel };
+      return { id: e.id, athleteName: atleta.name, itemName: e.itemName, variantLabel: e.variantLabel, porEntregar: dto.entregue === false };
     }).then(async (r) => {
       /*
        * O pagamento, depois da entrega e fora da transação dela: o material já
@@ -1438,6 +1466,7 @@ export class InventoryService {
           quantity: l.quantity,
           notes,
           seasonId: season?.id ?? null,
+          entregue: dto.entregue !== false,
           prefixo: true,
         });
         entregas.push({ ...e, quantity: l.quantity });
@@ -1467,23 +1496,153 @@ export class InventoryService {
       }
     }
 
-    return { athleteName: feito.athleteName, entregas };
+    return { athleteName: feito.athleteName, porEntregar: dto.entregue === false, entregas };
   }
 
   /**
-   * Editar uma entrega: as notas e o pagamento.
+   * Entregar o que estava por entregar.
+   *
+   * O stock não mexe: saiu do disponível quando se guardou. Muda o estado, o
+   * `assignedAt` passa a ser o dia da entrega (o dia em que se guardou fica no
+   * movimento `RESERVE`) e quem entrega fica como quem entregou. O movimento
+   * `HANDOVER` diz no histórico quando e quem.
+   *
+   * O `UPDATE` é condicional ao estado, como o desconto do stock: dois cliques
+   * em "Entregar" ao mesmo tempo dão uma entrega e um erro, e não dois
+   * movimentos.
    */
-  async updateAssignment(ctx: RequestContext, id: string, dto: { notes?: string; pagamento?: PagamentoPedido }) {
+  async entregarGuardada(ctx: RequestContext, id: string) {
     this.mustWrite(ctx);
-    if (dto.notes !== undefined) {
-      await this.prisma.runAs(ctx.academyId, async (db) => {
-        const a = await db.inventoryAssignment.findFirst({ where: { id }, select: { id: true } });
-        if (!a) throw new NotFoundException("Entrega não encontrada");
-        await db.inventoryAssignment.update({ where: { id }, data: { notes: dto.notes?.trim() || null } });
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const a = await db.inventoryAssignment.findFirst({
+        where: { id },
+        select: { id: true, status: true, quantity: true, variantId: true, athleteId: true, notes: true },
       });
+      if (!a) throw new NotFoundException("Entrega não encontrada");
+      if (a.status !== "RESERVED") throw new BadRequestException("Esta peça já foi entregue");
+
+      const mexeu = await db.inventoryAssignment.updateMany({
+        where: { id, status: "RESERVED" },
+        data: { status: "ACTIVE", assignedAt: new Date(), assignedById: ctx.membershipId ?? null },
+      });
+      if (mexeu.count === 0) throw new BadRequestException("Esta peça já foi entregue");
+
+      await this.registarMovimento(db, ctx, {
+        variantId: a.variantId,
+        type: "HANDOVER",
+        quantity: a.quantity,
+        athleteId: a.athleteId,
+        assignmentId: a.id,
+        reason: a.notes,
+      });
+
+      return { ok: true as const, status: "ACTIVE" as const };
+    });
+  }
+
+  /**
+   * O que estava por entregar não vai ser entregue: a unidade volta ao
+   * disponível e a linha sai (nunca esteve com o atleta, não é história dele).
+   * O movimento `UNRESERVE` fica no histórico do armazém, com o atleta.
+   *
+   * ## O pagamento
+   *
+   * Pago, recusa-se: houve dinheiro, e devolvê-lo (ou não) é uma decisão do
+   * clube, que se toma em "Editar" ao tirar o pagamento. Por pagar, larga-se a
+   * cobrança como em "Sem pagamento" (`definirPagamento`): a que está nos
+   * Pagamentos da app apaga-se, e uma com referência viva é recusada lá.
+   */
+  async naoEntregar(ctx: RequestContext, id: string) {
+    this.mustWrite(ctx);
+
+    const a = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.inventoryAssignment.findFirst({
+        where: { id },
+        select: { id: true, status: true, ...SELECT_PAGAMENTO },
+      }),
+    );
+    if (!a) throw new NotFoundException("Entrega não encontrada");
+    if (a.status !== "RESERVED") throw new BadRequestException("Esta peça já foi entregue: recebe-a em Devolver");
+
+    const pg = pagamentoDe(a);
+    if (pg.estado === "pago") {
+      throw new BadRequestException("Esta peça está paga. Tira o pagamento em Editar antes de dizer que não vai ser entregue.");
+    }
+    if (pg.estado === "app" || pg.estado === "porPagar") await this.definirPagamento(ctx, id, { modo: "nenhum" });
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const r = await db.inventoryAssignment.findFirst({
+        where: { id, status: "RESERVED" },
+        select: { id: true, quantity: true, variantId: true, athleteId: true },
+      });
+      if (!r) throw new BadRequestException("Esta peça já foi entregue");
+
+      // Condicional ao estado: um segundo clique ao mesmo tempo não devolve a unidade duas vezes.
+      const saiu = await db.inventoryAssignment.deleteMany({ where: { id, status: "RESERVED" } });
+      if (saiu.count === 0) throw new BadRequestException("Esta peça já não está por entregar");
+      await db.inventoryVariant.update({
+        where: { id: r.variantId },
+        data: { assignedQuantity: { decrement: r.quantity } },
+      });
+      await this.registarMovimento(db, ctx, {
+        variantId: r.variantId,
+        type: "UNRESERVE",
+        quantity: r.quantity,
+        athleteId: r.athleteId,
+        reason: null,
+      });
+
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * Editar uma entrega: as notas, o pagamento e se já foi entregue.
+   *
+   * O estado muda nos dois sentidos, no mesmo diálogo do pagamento (Rui,
+   * 16/11/2026: "devia dar para alterar tanto no perfil do atleta como no Com
+   * atletas"). Só entre por entregar e entregue: devolver e "não vai ser
+   * entregue" continuam a ser gestos à parte, porque mexem no stock.
+   */
+  async updateAssignment(ctx: RequestContext, id: string, dto: { notes?: string; pagamento?: PagamentoPedido; entregue?: boolean }) {
+    this.mustWrite(ctx);
+    const atual = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.inventoryAssignment.findFirst({ where: { id }, select: { id: true, status: true } }),
+    );
+    if (!atual) throw new NotFoundException("Entrega não encontrada");
+    if (dto.entregue !== undefined && atual.status !== "ACTIVE" && atual.status !== "RESERVED") {
+      throw new BadRequestException("Esta entrega já foi fechada");
+    }
+
+    if (dto.notes !== undefined) {
+      await this.prisma.runAs(ctx.academyId, (db) =>
+        db.inventoryAssignment.update({ where: { id }, data: { notes: dto.notes?.trim() || null } }),
+      );
     }
     const pagamento = dto.pagamento ? await this.definirPagamento(ctx, id, dto.pagamento) : undefined;
+
+    if (dto.entregue === true && atual.status === "RESERVED") await this.entregarGuardada(ctx, id);
+    if (dto.entregue === false && atual.status === "ACTIVE") await this.voltarAPorEntregar(ctx, id);
+
     return { ok: true, pagamento };
+  }
+
+  /**
+   * Entregue → por entregar: foi marcada como entregue e ainda não saiu.
+   *
+   * O stock não mexe (continua fora do disponível, guardada para o atleta) e
+   * por isso não há movimento: é uma correção do estado, não uma unidade a
+   * mudar de sítio.
+   */
+  private async voltarAPorEntregar(ctx: RequestContext, id: string) {
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const mexeu = await db.inventoryAssignment.updateMany({
+        where: { id, status: "ACTIVE" },
+        data: { status: "RESERVED", assignedAt: new Date(), assignedById: ctx.membershipId ?? null },
+      });
+      if (mexeu.count === 0) throw new BadRequestException("Esta peça já não está entregue");
+    });
   }
 
   /**
@@ -1594,6 +1753,9 @@ export class InventoryService {
         select: { id: true, quantity: true, status: true, variantId: true, athleteId: true },
       });
       if (!entrega) throw new NotFoundException("Entrega não encontrada");
+      if (entrega.status === "RESERVED") {
+        throw new BadRequestException("Esta peça ainda não foi entregue: não há nada para devolver");
+      }
       if (entrega.status !== "ACTIVE") throw new BadRequestException("Esta entrega já foi fechada");
 
       const quantos = dto.quantity ?? entrega.quantity;
@@ -1778,6 +1940,16 @@ export class InventoryService {
     return "ok" as const;
   }
 
+  /** Quanto está por entregar em cada tamanho (de um artigo, ou de todos). */
+  private async porEntregarPorVariante(db: ScopedClient, itemId?: string): Promise<Map<string, number>> {
+    const g = await db.inventoryAssignment.groupBy({
+      by: ["variantId"],
+      where: { status: "RESERVED", ...(itemId ? { variant: { itemId } } : {}) },
+      _sum: { quantity: true },
+    });
+    return new Map(g.map((r) => [r.variantId, r._sum.quantity ?? 0]));
+  }
+
   private serializeItem(it: {
     id: string;
     name: string;
@@ -1791,7 +1963,7 @@ export class InventoryService {
       id: string; label: string; sku: string | null; order: number; minimumStock: number | null;
       totalQuantity: number; assignedQuantity: number; damagedQuantity: number; lostQuantity: number;
     }[];
-  }) {
+  }, porEntregar: Map<string, number>) {
     const variants = it.variants.map((v) => {
       const nivel = this.nivel({ ...v, item: { minimumStock: it.minimumStock } });
       return {
@@ -1802,7 +1974,10 @@ export class InventoryService {
         minimumStock: v.minimumStock ?? it.minimumStock,
         ownMinimum: v.minimumStock,
         total: v.totalQuantity,
+        /** Com atletas **e** por entregar: o que já não se pode dar a outro. */
         assigned: v.assignedQuantity,
+        /** A parte de `assigned` que ainda está no clube, por entregar. */
+        reserved: porEntregar.get(v.id) ?? 0,
         available: v.totalQuantity - v.assignedQuantity,
         damaged: v.damagedQuantity,
         lost: v.lostQuantity,
@@ -1812,6 +1987,7 @@ export class InventoryService {
 
     const total = variants.reduce((a, v) => a + v.total, 0);
     const assigned = variants.reduce((a, v) => a + v.assigned, 0);
+    const reserved = variants.reduce((a, v) => a + v.reserved, 0);
 
     return {
       id: it.id,
@@ -1825,6 +2001,7 @@ export class InventoryService {
       variants,
       total,
       assigned,
+      reserved,
       available: total - assigned,
       // O pior estado das variantes manda: um artigo com o M esgotado não é um
       // artigo "disponível", por muitos XXL que tenha na prateleira.

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
 import { TriangleAlert } from "@/lib/icons";
-import { moveStock, type Variant } from "@/lib/inventory";
+import { comAtletasTexto, moveStock, type Variant } from "@/lib/inventory";
 
 type Tipo = "ENTRY" | "EXIT" | "ADJUSTMENT";
 
@@ -64,7 +64,7 @@ export function StockDialog({
     <Dialog
       labelledBy="stock"
       title={itemName ? `${itemName} · ${variant.label}` : `Stock · ${variant.label}`}
-      subtitle={`${variant.available} disponíveis de ${variant.total} · ${variant.assigned} com atletas`}
+      subtitle={`${variant.available} disponíveis de ${variant.total} · ${comAtletasTexto(variant, "nenhum com atletas")}`}
       onClose={onClose}
       footer={
         <>
@@ -133,7 +133,7 @@ export function StockDialog({
         {futuro < variant.assigned && (
           <p className="flex items-start gap-1.5 text-meta text-risk">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-            Há {variant.assigned} unidades com atletas, o total não pode ficar abaixo disso.
+            Há {variant.assigned} unidades com atletas ou por entregar, o total não pode ficar abaixo disso.
           </p>
         )}
 

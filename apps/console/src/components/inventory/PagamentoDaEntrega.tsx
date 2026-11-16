@@ -54,23 +54,50 @@ export function pedidoDe(v: ValorDoPagamento): PagamentoPedido {
   return { modo: v.modo, priceCents: centsDe(v), ...(v.modo === "pago" && v.metodo ? { method: v.metodo } : {}) };
 }
 
-/** A pastilha do estado, nas listas e na ficha. */
-export function PagamentoPill({ p }: { p: PagamentoDaEntrega | undefined }) {
-  if (!p || p.estado === "nenhum") return null;
-  const valor = p.valorCents ? money(p.valorCents) : "";
+/**
+ * A pastilha do estado, nas listas e na ficha.
+ *
+ * Com `onClick` é um botão que abre o editor, e sem pagamento diz "Sem
+ * pagamento" em vez de não aparecer: é por ela que se chega a cobrar uma peça
+ * que foi entregue sem valor.
+ */
+export function PagamentoPill({ p, onClick }: { p: PagamentoDaEntrega | undefined; onClick?: () => void }) {
+  if ((!p || p.estado === "nenhum") && !onClick) return null;
+  const valor = p?.valorCents && p.estado !== "nenhum" ? money(p.valorCents) : "";
   const [rotulo, classe] =
-    p.estado === "pago"
-      ? ["Pago", "bg-ok-soft text-ok"]
-      : p.estado === "app"
-        ? ["Por pagar · na app", "bg-warn-soft text-warn"]
-        : p.estado === "porPagar"
-          ? ["Por pagar", "bg-warn-soft text-warn"]
-          : ["Anulado", "bg-sunken text-ink-3"];
-  return (
-    <span className={cx("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap", classe)}>
+    !p || p.estado === "nenhum"
+      ? ["Sem pagamento", "bg-transparent text-ink-4 ring-1 ring-inset ring-line"]
+      : p.estado === "pago"
+        ? ["Pago", "bg-ok-soft text-ok"]
+        : p.estado === "app"
+          ? ["Por pagar · na app", "bg-warn-soft text-warn"]
+          : p.estado === "porPagar"
+            ? ["Por pagar", "bg-warn-soft text-warn"]
+            : ["Anulado", "bg-sunken text-ink-3"];
+  const base = cx(
+    "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap",
+    classe,
+    onClick && "cursor-pointer transition-[filter] hover:brightness-95",
+  );
+  const corpo = (
+    <>
       {rotulo}
       {valor && <span className="font-medium tabular opacity-80">{valor}</span>}
-    </span>
+    </>
+  );
+  if (!onClick) return <span className={base}>{corpo}</span>;
+  return (
+    <button
+      type="button"
+      className={base}
+      title="Mudar o pagamento"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {corpo}
+    </button>
   );
 }
 

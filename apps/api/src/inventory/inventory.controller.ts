@@ -173,6 +173,18 @@ export class InventoryController {
     return this.inventory.updateAssignment(req.ctx, id, dto);
   }
 
+  /** Entregar o que estava por entregar. Ver `entregarGuardada`. */
+  @Post("assignments/:id/entregar")
+  entregarGuardada(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.inventory.entregarGuardada(req.ctx, id);
+  }
+
+  /** O que estava por entregar não vai ser entregue: volta ao disponível. Ver `naoEntregar`. */
+  @Post("assignments/:id/nao-entregar")
+  naoEntregar(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.inventory.naoEntregar(req.ctx, id);
+  }
+
   @Post("assignments/:id/return")
   returnAssignment(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: ReturnDto) {
     return this.inventory.returnAssignment(req.ctx, id, dto);

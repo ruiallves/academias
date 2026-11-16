@@ -9,6 +9,8 @@ import { DeleteItemDialog } from "@/components/inventory/DeleteItemDialog";
 import { EditItemDialog } from "@/components/inventory/EditItemDialog";
 import { DeliverDialog } from "@/components/inventory/DeliverDialog";
 import { ReturnDialog } from "@/components/inventory/ReturnDialog";
+import { BotaoEntregar, EstadoDaEntregaPill, quandoDaEntrega } from "@/components/inventory/PorEntregar";
+import { EditAssignmentDialog } from "@/components/inventory/EditAssignmentDialog";
 import { ItemPhotos } from "@/components/inventory/ItemPhotos";
 import { PagamentoPill } from "@/components/inventory/PagamentoDaEntrega";
 import { StockDialog } from "@/components/inventory/StockDialog";
@@ -26,6 +28,7 @@ import {
   addVariant,
   getItem,
   listAssignments,
+  comAtletasTexto,
   porAVendaNoSite,
   tirarDoSite,
   updateVariant,
@@ -65,11 +68,13 @@ export default function ItemDetail() {
   const [entregar, setEntregar] = useState(false);
   const [renomear, setRenomear] = useState<Variant | null>(null);
   const [devolver, setDevolver] = useState<Assignment | null>(null);
+  const [editarEntrega, setEditarEntrega] = useState<Assignment | null>(null);
 
   async function carregar() {
     setErro(null);
     try {
-      const [d, a] = await Promise.all([getItem(id), listAssignments({ itemId: id, status: "ACTIVE" }).catch(() => [])]);
+      // Sem estado: o que está com atletas e o que está por entregar.
+      const [d, a] = await Promise.all([getItem(id), listAssignments({ itemId: id }).catch(() => [])]);
       setData(d);
       setComAtletas(a);
     } catch (e) {
@@ -136,7 +141,10 @@ export default function ItemDetail() {
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-3">
           <Panel>
-            <PanelHead title="Tamanhos" hint={`${data.available} prontas de ${data.total} · ${data.assigned} com atletas`}>
+            <PanelHead
+              title="Tamanhos"
+              hint={`${data.available} prontas de ${data.total} · ${comAtletasTexto(data, "nenhum com atletas")}`}
+            >
               {podeEscrever && (
                 <button type="button" className="ctl-ghost" onClick={() => setNovoTamanho(true)}>
                   <Plus className="size-3.5" strokeWidth={1.75} />
@@ -189,7 +197,7 @@ export default function ItemDetail() {
 
             {separador === "atletas" ? (
               comAtletas.length === 0 ? (
-                <Empty title="Ninguém tem este artigo" detail="O que se entrega aparece aqui até ser devolvido." icon={PackageOpen} compact />
+                <Empty title="Ninguém tem este artigo" detail="O que se entrega (ou fica por entregar) aparece aqui até ser devolvido." icon={PackageOpen} compact />
               ) : (
                 <ul className="divide-y divide-line">
                   {comAtletas.map((a) => (
@@ -201,11 +209,24 @@ export default function ItemDetail() {
                         </Link>
                         <span className="ml-2 text-meta text-ink-3">
                           {a.variantLabel}
-                          {a.quantity > 1 && ` ×${a.quantity}`} · desde {shortDate(new Date(a.assignedAt))}
+                          {a.quantity > 1 && ` ×${a.quantity}`} · {quandoDaEntrega(a)}
                         </span>
                       </span>
-                      <PagamentoPill p={a.pagamento} />
+                      <EstadoDaEntregaPill status={a.status} onClick={podeEscrever ? () => setEditarEntrega(a) : undefined} />
+                      <PagamentoPill p={a.pagamento} onClick={podeEscrever ? () => setEditarEntrega(a) : undefined} />
+                      {podeEscrever && a.status === "RESERVED" && <BotaoEntregar assignment={a} onDone={() => void carregar()} />}
                       {podeEscrever && (
+                        <button
+                          type="button"
+                          aria-label={`Editar o equipamento de ${a.athleteName}`}
+                          title="Editar"
+                          className="ctl-ghost h-7 px-1.5 text-ink-3"
+                          onClick={() => setEditarEntrega(a)}
+                        >
+                          <Pencil className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                      )}
+                      {podeEscrever && a.status === "ACTIVE" && (
                         <button
                           type="button"
                           className="ctl-ghost h-7 text-meta text-ink-3 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
@@ -279,6 +300,21 @@ export default function ItemDetail() {
           onDone={() => {
             setEntregar(false);
             void carregar();
+          }}
+        />
+      )}
+
+      {editarEntrega && (
+        <EditAssignmentDialog
+          assignment={editarEntrega}
+          onClose={() => setEditarEntrega(null)}
+          onDone={() => {
+            setEditarEntrega(null);
+            void carregar();
+          }}
+          onDevolver={() => {
+            setDevolver(editarEntrega);
+            setEditarEntrega(null);
           }}
         />
       )}
@@ -399,7 +435,7 @@ function Mosaico({
       </p>
       <BarraDoTamanho v={v} />
       <p className="text-[11px] leading-snug text-ink-3">
-        {v.assigned > 0 ? `${v.assigned} com atletas` : "nenhum com atletas"}
+        {comAtletasTexto(v, "nenhum com atletas")}
         {v.minimumStock > 0 && ` · mín. ${v.minimumStock}`}
         {baixas > 0 && <span className="block">{`${v.damaged} danificadas · ${v.lost} perdidas`}</span>}
       </p>
@@ -765,7 +801,7 @@ function EditVariantDialog({ variant, onClose, onDone }: { variant: Variant; onC
     <Dialog
       labelledBy="editar-tamanho"
       title={`Editar ${variant.label}`}
-      subtitle={`${variant.total} unidades · ${variant.assigned} com atletas`}
+      subtitle={`${variant.total} unidades · ${comAtletasTexto(variant, "nenhum com atletas")}`}
       onClose={onClose}
       footer={
         <>
