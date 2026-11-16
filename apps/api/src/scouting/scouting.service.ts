@@ -574,7 +574,7 @@ export class ScoutingService {
     const year = date.getUTCFullYear();
     const now = new Date().getUTCFullYear();
     // A mesma janela dos atletas. Fora disto é quase sempre erro de digitação.
-    if (Number.isNaN(date.getTime()) || year < now - 60 || year > now - 3) {
+    if (Number.isNaN(date.getTime()) || year < now - 100 || year > now - 3) {
       throw new BadRequestException("Data de nascimento improvável");
     }
     return date;

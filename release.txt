@@ -1,3 +1,6 @@
+16/11/2026
+- Atletas e Scouting: a data de nascimento aceita idades até 100 anos (antes recusava acima dos 60 com "Data de nascimento improvável").
+
 15/11/2026
 - Consola, Sócios: a lista deixou de ficar em branco quando um sócio tem uma quota anual paga (período só com o ano, como "2026"); aparece "2026" na coluna Última quota, a verde até acabar o ano de quotas desse sócio.
 - Consola: um erro numa página já não deixa a consola toda em branco; o menu fica e a página diz que não abriu, com um botão para tentar outra vez.

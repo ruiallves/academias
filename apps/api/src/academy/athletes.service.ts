@@ -195,7 +195,7 @@ export class AthletesService {
         const year = birth.getUTCFullYear();
         // A mesma janela da inscrição. Uma data fora disto é quase de certeza um
         // erro de digitação (2105 em vez de 2015).
-        if (Number.isNaN(birth.getTime()) || year < new Date().getUTCFullYear() - 60 || year > new Date().getUTCFullYear() - 3) {
+        if (Number.isNaN(birth.getTime()) || year < new Date().getUTCFullYear() - 100 || year > new Date().getUTCFullYear() - 3) {
           throw new BadRequestException("Data de nascimento improvável");
         }
         data.birthdate = birth;
@@ -1294,9 +1294,9 @@ export class AthletesService {
 
     const birth = new Date(dto.birthdate);
     const year = birth.getUTCFullYear();
-    // Um atleta de formação nasceu, na prática, entre há 3 e há 60 anos. Fora
+    // Um atleta nasceu entre há 3 e há 100 anos (veteranos de 65 existem; 16/11). Fora
     // disto é quase de certeza um erro de digitação (2105 em vez de 2015).
-    if (Number.isNaN(birth.getTime()) || year < new Date().getUTCFullYear() - 60 || year > new Date().getUTCFullYear() - 3) {
+    if (Number.isNaN(birth.getTime()) || year < new Date().getUTCFullYear() - 100 || year > new Date().getUTCFullYear() - 3) {
       return { error: "Data de nascimento improvável" };
     }
 
