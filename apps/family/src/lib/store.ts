@@ -154,6 +154,8 @@ type ApiMatch = {
   endsAt: string;
   venue: string;
   opponent: string;
+  /** O emblema do adversário. Ausente num servidor antigo. */
+  opponentLogo?: { pequeno: string; grande: string } | null;
   isHome: boolean;
   status: string;
   ourScore: number | null;
@@ -432,6 +434,8 @@ export type Match = {
   end: Date;
   venue: string;
   opponent: string;
+  /** O emblema do adversário (do diretório dos clubes, ou carregado pelo clube). Nulo sem emblema. */
+  opponentLogo: { pequeno: string; grande: string } | null;
   isHome: boolean;
   cancelled: boolean;
   /** O filho está nesta convocatória — e ela já foi enviada às famílias. */
@@ -1056,6 +1060,7 @@ function build(
         end: new Date(m.endsAt),
         venue: m.venue,
         opponent: m.opponent,
+        opponentLogo: m.opponentLogo ?? null,
         isHome: m.isHome,
         cancelled,
         calledUp,

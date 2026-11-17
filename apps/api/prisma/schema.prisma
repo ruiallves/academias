@@ -381,6 +381,7 @@ model Academy {
   siteOrders         SiteOrder[]
   siteOrderItems     SiteOrderItem[]
   siteOrderEvents    SiteOrderEvent[]
+  clubLogoProposals  ClubLogoProposal[]
 
   adjuntoConversations AdjuntoConversation[]
   adjuntoMessages      AdjuntoMessage[]
@@ -2828,6 +2829,12 @@ model Match {
   competitionId String?
   competition   CatalogItem? @relation("MatchCompetition", fields: [competitionId], references: [id], onDelete: SetNull)
 
+  /// O adversário no diretório dos clubes federados (`KnownClub`), quando foi
+  /// escolhido de lá: é por aqui que o emblema aparece. `opponent` continua a
+  /// ser o nome escrito, e um adversário fora do diretório fica só com ele.
+  opponentClubId String?
+  opponentClub   KnownClub? @relation(fields: [opponentClubId], references: [id], onDelete: SetNull)
+
   /// Os balneários deste jogo — nenhum, um, ou vários.
   ///
   /// Nasceu com a lista, sem singular por trás: o jogo nunca teve balneário
@@ -4651,6 +4658,13 @@ model CatalogItem {
   /// convocatória chama atletas de qualquer escalão. Ver `convocaDeQualquerEscalao`.
   official Boolean @default(true)
 
+  /// Só para `kind = "eventTypes"`: o tipo é privado e os eventos dele só
+  /// aparecem ao staff. Um evento privado não tem escalão (fica da academia
+  /// toda, para o staff) nem vai para o site. Qualquer tipo pode sê-lo; um
+  /// treino ou jogo privado grava-se como `CalendarEvent` (sem plantel, logo
+  /// sem presenças nem convocatória). Ver `veEventosPrivados`.
+  staffOnly Boolean @default(false)
+
   /// Arquivado, não apagado. Apagar "Campo 2" reescreveria o local de todos os
   /// treinos que lá aconteceram; arquivar tira-o dos menus e deixa a história
   /// intacta.
@@ -4819,6 +4833,113 @@ enum PlatformRole {
   /// Não vê academias, contas, tickets nem nada de clientes. O `PlatformGuard`
   /// recusa-o em todas as rotas que não o nomeiem.
   COMERCIAL
+}
+
+/// O diretório dos clubes federados de Portugal, com o emblema de cada um.
+///
+/// Futebol e futsal vêm do diretório de clubes da FPF (a API que a página
+/// fpf.pt/pt/Clubes usa), o basquetebol da lista de clubes da FPB. É uma lista
+/// da plataforma, igual para todos os clubes: serve para pôr o emblema do
+/// adversário num jogo, numa convocatória ou no site, sem cada clube ter de o
+/// carregar. Só o importador escreve (`scripts/emblemas-importar.mjs`, com a
+/// ligação de migração); `academia_app` só lê (ver a migração).
+///
+/// ## O emblema e o egress
+///
+/// As imagens vivem no bucket público `emblemas`, já tratadas (WebP a 256 e a
+/// 64 px, mais o original), debaixo de `<id>/<versao>/`. O endereço é fixo e
+/// serve-se com cache de um ano: o browser guarda o emblema e não volta a
+/// pedi-lo, e uma lista com vinte jogos custa uns 60 KB uma vez. Quando o
+/// emblema muda, muda a versão, e com ela o endereço (ver `logoVersion`).
+model KnownClub {
+  id String @id @default(cuid())
+
+  /// Como a federação o escreve: "Sporting Clube de Braga".
+  name      String
+  /// O nome curto, quando a fonte o dá (a FPB dá; a FPF não).
+  shortName String?
+  /// Sem acentos, minúsculas, sem pontuação: é por aqui que se procura.
+  normalizedName String
+
+  /// A associação como a federação a escreve: "A.F. Braga", "Associação de Basquetebol do Porto".
+  association String?
+  /// O distrito ou região tirado da associação: "Braga", "Porto", "Madeira".
+  region      String?
+  /// A localidade ou o pavilhão, quando a fonte o dá.
+  locality    String?
+
+  /// As modalidades em que a federação o tem: football, futsal, beach_football, basketball.
+  sports String[] @default([])
+
+  /// O id do clube na FPF e na FPB, para o importador voltar a encontrá-lo.
+  fpfId Int? @unique
+  fpbId Int? @unique
+  /// De onde veio o emblema e quando se foi buscar.
+  sourceLogoUrl String?
+  fetchedAt     DateTime?
+
+  /// O emblema no bucket `emblemas`: `<id>/<versao>` tem `256.webp`, `64.webp` e `original.<ext>`. Nulo = sem emblema.
+  logoKey     String?
+  logoVersion Int     @default(0)
+  /// SHA-1 do ficheiro original: um emblema igual não volta a tratar-se nem a subir.
+  logoHash    String?
+  logoWidth   Int?
+  logoHeight  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  matches   Match[]
+  proposals ClubLogoProposal[]
+
+  @@index([normalizedName])
+  @@index([region])
+}
+
+enum ClubLogoProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Um emblema que um clube carregou para um adversário que não o tinha.
+///
+/// Para o clube que o carregou fica logo a valer: aparece nos jogos dele com
+/// esse adversário, sem esperar por ninguém. Para a plataforma é uma proposta:
+/// o painel vê o que foi carregado e aprova (passa a ser o emblema do clube no
+/// diretório, para toda a gente) ou rejeita (deixa de aparecer, sem o clube
+/// ser avisado). As imagens vivem no bucket `emblemas`, em
+/// `propostas/<academyId>/<id>/` (original, 256 e 64).
+model ClubLogoProposal {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// O clube do diretório, quando o adversário foi escolhido de lá. Nulo quando
+  /// é um nome escrito à mão: ao aprovar, a plataforma cria-o.
+  knownClubId String?
+  knownClub   KnownClub? @relation(fields: [knownClubId], references: [id], onDelete: SetNull)
+  /// O nome como o clube o escreveu no adversário, e a forma normalizada para o encontrar nos jogos.
+  clubName       String
+  normalizedName String
+
+  /// O prefixo no bucket: `propostas/<academyId>/<id>`. Nulo até o ficheiro ser confirmado.
+  logoKey String?
+  status  ClubLogoProposalStatus @default(PENDING)
+
+  byUserId String?
+  byName   String?
+  /// A revisão no painel.
+  reviewedAt DateTime?
+  reviewedBy String?
+  reviewNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+  @@index([knownClubId])
+  @@index([status, createdAt])
 }
 
 /// Um plano que **nós** vendemos às academias.

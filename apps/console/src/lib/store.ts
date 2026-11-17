@@ -261,11 +261,16 @@ export type ApiEvent = {
   coachId: string | null; coachName: string | null;
   /** Aparece no site do clube. Só faz sentido no que não é treino nem jogo. Ausente num servidor antigo. */
   isPublic?: boolean;
+  /** O tipo é privado: só o staff o vê. Ausente num servidor antigo. */
+  privado?: boolean;
 };
 
 export type ApiMatch = {
   id: string; teamId: string; teamName: string; maxCallUps: number;
   startsAt: string; endsAt: string; venue: string; opponent: string; isHome: boolean;
+  /** O adversário no diretório dos clubes e o emblema dele. Ausentes num servidor antigo. */
+  opponentClubId?: string | null;
+  opponentLogo?: { pequeno: string; grande: string } | null;
   status: string; ourScore: number | null; theirScore: number | null;
   /**
    * Quem o dirige — o do jogo, ou o da equipa quando o jogo não tem o seu.

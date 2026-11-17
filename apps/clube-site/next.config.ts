@@ -44,6 +44,18 @@ const config: NextConfig = {
     TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY ?? "",
   },
   images: {
+    /*
+     * Sem o optimizador do Vercel.
+     *
+     * A 17/11 a quota de optimização de imagens da conta acabou e o Vercel
+     * passou a responder 402 (`OPTIMIZED_IMAGE_REQUEST_PAYMENT_REQUIRED`) a
+     * todas as imagens que não tinha em cache: no CB Fundão, a Mochila Atleta
+     * (artigo novo) aparecia sem fotografia. As imagens do site já saem da
+     * consola reduzidas a 1600 px em WebP (`enviarImagem`), e as do Supabase
+     * têm endereço fixo e cache no CDN dele: o optimizador pouco ganhava e
+     * fazia depender o site de uma quota. Servem-se tal como estão.
+     */
+    unoptimized: true,
     remotePatterns: [
       // As fotos do clube vivem no Supabase Storage, como tudo o resto.
       { protocol: "https", hostname: "*.supabase.co" },

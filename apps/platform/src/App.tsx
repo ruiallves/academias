@@ -10,6 +10,7 @@ import Audit from "@/routes/Audit";
 import Admins from "@/routes/Admins";
 import Legal from "@/routes/Legal";
 import Novidades from "@/routes/Novidades";
+import Emblemas from "@/routes/Emblemas";
 import Comercial from "@/routes/comercial/Comercial";
 import Hoje from "@/routes/comercial/Hoje";
 import Clubes from "@/routes/comercial/Clubes";
@@ -63,6 +64,8 @@ export default function App({ me }: { me: Me }) {
         <Route path="registo" element={<Audit />} />
         <Route path="administradores" element={<Admins me={me} />} />
         <Route path="comunicados" element={<Novidades />} />
+        {/* Os emblemas que os clubes carregaram para os adversários, para rever. */}
+        <Route path="emblemas" element={<Emblemas />} />
         {/* O endereço antigo, para os favoritos e os links já partilhados. */}
         <Route path="novidades" element={<Navigate to="/comunicados" replace />} />
         <Route path="legal" element={<Legal me={me} />} />

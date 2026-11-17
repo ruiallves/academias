@@ -1080,14 +1080,17 @@ export class Executor {
       // O tipo do evento, do catálogo.
       let typeId: string | undefined;
       let tipoLabel: string | null = null;
+      /** Tipo privado: só o staff vê, sem equipa nem site. O servidor aplica-o ao confirmar (`createSingleEvent`). */
+      let privado = false;
       if (kind === "OTHER" && d.tipo) {
-        const tipos = await db.catalogItem.findMany({ where: { kind: "eventTypes", archivedAt: null }, select: { id: true, label: true } });
+        const tipos = await db.catalogItem.findMany({ where: { kind: "eventTypes", archivedAt: null }, select: { id: true, label: true, staffOnly: true } });
         const achados = acharNaLista(tipos, String(d.tipo), (x) => [x.label]);
         if (achados.length > 1) return { dados: { pergunta: "Há mais do que um tipo parecido." }, pergunta: { texto: "Que tipo de evento?", opcoes: achados.slice(0, 8).map((x) => ({ id: x.label, label: x.label })), campo: "tipo" } };
         const t = achados[0];
         if (!t) return { dados: { erro: `Não há nenhum tipo de evento "${String(d.tipo)}". Os que existem: ${tipos.map((x) => x.label).join(", ") || "nenhum"}.` } };
         typeId = t.id;
         tipoLabel = t.label;
+        privado = t.staffOnly;
       }
       const repeat = d.repetir_ate ? { freq: "WEEKLY" as const, until: String(d.repetir_ate), weekdays: lerDiasDaSemana(d.dias_da_semana as string | undefined) } : undefined;
 
@@ -1110,21 +1113,23 @@ export class Executor {
       const titulo = kind === "TRAINING" ? `Treino · ${equipa!.name}` : kind === "MATCH" ? (d.casa === false ? `${String(d.adversario)} vs ${equipa!.name}` : `${equipa!.name} vs ${String(d.adversario)}`) : String(d.titulo);
       const dto = {
         kind,
-        teamId: equipa?.id,
+        teamId: privado ? undefined : equipa?.id,
         title: titulo.slice(0, 120),
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
         venue: local.local,
         ...(balnearios.length ? { dressingRooms: balnearios } : {}),
         ...(kind === "MATCH" ? { opponent: String(d.adversario).slice(0, 80), isHome: d.casa !== false, competitionId } : {}),
-        ...(kind === "OTHER" && d.publico === true ? { isPublic: true } : {}),
+        ...(kind === "OTHER" && d.publico === true && !privado ? { isPublic: true } : {}),
         ...(kind === "TRAINING" ? { respondBy: d.quem_avisa === "ATHLETE" ? "ATHLETE" : "GUARDIAN", ...(coachId ? { coachId } : {}) } : {}),
         ...(typeId ? { typeId } : {}),
         ...(repeat ? { repeat } : {}),
       };
       const rotulo = kind === "TRAINING" ? "Treino" : kind === "MATCH" ? "Jogo" : "Evento";
       const linhas = [
-        ...(equipa ? [{ rotulo: "Equipa", valor: equipa.name }] : [{ rotulo: "Equipa", valor: "Clube todo" }]),
+        ...(privado
+          ? [{ rotulo: "Quem vê", valor: "Só o staff" }]
+          : equipa ? [{ rotulo: "Equipa", valor: equipa.name }] : [{ rotulo: "Equipa", valor: "Clube todo" }]),
         { rotulo: "Quando", valor: `${quando(startsAt)} até ${formatarNoFuso(endsAt, { hour: "2-digit", minute: "2-digit" })}` },
         { rotulo: "Local", valor: local.local },
         ...(kind === "MATCH" && d.casa === false ? [] : [{ rotulo: "Balneários", valor: balnearios.length ? balnearios.join(", ") : "nenhum" }]),

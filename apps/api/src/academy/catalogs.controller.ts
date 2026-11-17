@@ -20,6 +20,8 @@ class UpdateCatalogItemDto {
   @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @Matches(/^#[0-9a-fA-F]{6}$/) color?: string | null;
   /** Só nas competições: oficial ou não. Ver `convocaDeQualquerEscalao`. */
   @IsOptional() @IsBoolean() official?: boolean;
+  /** Só nos tipos de evento: privado (só o staff vê) ou público. Ver `CatalogItem.staffOnly`. */
+  @IsOptional() @IsBoolean() staffOnly?: boolean;
 }
 
 /**

@@ -645,10 +645,23 @@ export class AthletesService {
        * ligue coisas pode cascatar à vontade, uma que registe o que aconteceu tem
        * de ser contada.
        */
+      /*
+       * Sócio-atleta: a fotografia do sócio ligado vive na ficha de atleta (ver
+       * `members/foto-do-socio.ts`). Se o sócio não tem uma sua, fica com esta,
+       * em vez de a perder com o atleta. A ligação cai sozinha (`SetNull`).
+       */
+      const socioLigado = athlete.photoKey
+        ? await db.member.findFirst({ where: { athleteId: id }, select: { id: true, photoKey: true } })
+        : null;
+      const fotoFicaNoSocio = Boolean(socioLigado && !socioLigado.photoKey);
+      if (socioLigado && fotoFicaNoSocio) {
+        await db.member.update({ where: { id: socioLigado.id }, data: { photoKey: athlete.photoKey } });
+      }
+
       await db.athlete.delete({ where: { id } });
 
       /*
-       * A fotografia sai com ele.
+       * A fotografia sai com ele (salvo se passou para o sócio, acima).
        *
        * A cascata do Postgres não chega ao armazenamento: sem esta linha ficava
        * no bucket a fotografia de uma criança sem nenhum registo que lhe
@@ -659,7 +672,7 @@ export class AthletesService {
        * Não trava o apagar se falhar. O atleta já não existe, e devolver erro
        * aqui era dizer que a operação falhou quando ela foi feita.
        */
-      if (athlete.photoKey) {
+      if (athlete.photoKey && !fotoFicaNoSocio) {
         await this.storage.remove(PHOTO_BUCKET, athlete.photoKey).catch(() => {
           this.log.warn(`Fotografia ${athlete.photoKey} ficou por apagar depois de remover o atleta ${id}.`);
         });

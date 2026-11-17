@@ -13,6 +13,7 @@ import { partesNoFuso } from "../common/fuso";
 import { aberturaAnual, gerarQuotas, periodoCorrente, periodoDaQuota, refazerAnoDeQuotas, situacaoDeQuotas } from "./member-fees.service";
 import { decisaoDoAnoDaFolha } from "./cobertura";
 import { categoriaDeMenores, pagoPelaFamilia } from "./socio-menor";
+import { chaveDaFotoDoSocio, FOTO_DO_ATLETA_LIGADO, juntarFotoAoLigar } from "./foto-do-socio";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import type {
@@ -271,7 +272,7 @@ export class MembersService {
           userId: true, inviteSentAt: true, photoKey: true,
           tier: { select: { id: true, name: true, feeCents: true, billing: true, maxAge: true } },
           /* O atleta que este sócio é (sócio-atleta). Ver `socio-menor.ts`. */
-          athlete: { select: { id: true, name: true } },
+          athlete: { select: { id: true, name: true, photoKey: true } },
         },
       });
 
@@ -342,15 +343,20 @@ export class MembersService {
      */
     const assinadas = await this.storage.signMany(
       PHOTO_BUCKET,
-      lista.members.map((m) => m.photoKey).filter((k): k is string => Boolean(k)),
+      lista.members.map(chaveDaFotoDoSocio).filter((k): k is string => Boolean(k)),
       PHOTO_TTL,
     );
     return {
       ...lista,
-      members: lista.members.map(({ photoKey, ...m }) => ({
-        ...m,
-        photoUrl: photoKey ? (assinadas.get(photoKey) ?? null) : null,
-      })),
+      members: lista.members.map(({ photoKey, athlete, ...m }) => {
+        /* Sócio-atleta: a cara é a da ficha de atleta. Ver `foto-do-socio.ts`. */
+        const chave = chaveDaFotoDoSocio({ photoKey, athlete });
+        return {
+          ...m,
+          athlete: athlete ? { id: athlete.id, name: athlete.name } : null,
+          photoUrl: chave ? (assinadas.get(chave) ?? null) : null,
+        };
+      }),
     };
   }
 
@@ -377,7 +383,7 @@ export class MembersService {
           userId: true, inviteSentAt: true, photoKey: true,
           tier: { select: { id: true, name: true, feeCents: true, billing: true, maxAge: true } },
           approvedBy: { select: { user: { select: { name: true } } } },
-          athlete: { select: { id: true, name: true } },
+          athlete: { select: { id: true, name: true, photoKey: true } },
         },
       });
       if (!m) throw new NotFoundException("Sócio não encontrado");
@@ -419,9 +425,11 @@ export class MembersService {
     });
 
     // Rede fora da transação — ver `list`.
-    const { photoKey, ...resto } = ficha;
-    const photoUrl = photoKey ? await this.storage.signDownload(PHOTO_BUCKET, photoKey, PHOTO_TTL) : null;
-    return { ...resto, photoUrl };
+    const { photoKey, athlete, ...resto } = ficha;
+    /* Sócio-atleta: a cara é a da ficha de atleta. Ver `foto-do-socio.ts`. */
+    const chave = chaveDaFotoDoSocio({ photoKey, athlete });
+    const photoUrl = chave ? await this.storage.signDownload(PHOTO_BUCKET, chave, PHOTO_TTL) : null;
+    return { ...resto, athlete: athlete ? { id: athlete.id, name: athlete.name } : null, photoUrl };
   }
 
   /**
@@ -677,6 +685,7 @@ export class MembersService {
         where: { cardToken: token },
         select: {
           name: true, number: true, status: true, photoKey: true,
+          athlete: FOTO_DO_ATLETA_LIGADO,
           tier: { select: { name: true } },
         },
       }),
@@ -689,7 +698,8 @@ export class MembersService {
       number: member.number,
       status: member.status,
       tierName: member.tier?.name ?? null,
-      photoUrl: member.photoKey ? await this.storage.signDownload(PHOTO_BUCKET, member.photoKey, PHOTO_TTL) : null,
+      /* Sócio-atleta: a cara é a da ficha de atleta. Ver `foto-do-socio.ts`. */
+      photoUrl: chaveDaFotoDoSocio(member) ? await this.storage.signDownload(PHOTO_BUCKET, chaveDaFotoDoSocio(member)!, PHOTO_TTL) : null,
     };
   }
 
@@ -1366,7 +1376,11 @@ export class MembersService {
        */
       for (const u of update) await db.member.update({ where: { id: u.id }, data: u.data });
       // E os sócios que já existiam e passam a sócios-atletas.
-      for (const a of associar) await db.member.update({ where: { id: a.id }, data: { athleteId: a.athleteId, updatedAt: now } });
+      for (const a of associar) {
+        await db.member.update({ where: { id: a.id }, data: { athleteId: a.athleteId, updatedAt: now } });
+        /* A fotografia passa a ser uma só. Ver `foto-do-socio.ts`. */
+        await juntarFotoAoLigar(db, a.id);
+      }
 
       /*
        * E o ano de quotas de quem a folha mudou.

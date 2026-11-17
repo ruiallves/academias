@@ -173,7 +173,7 @@ export class EventsImportService {
         /* Os nomes que a folha usa, resolvidos de uma vez. */
         const [equipas, tipos, provas] = await Promise.all([
           db.team.findMany({ select: { id: true, name: true } }),
-          db.catalogItem.findMany({ where: { kind: "eventTypes", archivedAt: null }, select: { id: true, label: true } }),
+          db.catalogItem.findMany({ where: { kind: "eventTypes", archivedAt: null }, select: { id: true, label: true, staffOnly: true } }),
           db.catalogItem.findMany({ where: { kind: "competitions", archivedAt: null }, select: { id: true, label: true } }),
         ]);
         const porNome = <T extends { label?: string; name?: string }>(xs: T[]) =>
@@ -221,6 +221,7 @@ export class EventsImportService {
            * é o recurso quando ela não traz tipo.
            */
           let typeId: string | null = null;
+          let privado = false;
           if (row.type?.trim()) {
             const tipo = tipoPorNome.get(chave(row.type));
             if (!tipo) {
@@ -228,13 +229,26 @@ export class EventsImportService {
               continue;
             }
             typeId = tipo.id;
+            privado = tipo.staffOnly;
           }
-          const kind = kindDoRotulo(row.type ?? "", row.kind ?? "");
+          /*
+           * Um tipo privado é só do staff: sem equipa e gravado como evento do
+           * calendário, como no diálogo (`createSingleEvent`). Um treino ou jogo
+           * privado não tem plantel, por isso não abre presenças nem convocatória.
+           */
+          const kind = privado ? "OTHER" : kindDoRotulo(row.type ?? "", row.kind ?? "");
+          if (privado && scope) {
+            falha("Só a direção marca eventos privados");
+            continue;
+          }
+          const semEquipa = privado;
 
           /* A equipa. Um treino e um jogo têm sempre uma; os outros podem ser da casa. */
           let teamId: string | null = null;
           let teamName: string | null = null;
-          if (row.team?.trim()) {
+          if (semEquipa) {
+            // A coluna da equipa ignora-se: um evento privado é da academia toda, para o staff.
+          } else if (row.team?.trim()) {
             const equipa = equipaPorNome.get(chave(row.team));
             if (!equipa) {
               falha(`Equipa desconhecida: "${row.team.trim()}"`);

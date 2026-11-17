@@ -349,7 +349,7 @@ export default function MatchDetail() {
                 </button>
               </CartaoTopo>
               <div className="flex items-center gap-3 px-5 pb-5">
-                <Emblema nome={match.opponent} tamanho={44} />
+                <Emblema nome={match.opponent} logo={match.opponentLogo?.grande ?? null} tamanho={44} />
                 {jogados.length > 0 ? (
                   <div className="flex gap-4 text-center">
                     {[
@@ -587,6 +587,7 @@ function Scoreboard({
       adversario={match.opponent}
       emCasa={match.isHome}
       logo={academy.logoUrl}
+      logoAdversario={match.opponentLogo?.grande ?? null}
       contexto={[match.competition?.label, match.roundLabel].filter(Boolean).join(" · ") || "Jogo"}
       estado={{ chave: "", ...estado }}
       rodape={estados}

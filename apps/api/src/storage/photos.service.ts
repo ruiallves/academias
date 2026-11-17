@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "./storage.service";
 import { EspacoService } from "./espaco.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { FOTO_DO_ATLETA_LIGADO } from "../members/foto-do-socio";
 
 /**
  * Fotografias de atletas, de staff e de sócios.
@@ -159,13 +160,20 @@ export class PhotosService {
   }
 
   private async athleteRemove(academyId: string, athleteId: string) {
-    const before = await this.prisma.runAs(academyId, async (db) => {
+    const antes = await this.prisma.runAs(academyId, async (db) => {
       const previous = await db.athlete.findFirst({ where: { id: athleteId }, select: { photoKey: true } });
       await db.athlete.update({ where: { id: athleteId }, data: { photoKey: null } });
-      return previous?.photoKey ?? null;
+      /*
+       * O sócio ligado a este atleta fica também sem foto: senão voltava a
+       * aparecer a dele, guardada de antes, e as duas fichas deixavam de ter a
+       * mesma cara. Ver `members/foto-do-socio.ts`.
+       */
+      const socio = await db.member.findFirst({ where: { athleteId }, select: { id: true, photoKey: true } });
+      if (socio?.photoKey) await db.member.update({ where: { id: socio.id }, data: { photoKey: null } });
+      return [previous?.photoKey ?? null, socio?.photoKey ?? null];
     });
 
-    if (before) await this.storage.remove(PHOTO_BUCKET, before);
+    for (const chave of antes) if (chave) await this.storage.remove(PHOTO_BUCKET, chave);
 
     return { ok: true };
   }
@@ -295,25 +303,45 @@ export class PhotosService {
     }
 
     // Rede fora da transação — ver a explicação em `setAthletePhoto`.
-    const before = await this.prisma.runAs(academyId, async (db) => {
-      const previous = await db.member.findFirst({ where: { id: memberId }, select: { photoKey: true } });
+    const antes = await this.prisma.runAs(academyId, async (db) => {
+      const previous = await db.member.findFirst({
+        where: { id: memberId },
+        select: { photoKey: true, athleteId: true, athlete: FOTO_DO_ATLETA_LIGADO },
+      });
+      /*
+       * Sócio-atleta: a fotografia é uma só, a do atleta (ver
+       * `members/foto-do-socio.ts`). A nova vai para a ficha de atleta e a
+       * coluna do sócio fica vazia; as duas antigas deixam de ter dono.
+       */
+      if (previous?.athleteId) {
+        await db.athlete.update({ where: { id: previous.athleteId }, data: { photoKey: key } });
+        await db.member.update({ where: { id: memberId }, data: { photoKey: null } });
+        return [previous.photoKey, previous.athlete?.photoKey ?? null];
+      }
       await db.member.update({ where: { id: memberId }, data: { photoKey: key } });
-      return previous?.photoKey ?? null;
+      return [previous?.photoKey ?? null];
     });
 
-    if (before && before !== key) await this.storage.remove(PHOTO_BUCKET, before);
+    for (const chave of antes) if (chave && chave !== key) await this.storage.remove(PHOTO_BUCKET, chave);
 
     return { photoUrl: await this.storage.signDownload(PHOTO_BUCKET, key, PHOTO_TTL) };
   }
 
   private async memberRemove(academyId: string, memberId: string) {
-    const before = await this.prisma.runAs(academyId, async (db) => {
-      const previous = await db.member.findFirst({ where: { id: memberId }, select: { photoKey: true } });
+    const antes = await this.prisma.runAs(academyId, async (db) => {
+      const previous = await db.member.findFirst({
+        where: { id: memberId },
+        select: { photoKey: true, athleteId: true, athlete: FOTO_DO_ATLETA_LIGADO },
+      });
       await db.member.update({ where: { id: memberId }, data: { photoKey: null } });
-      return previous?.photoKey ?? null;
+      /* Sócio-atleta: tirar a foto aqui tira-a também da ficha de atleta, que é onde ela vive. */
+      if (previous?.athleteId && previous.athlete?.photoKey) {
+        await db.athlete.update({ where: { id: previous.athleteId }, data: { photoKey: null } });
+      }
+      return [previous?.photoKey ?? null, previous?.athleteId ? (previous.athlete?.photoKey ?? null) : null];
     });
 
-    if (before) await this.storage.remove(PHOTO_BUCKET, before);
+    for (const chave of antes) if (chave) await this.storage.remove(PHOTO_BUCKET, chave);
 
     return { ok: true };
   }

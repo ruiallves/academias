@@ -15,7 +15,7 @@ import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { DIAS_DO_MES } from "../members/member-fees.service";
 import { generoPeloNome, type TeamGenderValue } from "./teams.dto";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
-import { assertPodeResponderPor, athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
+import { assertPodeResponderPor, athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter, veEventosPrivados } from "../common/permissions";
 import {
   gerarCobrancas,
   inicioDaProximaEpoca,
@@ -55,7 +55,7 @@ const EVENT_SELECT = {
   dressingRoom: true,
   dressingRooms: true,
   /* O vocabulário do clube para este evento — ver `CalendarEvent.typeId`. */
-  type: { select: { id: true, label: true } },
+  type: { select: { id: true, label: true, staffOnly: true } },
   cancelled: true,
   isPublic: true,
   coach: { select: { id: true, user: { select: { name: true } } } },
@@ -102,9 +102,11 @@ function serializeEvent(e: EventRow, porEquipa?: Map<string, { id: string; name:
     typeId: e.type?.id ?? null,
     /** Como o clube chama a isto. Nulo cai no rótulo do `kind`, como sempre. */
     typeLabel: e.type?.label ?? null,
+    /** Só o staff o vê: o tipo é privado. Ver `veEventosPrivados`. */
+    privado: e.type?.staffOnly === true,
     cancelled: e.cancelled,
-    /** No site do clube. Ver `CalendarEvent.isPublic`. */
-    isPublic: e.isPublic,
+    /** No site do clube. Ver `CalendarEvent.isPublic`. Um privado nunca vai. */
+    isPublic: e.isPublic && e.type?.staffOnly !== true,
     coachId: e.coach?.id ?? daEquipa?.id ?? null,
     coachName: e.coach?.user.name ?? daEquipa?.name ?? null,
   };
@@ -212,6 +214,8 @@ type EdicaoDeEvento = {
   typeId?: string;
   isPublic?: boolean;
   opponent?: string;
+  /** O adversário no diretório dos clubes. Nulo tira a ligação; ausente não mexe. */
+  opponentClubId?: string | null;
   isHome?: boolean;
   competitionId?: string;
   /** Quem dá o treino. Vazio volta ao principal. Ver `treinadorEscolhido`. */
@@ -2892,6 +2896,8 @@ export class AcademyService {
         where: {
           startsAt: { gte: from, lte: to },
           ...(scope ? { OR: [{ teamId: scope }, { teamId: null }] } : {}),
+          // Os eventos de um tipo privado ficam só para o staff. Ver `veEventosPrivados`.
+          ...(veEventosPrivados(ctx) ? {} : { AND: [{ OR: [{ typeId: null }, { type: { staffOnly: false } }] }] }),
         },
         orderBy: { startsAt: "asc" },
         select: EVENT_SELECT,
@@ -2953,6 +2959,8 @@ export class AcademyService {
       /** No site do clube. Ver `CalendarEvent.isPublic`. */
       isPublic?: boolean;
       opponent?: string;
+      /** O adversário no diretório dos clubes, quando foi escolhido de lá. */
+      opponentClubId?: string | null;
       isHome?: boolean;
       /** A prova, só nos jogos. Ver `Match.competitionId`. */
       competitionId?: string;
@@ -3160,6 +3168,7 @@ export class AcademyService {
       /** No site do clube. Só nos eventos do calendário. */
       isPublic?: boolean;
       opponent?: string;
+      opponentClubId?: string | null;
       isHome?: boolean;
       competitionId?: string;
       /** Quem avisa a falta, num treino. Ver `ResponderBy`. */
@@ -3194,10 +3203,24 @@ export class AcademyService {
       if (dto.typeId) {
         const tipo = await db.catalogItem.findFirst({
           where: { id: dto.typeId, kind: "eventTypes", archivedAt: null },
-          select: { id: true },
+          select: { id: true, staffOnly: true },
         });
         if (!tipo) throw new BadRequestException("Tipo de evento desconhecido");
         typeId = tipo.id;
+        /*
+         * Um tipo privado: o evento é só do staff.
+         *
+         * Sem escalão (é da academia toda, para o staff) e fora do site. Qualquer
+         * tipo pode ser privado, Treino e Jogo incluídos; um treino ou jogo
+         * privado não tem plantel, por isso grava-se como evento do calendário
+         * (sem presenças nem convocatória) e o tipo continua a dizer o que é.
+         * Marcar um evento sem escalão é da direção, como os outros eventos da
+         * academia toda; um treinador com âmbito não marca privados.
+         */
+        if (tipo.staffOnly) {
+          if (scope) throw new ForbiddenException("Só a direção marca eventos privados");
+          dto = { ...dto, kind: "OTHER", teamId: undefined, isPublic: false, opponent: undefined, opponentClubId: undefined, competitionId: undefined, coachId: undefined };
+        }
       }
       if (dto.teamId) {
         if (scope && !scope.in.includes(dto.teamId)) throw new ForbiddenException("Equipa fora do teu âmbito");
@@ -3282,6 +3305,8 @@ export class AcademyService {
             // deitava-o fora. Ver a migração `20260908120000`.
             dressingRooms: balnearios,
             opponent: dto.opponent.trim(),
+            // O adversário no diretório dos clubes, quando foi escolhido de lá: é por aqui que o emblema aparece.
+            opponentClubId: dto.opponentClubId ?? null,
             isHome: dto.isHome ?? true,
             competitionId: dto.competitionId,
           },
@@ -4836,6 +4861,8 @@ export class AcademyService {
             endsAt,
             ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
             ...(dto.opponent !== undefined ? { opponent: dto.opponent.trim() } : {}),
+            // Nulo tira a ligação ao diretório (passou a nome escrito à mão); ausente não mexe.
+            ...(dto.opponentClubId !== undefined ? { opponentClubId: dto.opponentClubId } : {}),
             ...(dto.isHome !== undefined ? { isHome: dto.isHome } : {}),
             ...(dto.competitionId !== undefined ? { competitionId: dto.competitionId } : {}),
             ...(balnearios !== undefined ? { dressingRooms: balnearios } : {}),
@@ -4867,7 +4894,7 @@ export class AcademyService {
       /* ------------------------------------------------ evento genérico --- */
       const ev = await db.calendarEvent.findFirst({
         where: { id },
-        select: { id: true, teamId: true, startsAt: true, endsAt: true },
+        select: { id: true, teamId: true, startsAt: true, endsAt: true, type: { select: { staffOnly: true } } },
       });
       if (!ev) throw new NotFoundException("Evento não encontrado");
       if (scope && (ev.teamId === null || !scope.in.includes(ev.teamId))) {
@@ -4880,15 +4907,21 @@ export class AcademyService {
        * evento deste clube e por arquivar. String vazia tira-o.
        */
       let tipoEditado: string | null | undefined;
+      let privado = ev.type?.staffOnly === true;
       if (dto.typeId !== undefined) {
-        if (!dto.typeId) tipoEditado = null;
-        else {
+        if (!dto.typeId) {
+          tipoEditado = null;
+          privado = false;
+        } else {
           const tipo = await db.catalogItem.findFirst({
             where: { id: dto.typeId, kind: "eventTypes", archivedAt: null },
-            select: { id: true },
+            select: { id: true, staffOnly: true },
           });
           if (!tipo) throw new BadRequestException("Tipo de evento desconhecido");
+          // Passar a privado tira o escalão: é da direção, como na criação.
+          if (tipo.staffOnly && scope) throw new ForbiddenException("Só a direção marca eventos privados");
           tipoEditado = tipo.id;
+          privado = tipo.staffOnly;
         }
       }
 
@@ -4909,6 +4942,11 @@ export class AcademyService {
           ...(balnearios !== undefined ? { dressingRoom: balnearios[0] ?? null, dressingRooms: balnearios } : {}),
           ...(tipoEditado !== undefined ? { typeId: tipoEditado } : {}),
           ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
+          // Um evento privado não tem escalão nem vai para o site. Ver `CatalogItem.staffOnly`.
+          // O escalão só sai quando o tipo passa a privado nesta edição: um evento antigo de um tipo que
+          // depois ficou privado guarda a equipa, e quem o edita não a perde sem ter pedido.
+          ...(privado ? { isPublic: false } : {}),
+          ...(privado && tipoEditado !== undefined ? { teamId: null } : {}),
         },
         select: EVENT_SELECT,
       });

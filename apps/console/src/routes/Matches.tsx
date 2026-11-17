@@ -501,6 +501,7 @@ function paraLinha(m: MatchListRow, agora: number): JogoNaLista {
     id: m.id,
     equipa: m.teamName,
     adversario: m.opponent,
+    emblema: m.opponentLogo?.pequeno ?? null,
     emCasa: m.isHome,
     prova: m.competition?.label ?? null,
     inicio,

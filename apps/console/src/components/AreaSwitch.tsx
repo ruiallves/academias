@@ -120,6 +120,7 @@ export function AreaSwitch({ asList }: { asList?: boolean }) {
               role="dialog"
               aria-modal="true"
               aria-label="Mudar de área"
+              data-versao-ignorar
               className="mobile-sheet w-full rounded-t-[20px] bg-surface p-3 shadow-[var(--shadow-pop)]"
               style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
             >

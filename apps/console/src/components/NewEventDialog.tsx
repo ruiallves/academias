@@ -8,11 +8,12 @@ import { apiPost } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
-import { Settings } from "@/lib/icons";
+import { Lock, Settings } from "@/lib/icons";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
+import type { Emblema } from "@/lib/clubes";
 import { CampoQuemDaOTreino } from "./CampoQuemDaOTreino";
 import { Repetir, useRepeticao } from "./Repetir";
 import { Interruptor } from "./definicoes/ui";
@@ -71,8 +72,12 @@ export function NewEventDialog({
    * Definições e não os encontrava aqui. Agora a lista é a do clube, e o que se
    * grava é o tipo escolhido (ver `CalendarEvent.typeId`).
    */
-  const eventTypes = useActiveCatalog("eventTypes");
   const mayTargetWholeAcademy = session.scope?.teamIds === undefined;
+  /*
+   * Os privados só para quem marca eventos sem escalão (a direção): um evento
+   * privado é da academia toda, para o staff. O servidor recusa-o na mesma.
+   */
+  const eventTypes = useActiveCatalog("eventTypes").filter((t) => mayTargetWholeAcademy || !t.staffOnly);
 
   /**
    * O tipo escolhido, por id do catálogo.
@@ -104,7 +109,14 @@ export function NewEventDialog({
     eventTypes.find((t) => kindOfEventType(t.label) === kindPedido) ??
     eventTypes[0] ??
     null;
-  const kind: EventKind = tipoEfectivo ? kindOfEventType(tipoEfectivo.label) : kindPedido;
+  /*
+   * Um tipo privado (Definições › Tipos de evento): só o staff vê o evento.
+   * Não tem escalão, porque não aparece a escalão nenhum, e não vai para o site.
+   * Vale para qualquer tipo, Treino e Jogo incluídos: sem plantel não há
+   * presenças nem convocatória, por isso o formulário é o de um evento.
+   */
+  const privado = tipoEfectivo?.staffOnly === true;
+  const kind: EventKind = privado ? "other" : tipoEfectivo ? kindOfEventType(tipoEfectivo.label) : kindPedido;
 
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(toInputDate(day));
@@ -124,6 +136,9 @@ export function NewEventDialog({
   /** Quem dá o treino. Vazio é o treinador principal. Ver `CampoQuemDaOTreino`. */
   const [coachId, setCoachId] = useState("");
   const [opponent, setOpponent] = useState("");
+  /** O adversário no diretório dos clubes, quando foi escolhido de lá; e o emblema que está a valer. */
+  const [opponentClubId, setOpponentClubId] = useState<string | null>(null);
+  const [emblemaDoAdversario, setEmblemaDoAdversario] = useState<Emblema | null>(null);
   const [isHome, setIsHome] = useState(true);
   const [competitionId, setCompetitionId] = useState("");
   /*
@@ -180,8 +195,8 @@ export function NewEventDialog({
    * estágios e reuniões, onde faz sentido.
    */
   const needsTeam = isMatch || kind === "training";
-  /** O interruptor do site: só com o site no plano, e nunca num treino nem num jogo. */
-  const podeIrParaOSite = !needsTeam && store.academy.websiteIncluido;
+  /** O interruptor do site: só com o site no plano, e nunca num treino, num jogo ou num privado. */
+  const podeIrParaOSite = !needsTeam && !privado && store.academy.websiteIncluido;
 
   const teamName = teams.find((t) => t.id === teamId)?.name;
   /*
@@ -192,6 +207,8 @@ export function NewEventDialog({
     ? opponent.trim() && teamName
       ? matchTitle({ isHome, opponent: opponent.trim(), teamName })
       : `${KIND_LABEL[kind]} · ${teamName ?? ""}`
+    : privado
+      ? (tipoEfectivo?.label ?? KIND_LABEL[kind])
     : teamId
       ? `${KIND_LABEL[kind]} · ${teamName}`
       : `${KIND_LABEL[kind]} · toda a academia`;
@@ -258,7 +275,8 @@ export function NewEventDialog({
       await apiPost("/api/events", {
         // O enum da base é em maiúsculas; a consola trabalha em minúsculas.
         kind: kind.toUpperCase(),
-        ...(teamId ? { teamId } : {}),
+        // Um privado não tem escalão: é da academia toda, para o staff.
+        ...(teamId && !privado ? { teamId } : {}),
         title: title.trim() || suggested,
         startsAt: new Date(y, m - 1, d, sh, sm).toISOString(),
         endsAt: new Date(y, m - 1, d, eh, em).toISOString(),
@@ -270,7 +288,7 @@ export function NewEventDialog({
         ...(tipoEfectivo ? { typeId: tipoEfectivo.id } : {}),
         ...(kind === "training" ? { respondBy } : {}),
         ...(kind === "training" && coachId ? { coachId } : {}),
-        ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
+        ...(isMatch ? { opponent: opponent.trim(), opponentClubId, isHome } : {}),
         ...(isMatch && competitionId ? { competitionId } : {}),
         ...(podeIrParaOSite && isPublic ? { isPublic: true } : {}),
         ...(repeticao.repeat ? { repeat: repeticao.repeat } : {}),
@@ -366,6 +384,13 @@ export function NewEventDialog({
           )}
         </DialogField>
 
+        {/* Privado: o escalão sai do formulário, porque o evento não aparece a escalão nenhum. */}
+        {privado ? (
+          <p className="flex items-center gap-2 rounded-[var(--radius-control)] bg-sunken/60 px-3 py-2 text-meta text-ink-3">
+            <Lock className="size-3.5 shrink-0" strokeWidth={1.75} />
+            Evento privado: só o staff o vê no calendário.
+          </p>
+        ) : (
         <DialogField label="Escalão">
           <div className="flex items-center gap-2">
             <span
@@ -404,12 +429,22 @@ export function NewEventDialog({
             />
           </div>
         </DialogField>
+        )}
 
         {/* Só um jogo tem adversário — e é ele que o torna convocável. */}
         {isMatch && (
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Adversário">
-              <CampoAdversario value={opponent} onChange={setOpponent} />
+              <CampoAdversario
+                value={opponent}
+                onChange={setOpponent}
+                clubId={opponentClubId}
+                onClubChange={setOpponentClubId}
+                emblema={emblemaDoAdversario}
+                onEmblemaChange={setEmblemaDoAdversario}
+                // A modalidade da equipa: um clube de basquetebol encontra os clubes da FPB primeiro.
+                modalidade={store.academy.sports.find((s) => s.id === teams.find((t) => t.id === teamId)?.sportId)?.code ?? undefined}
+              />
             </DialogField>
 
             <DialogField label="Onde">

@@ -29,6 +29,7 @@ import { StorageService } from "../storage/storage.service";
 import { anexosDasNotificacoes, assinarAnexosDosAvisos, avisoDaNotificacao } from "../academy/anexos-do-aviso";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
 import { fichaDeSocioDaConta } from "../members/socio-menor";
+import { chaveDaFotoDoSocio } from "../members/foto-do-socio";
 import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
 import { SELECT_VENDAS, tiposQueSeVendem, vendeOnline } from "../common/vendas-online";
 import { tiposValidos } from "../site/site.tipos";
@@ -436,6 +437,11 @@ export class ClubAppService {
         await db.member.update({ where: { id: socio.id }, data: { cardToken } });
       }
 
+      /* Sócio-atleta: a cara do cartão é a da ficha de atleta. Ver `members/foto-do-socio.ts`. */
+      const atletaLigado = socio.athleteId
+        ? await db.athlete.findFirst({ where: { id: socio.athleteId }, select: { photoKey: true } })
+        : null;
+
       const [tier, fees, apagados] = await Promise.all([
         socio.tierId
           ? db.memberTier.findFirst({
@@ -553,7 +559,7 @@ export class ClubAppService {
           memberSince: socio.approvedAt ?? socio.createdAt,
           /* A chave sai daqui só para ser assinada lá fora — rede fora da
              transação, como em todo o lado. Não chega à app. */
-          photoKey: socio.photoKey,
+          photoKey: chaveDaFotoDoSocio({ photoKey: socio.photoKey, athlete: atletaLigado }),
           /* O QR é `CARD_QR_PREFIX + token` — opaco, revogável, sem um único
              dado pessoal lá dentro. */
           cardQr: academia?.memberCardEnabled && academia.memberCardQrEnabled && cardToken

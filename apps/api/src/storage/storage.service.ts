@@ -454,10 +454,17 @@ export class StorageService {
    * Para o que chega à API já inteiro e pequeno (a fatura em PDF que o painel
    * anexa), onde um upload assinado a partir do browser era uma volta a mais.
    */
-  async upload(bucket: string, key: string, data: Buffer, contentType: string): Promise<void> {
+  async upload(bucket: string, key: string, data: Buffer, contentType: string, opcoes: { cacheControl?: string } = {}): Promise<void> {
     const res = await fetch(`${this.url}/storage/v1/object/${bucket}/${key}`, {
       method: "POST",
-      headers: { apikey: this.key, Authorization: `Bearer ${this.key}`, "Content-Type": contentType, "x-upsert": "true" },
+      headers: {
+        apikey: this.key,
+        Authorization: `Bearer ${this.key}`,
+        "Content-Type": contentType,
+        "x-upsert": "true",
+        // Num bucket público com endereços fixos (os emblemas), é isto que faz o browser guardar o ficheiro.
+        ...(opcoes.cacheControl ? { "cache-control": opcoes.cacheControl } : {}),
+      },
       body: new Uint8Array(data),
     });
     if (!res.ok) {

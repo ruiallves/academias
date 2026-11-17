@@ -10,6 +10,7 @@ import { Settings, Trash2, TriangleAlert } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
+import type { Emblema } from "@/lib/clubes";
 import { CampoQuemDaOTreino } from "./CampoQuemDaOTreino";
 import { Interruptor } from "./definicoes/ui";
 import { cx, SelectField } from "./primitives";
@@ -54,7 +55,8 @@ export function EditEventDialog({
   const isMatch = event.kind === "match";
   const competicoes = team?.competitions ?? [];
   /** O site do clube: só com o site no plano, e só no que não é treino nem jogo. Ver `NewEventDialog`. */
-  const podeIrParaOSite = !isMatch && event.kind !== "training" && store.academy.websiteIncluido;
+  // Um evento privado (o tipo é só do staff) nunca vai para o site.
+  const podeIrParaOSite = !isMatch && event.kind !== "training" && !event.privado && store.academy.websiteIncluido;
   const [isPublic, setIsPublic] = useState(event.isPublic ?? false);
 
   const [title, setTitle] = useState(event.title);
@@ -67,6 +69,9 @@ export function EditEventDialog({
     event.dressingRooms ?? (event.dressingRoom ? [event.dressingRoom] : []),
   );
   const [opponent, setOpponent] = useState(event.match?.opponent ?? "");
+  /** O adversário no diretório dos clubes, e o emblema que está a valer. */
+  const [opponentClubId, setOpponentClubId] = useState<string | null>(event.match?.opponentClubId ?? null);
+  const [emblemaDoAdversario, setEmblemaDoAdversario] = useState<Emblema | null>(event.match?.opponentLogo ?? null);
   const [isHome, setIsHome] = useState(event.match?.home ?? true);
   const [competitionId, setCompetitionId] = useState(event.match?.competition?.id ?? competicoes[0]?.id ?? "");
   /** Quem dá o treino. O servidor manda o principal quando não há outro. Ver `CampoQuemDaOTreino`. */
@@ -120,6 +125,7 @@ export function EditEventDialog({
     if (event.kind !== "training" && !isMatch && title.trim() && title !== event.title) mudou.title = title.trim();
     if (isMatch) {
       if (opponent.trim() !== event.match?.opponent) mudou.opponent = opponent.trim();
+      if (opponentClubId !== (event.match?.opponentClubId ?? null)) mudou.opponentClubId = opponentClubId;
       if (isHome !== event.match?.home) mudou.isHome = isHome;
       if (competitionId && competitionId !== event.match?.competition?.id) mudou.competitionId = competitionId;
     }
@@ -194,14 +200,22 @@ export function EditEventDialog({
       <form id="form-editar-evento" onSubmit={submit} className="space-y-4 p-5">
         {/* O tipo e o escalão dizem-se, não se escolhem — ver a nota do cabeçalho. */}
         <p className="rounded-[var(--radius-control)] bg-sunken/60 px-3 py-2 text-meta leading-relaxed text-ink-3">
-          O tipo e o escalão não se alteram aqui: cada tipo de evento guarda coisas diferentes — presenças, convocatória,
-          ficha. Para mudar um deles, apaga este e marca outro.
+          {event.privado
+            ? "Evento privado: só o staff o vê, e não tem escalão. O tipo não se altera aqui: para mudar, apaga este e marca outro."
+            : "O tipo e o escalão não se alteram aqui: cada tipo de evento guarda coisas diferentes, como presenças, convocatória ou ficha. Para mudar um deles, apaga este e marca outro."}
         </p>
 
         {isMatch && (
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Adversário">
-              <CampoAdversario value={opponent} onChange={setOpponent} />
+              <CampoAdversario
+                value={opponent}
+                onChange={setOpponent}
+                clubId={opponentClubId}
+                onClubChange={setOpponentClubId}
+                emblema={emblemaDoAdversario}
+                onEmblemaChange={setEmblemaDoAdversario}
+              />
             </DialogField>
 
             <DialogField label="Onde">

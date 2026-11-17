@@ -96,6 +96,11 @@ export type CatalogItem = {
    * atletas de qualquer escalão. Ausente num servidor antigo: conta como oficial.
    */
   official?: boolean;
+  /**
+   * Só nos tipos de evento: privado. Os eventos dele só aparecem ao staff, não
+   * têm escalão e não vão para o site. Ausente num servidor antigo: público.
+   */
+  staffOnly?: boolean;
 };
 
 export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; placeholder: string; noteLabel?: string }> = {
@@ -159,6 +164,7 @@ type ApiItem = {
   sportId: string | null;
   color?: string | null;
   official?: boolean;
+  staffOnly?: boolean;
 };
 
 const EMPTY: Record<CatalogKey, CatalogItem[]> = {
@@ -214,6 +220,7 @@ export function loadCatalogs(force = false): Promise<void> {
           sportId: r.sportId,
           ...(r.color ? { color: r.color } : {}),
           ...(r.official === false ? { official: false } : {}),
+          ...(r.staffOnly === true ? { staffOnly: true } : {}),
         });
       }
       state = next;
@@ -284,6 +291,12 @@ export async function setItemColor(id: string, color: string | null): Promise<vo
 /** Uma competição oficial ou não. Ver `convocaDeQualquerEscalao` na API. */
 export async function setItemOfficial(id: string, official: boolean): Promise<void> {
   await apiPatch(`/api/catalogs/${id}`, { official });
+  await loadCatalogs(true);
+}
+
+/** Um tipo de evento privado (só o staff vê) ou público. Ver `CatalogItem.staffOnly` na API. */
+export async function setItemStaffOnly(id: string, staffOnly: boolean): Promise<void> {
+  await apiPatch(`/api/catalogs/${id}`, { staffOnly });
   await loadCatalogs(true);
 }
 

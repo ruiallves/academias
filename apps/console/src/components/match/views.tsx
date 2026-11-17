@@ -23,6 +23,7 @@ export function CabecalhoDoJogo({
   adversario,
   emCasa,
   logo,
+  logoAdversario,
   contexto,
   estado,
   centro,
@@ -32,6 +33,8 @@ export function CabecalhoDoJogo({
   adversario: string;
   emCasa: boolean;
   logo?: string | null;
+  /** O emblema do adversário (do diretório, ou carregado). */
+  logoAdversario?: string | null;
   /** A prova e a jornada, por cima. */
   contexto: string;
   estado: EstadoDoJogo;
@@ -40,7 +43,7 @@ export function CabecalhoDoJogo({
   rodape?: ReactNode;
 }) {
   const nos = <Lado nome={equipa} sub={emCasa ? "Casa" : "Fora"} logo={logo} nosso />;
-  const eles = <Lado nome={adversario} sub={emCasa ? "Fora" : "Casa"} />;
+  const eles = <Lado nome={adversario} sub={emCasa ? "Fora" : "Casa"} logo={logoAdversario} />;
   return (
     <Cartao className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 sm:px-7">
@@ -82,6 +85,8 @@ export type JogoNaLista = {
   id: string;
   equipa: string;
   adversario: string;
+  /** O emblema do adversário, pequeno. Nulo = iniciais. */
+  emblema?: string | null;
   emCasa: boolean;
   prova: string | null;
   inicio: Date;
@@ -136,7 +141,7 @@ export function ProximoJogo({ jogo, logo }: { jogo: JogoNaLista; logo?: string |
             <span className="flex items-center">
               <Emblema nome={jogo.equipa} logo={logo} nosso tamanho={52} />
               <span className="-ml-2 rounded-[16px] ring-4 ring-surface">
-                <Emblema nome={jogo.adversario} tamanho={52} />
+                <Emblema nome={jogo.adversario} logo={jogo.emblema} tamanho={52} />
               </span>
             </span>
             <div className="min-w-0">
@@ -202,7 +207,7 @@ export function LinhaDeJogo({ jogo }: { jogo: JogoNaLista }) {
 
         {/* O adversário. No telemóvel o emblema sai, para o nome caber. */}
         <span className="max-sm:hidden">
-          <Emblema nome={jogo.adversario} tamanho={40} />
+          <Emblema nome={jogo.adversario} logo={jogo.emblema} tamanho={40} />
         </span>
         <span className="min-w-0 flex-1">
           <span className={cx("block truncate text-[15px] leading-tight font-semibold tracking-[-0.01em]", jogo.cancelado ? "text-ink-4 line-through" : "text-ink")}>

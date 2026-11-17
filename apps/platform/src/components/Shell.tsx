@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Briefcase, Building2, CalendarDays, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, Sun, TrendingUp, Users, Wallet } from "lucide-react";
+import { Briefcase, Building2, CalendarDays, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, ShieldHalf, Sun, TrendingUp, Users, Wallet } from "lucide-react";
 import { ADMIN_ROLE_LABEL } from "@/lib/types";
 import { TICKETS_MUDARAM } from "@/lib/tickets";
 import { signOut } from "@/lib/session";
@@ -41,6 +41,8 @@ const NAV: NavItem[] = [
   // O que mudou, contado aos clubes. Fica depois do registo porque é a última
   // coisa de um ciclo de trabalho: fez-se, ficou registado, conta-se.
   { to: "/comunicados", label: "Comunicados", icon: Megaphone },
+  // Os emblemas carregados pelos clubes para os adversários: o "double check" por fora.
+  { to: "/emblemas", label: "Emblemas", icon: ShieldHalf },
   // Termos, políticas e DPA — versões, publicação e quem já aceitou.
   { to: "/legal", label: "Legal", icon: Scale },
 ];

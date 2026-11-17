@@ -63,6 +63,8 @@ import {
   today,
   unrecordedSessions,
   naEquipa,
+  numeroNaEquipa,
+  posicaoNaEquipa,
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
@@ -647,9 +649,25 @@ function RosterTab({
       ),
     },
     {
+      /*
+       * O número da camisola ao lado da posição (pedido do Rui, 17/11/2026).
+       * Os dois são **desta equipa**: o 10 no futebol pode ser o 7 no futsal,
+       * e antes a posição vinha da equipa principal do atleta.
+       */
       key: "position",
-      header: "Posição",
-      render: (a) => <span className="text-ink-2">{a.position ?? "—"}</span>,
+      header: "N.º e posição",
+      render: (a) => {
+        const numero = numeroNaEquipa(a, team.id);
+        const posicao = posicaoNaEquipa(a, team.id);
+        return (
+          <div className="flex items-center gap-2.5">
+            <span className={cx("w-6 shrink-0 text-right font-semibold tabular", numero != null ? "text-ink" : "text-ink-4")}>
+              {numero ?? "—"}
+            </span>
+            <span className="text-ink-2">{posicao ?? "—"}</span>
+          </div>
+        );
+      },
     },
     {
       key: "guardian",

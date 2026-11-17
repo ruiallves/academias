@@ -715,6 +715,17 @@ export function calendarScopeFilter(ctx: RequestContext): { in: string[] } | und
   return undefined;
 }
 
+/**
+ * Vê os eventos privados: quem é do staff.
+ *
+ * Um tipo de evento marcado como privado nas Definições (`CatalogItem.staffOnly`)
+ * fica só para o staff: uma reunião de treinadores, uma reunião da direção. As
+ * famílias e os atletas não o recebem, nem no calendário nem no site.
+ */
+export function veEventosPrivados(ctx: RequestContext): boolean {
+  return ctx.role !== "GUARDIAN" && ctx.role !== "ATHLETE";
+}
+
 /** Esta equipa é minha? — a pergunta que decide o que se mostra de cada linha. */
 export function inTeamScope(ctx: RequestContext, teamId: string | null): boolean {
   const scope = teamScopeFilter(ctx);

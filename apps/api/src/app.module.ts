@@ -69,6 +69,8 @@ import { PlatformPrisma } from "./platform/platform.prisma";
 import { ContactsController, ContactsCalendarController } from "./platform/contacts.controller";
 import { TicketsController } from "./platform/tickets.controller";
 import { ReleasesController } from "./platform/releases.controller";
+import { EmblemasPropostosController } from "./platform/emblemas.controller";
+import { EmblemasPropostosService } from "./platform/emblemas.service";
 import { TicketsService } from "./platform/tickets.service";
 import { ReleasesService } from "./platform/releases.service";
 import { SiteContactController } from "./platform/site-contact.controller";
@@ -126,6 +128,8 @@ import { SiteController } from "./site/site.controller";
 import { SiteService } from "./site/site.service";
 import { PatrocinadoresController } from "./patrocinadores/patrocinadores.controller";
 import { PatrocinadoresService } from "./patrocinadores/patrocinadores.service";
+import { DiretorioDeClubesController } from "./clubes/diretorio.controller";
+import { DiretorioDeClubesService } from "./clubes/diretorio.service";
 import { SitePublicoController } from "./site/site-publico.controller";
 import { SiteContactoController } from "./site/site-contacto.controller";
 import { BilheteiraAppController, BilheteiraConsolaController, BilheteiraPublicaController } from "./bilheteira/bilheteira.controller";
@@ -238,6 +242,8 @@ import { ImportacaoService } from "./adjunto/importacao/importacao.service";
     // Público por construção — é o formulário de contacto do site de marketing.
     TicketsController,
     ReleasesController,
+    // Os emblemas que os clubes carregaram para os adversários, para rever.
+    EmblemasPropostosController,
     SiteContactController,
     // O manifest da PWA com a marca do clube, na raiz da origem do clube.
     TenantAssetsController,
@@ -248,6 +254,8 @@ import { ImportacaoService } from "./adjunto/importacao/importacao.service";
     SiteController,
     // Gestão → Patrocinadores: a mesma lista do site e das parcerias da app do sócio.
     PatrocinadoresController,
+    // O diretório dos clubes federados de Portugal, com os emblemas (só leitura).
+    DiretorioDeClubesController,
     SitePublicoController,
     SiteContactoController,
     BilheteiraPublicaController,
@@ -316,6 +324,7 @@ import { ImportacaoService } from "./adjunto/importacao/importacao.service";
     PlatformPrisma,
     TicketsService,
     ReleasesService,
+    EmblemasPropostosService,
     ContactsService,
     ComercialService,
     AdminInvitesService,
@@ -328,6 +337,7 @@ import { ImportacaoService } from "./adjunto/importacao/importacao.service";
     ClubLogoService,
     SiteService,
     PatrocinadoresService,
+    DiretorioDeClubesService,
     SitePublicoService,
     BilheteiraService,
     BilheteiraEmissao,

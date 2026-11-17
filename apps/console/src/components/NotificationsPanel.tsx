@@ -52,6 +52,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
       ref={ref}
       role="dialog"
       aria-label="Notificações"
+      data-versao-ignorar
       /*
         Abre para a **direita**, e não para a esquerda.
 

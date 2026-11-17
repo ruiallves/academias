@@ -433,6 +433,8 @@ export class SitePublicoService {
         where: {
           isPublic: true,
           cancelled: false,
+          // Um evento de um tipo privado é só do staff, mesmo que tenha ficado marcado para o site.
+          OR: [{ typeId: null }, { type: { staffOnly: false } }],
           startsAt: { gte: new Date(agora - 86_400_000), lte: new Date(agora + 365 * 86_400_000) },
         },
         orderBy: { startsAt: "asc" },

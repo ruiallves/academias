@@ -13,7 +13,7 @@ import { apiPatch } from "@/lib/http";
 import { events as storeEvents, matches as storeMatches, sessions as storeSessions, reloadAcademy } from "@/lib/store";
 import { athleteById, coachById, teamById } from "@/lib/api";
 import { longDate, shortName, time } from "@/lib/format";
-import { Ban, ClipboardCheck, Globe, MapPin, Pencil, RefreshCw, Trash2, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
+import { Ban, ClipboardCheck, Globe, Lock, MapPin, Pencil, RefreshCw, Trash2, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import type { Session } from "@/lib/permissions";
 import { cx, Monogram, Pill } from "./primitives";
@@ -244,6 +244,18 @@ export function EventDetail({
             {/* A prova de um jogo é um facto básico como a hora: é ela que sai
                 impressa na convocatória, e vê-la aqui poupa abrir a página. */}
             {event.match?.competition && <Fact icon={Trophy} label={event.match.competition.label} />}
+            {/* Um evento privado só aparece ao staff: diz-se, para ninguém contar que as famílias o viram. */}
+            {event.privado && (
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
+                  <Lock className="size-3.5" strokeWidth={1.75} />
+                </span>
+                {/* A mesma cor das Definições: o privado vê-se de relance. */}
+                <span className="inline-flex items-center rounded-full bg-ink px-2 py-0.5 text-[11px] font-semibold leading-tight text-surface">
+                  Privado · só o staff vê
+                </span>
+              </div>
+            )}
             {/* Um evento público está no site do clube: diz-se, porque é o que o distingue dos outros. */}
             {event.isPublic && (
               <div className="flex items-center gap-2.5">
@@ -484,8 +496,11 @@ function MatchBody({
   return (
     <div className="border-b border-line px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-body text-ink-2">
-          {match.home ? "Casa" : "Fora"} · vs <strong className="font-semibold text-ink">{match.opponent}</strong>
+        <span className="inline-flex items-center gap-2 text-body text-ink-2">
+          {match.opponentLogo && <img src={match.opponentLogo.pequeno} alt="" className="size-6 rounded-[6px] border border-line bg-surface object-contain p-px" />}
+          <span>
+            {match.home ? "Casa" : "Fora"} · vs <strong className="font-semibold text-ink">{match.opponent}</strong>
+          </span>
         </span>
         {match.source?.provider === "zerozero" && (
           <span

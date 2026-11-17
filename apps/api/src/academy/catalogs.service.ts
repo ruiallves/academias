@@ -216,7 +216,7 @@ export class CatalogsService {
         orderBy: [{ kind: "asc" }, { order: "asc" }, { label: "asc" }],
         select: {
           id: true, kind: true, label: true, note: true, order: true,
-          isSystem: true, archivedAt: true, sportId: true, color: true, official: true,
+          isSystem: true, archivedAt: true, sportId: true, color: true, official: true, staffOnly: true,
         },
       });
     });
@@ -276,7 +276,7 @@ export class CatalogsService {
           },
           select: {
             id: true, kind: true, label: true, note: true, order: true,
-            isSystem: true, archivedAt: true, sportId: true, color: true, official: true,
+            isSystem: true, archivedAt: true, sportId: true, color: true, official: true, staffOnly: true,
           },
         });
       } catch (error) {
@@ -291,13 +291,17 @@ export class CatalogsService {
   async update(
     ctx: RequestContext,
     id: string,
-    dto: { label?: string; note?: string; order?: number; color?: string | null; official?: boolean },
+    dto: { label?: string; note?: string; order?: number; color?: string | null; official?: boolean; staffOnly?: boolean },
   ) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const item = await db.catalogItem.findFirst({ where: { id }, select: { id: true, isSystem: true, kind: true } });
+      const item = await db.catalogItem.findFirst({ where: { id }, select: { id: true, isSystem: true, kind: true, label: true } });
       if (!item) throw new NotFoundException("Item não encontrado");
+      // Qualquer tipo de evento pode ser privado, Treino e Jogo incluídos. Ver `createSingleEvent`.
+      if (dto.staffOnly !== undefined && item.kind !== "eventTypes") {
+        throw new BadRequestException("Só os tipos de evento são públicos ou privados");
+      }
       if (dto.official !== undefined) {
         if (item.kind !== "competitions") throw new BadRequestException("Só as competições são oficiais ou não");
         // O "Amigável" é não oficial por definição: é a prova de qualquer jogo fora de campeonato.
@@ -317,6 +321,7 @@ export class CatalogsService {
           // Em minúsculas, que é o que a base aceita (ver o CHECK da migração).
           ...(dto.color !== undefined ? { color: dto.color ? dto.color.toLowerCase() : null } : {}),
           ...(dto.official !== undefined ? { official: dto.official } : {}),
+          ...(dto.staffOnly !== undefined ? { staffOnly: dto.staffOnly } : {}),
           updatedAt: new Date(),
         },
       });

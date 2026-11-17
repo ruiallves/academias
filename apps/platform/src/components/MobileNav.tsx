@@ -126,6 +126,7 @@ function MenuSheet({ items, me, onClose }: { items: MobileNavItem[]; me: Me; onC
         role="dialog"
         aria-modal="true"
         aria-label="Menu"
+        data-versao-ignorar
         className="mobile-sheet flex max-h-[88dvh] w-full flex-col rounded-t-[20px] bg-surface shadow-[var(--shadow-pop)]"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >

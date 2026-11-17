@@ -1,4 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { emblemasDosAdversarios } from "../clubes/emblemas";
 import { avisarTreinadores, textoDoAviso, treinadoresAAvisar } from "./aviso-ao-treinador";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -43,7 +45,13 @@ export class MatchesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
+
+  /** A raiz dos endereços públicos do Supabase, para os emblemas dos adversários. */
+  private baseDosEmblemas(): string {
+    return this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
+  }
 
   /** Jogos do âmbito, com a convocatória e o plantel elegível de cada equipa. */
   async list(ctx: RequestContext, from?: Date, to?: Date) {
@@ -78,7 +86,7 @@ export class MatchesService {
         orderBy: { startsAt: "asc" },
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-          opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
+          opponent: true, opponentClubId: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true,
           // A logística do dia — o que a app da família mostra ao pai e o que o
           // PDF imprime. Ver a migração `20260912120000`.
@@ -155,6 +163,8 @@ export class MatchesService {
        * mudava nada, porque o jogo nunca chegou a perguntar por ele.
        */
       const porEquipa = await headCoaches(db, matches.map((m) => m.teamId));
+      // O emblema de cada adversário (do diretório, ou o que este clube carregou), numa ida só.
+      const emblemas = await emblemasDosAdversarios(db, this.baseDosEmblemas(), matches);
 
       return matches.map((m) => {
         /*
@@ -178,6 +188,10 @@ export class MatchesService {
           endsAt: m.endsAt,
           venue: m.venue,
           opponent: m.opponent,
+          /** O adversário no diretório dos clubes, quando foi escolhido de lá. */
+          opponentClubId: m.opponentClubId,
+          /** O emblema do adversário: do diretório, ou o que este clube carregou. Nulo sem emblema. */
+          opponentLogo: emblemas.get(m.id) ?? null,
           isHome: m.isHome,
           competition: m.competition ? { id: m.competition.id, label: m.competition.label } : null,
           status: m.status,
@@ -293,7 +307,7 @@ export class MatchesService {
         where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-          opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
+          opponent: true, opponentClubId: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true, statsEnteredAt: true, addedMinutes: true, overtimeMinutes: true,
           // A logística dita ao submeter — a folha em PDF lê-a daqui.
           roundLabel: true, meetingPoint: true, meetingAt: true, arrivalAt: true,
@@ -396,6 +410,8 @@ export class MatchesService {
         },
       });
 
+      const emblemas = await emblemasDosAdversarios(db, this.baseDosEmblemas(), [m]);
+
       return {
         id: m.id,
         teamId: m.teamId,
@@ -403,6 +419,9 @@ export class MatchesService {
         maxAge: m.team.maxAge,
         sportId: m.team.sportId,
         maxCallUps: m.team.maxCallUps,
+        /** O adversário no diretório dos clubes, e o seu emblema (ou o que este clube carregou). */
+        opponentClubId: m.opponentClubId,
+        opponentLogo: emblemas.get(m.id) ?? null,
         matchMinutes: duracaoDoJogo(m.team),
         /** Substituições ilimitadas: quem sai pode voltar a entrar, e os minutos somam cada vez em campo. */
         unlimitedSubs: m.team.unlimitedSubs,

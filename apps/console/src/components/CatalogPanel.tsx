@@ -8,6 +8,7 @@ import {
   moveItem,
   renameItem,
   setItemOfficial,
+  setItemStaffOnly,
   toggleArchived,
   useCatalog,
   type CatalogKey,
@@ -121,6 +122,11 @@ export function CatalogPanel({
           {catalogKey === "competitions" && (
             <p className="mt-2 text-[11px] leading-relaxed text-ink-4">
               As competições não oficiais permitem convocar atletas de qualquer escalão.
+            </p>
+          )}
+          {catalogKey === "eventTypes" && (
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-4">
+              Os eventos de um tipo privado só aparecem ao staff e não têm escalão. Os públicos aparecem ao escalão escolhido.
             </p>
           )}
 
@@ -279,8 +285,30 @@ function CatalogRow({
           {item.system ? (
             <Pill>Não oficial</Pill>
           ) : (
-            <OficialControl id={item.id} label={item.label} oficial={item.official !== false} />
+            <PastilhaDeDuas
+              label={item.label}
+              valor={item.official !== false}
+              textos={["Oficial", "Não oficial"]}
+              onEscolher={(v) => setItemOfficial(item.id, v)}
+            />
           )}
+        </span>
+      )}
+
+      {/*
+        Público ou privado, em todos os tipos de evento. Privado: os eventos
+        deste tipo só aparecem ao staff, sem escalão. Cor própria, para se ver
+        de relance quais são.
+      */}
+      {catalogKey === "eventTypes" && (
+        <span className="flex w-[104px] shrink-0 justify-end">
+          <PastilhaDeDuas
+            label={item.label}
+            valor={item.staffOnly !== true}
+            textos={["Público", "Privado"]}
+            corDoSegundo="bg-ink text-surface"
+            onEscolher={(v) => setItemStaffOnly(item.id, !v)}
+          />
         </span>
       )}
     </li>
@@ -293,12 +321,26 @@ function CatalogRow({
 const OFICIAL_MENU_HEIGHT = 92;
 
 /**
- * Oficial ou não oficial, com o mesmo desenho do estado das mensalidades
- * (`FeeStatusControl`): a pastilha diz o estado e é o gatilho; um clique abre
- * as duas opções, com um visto na actual. O menu vive num portal para não ser
- * recortado pela caixa da modalidade.
+ * Uma escolha entre duas (oficial ou não, público ou privado), com o mesmo
+ * desenho do estado das mensalidades (`FeeStatusControl`): a pastilha diz o
+ * estado e é o gatilho; um clique abre as duas opções, com um visto na actual.
+ * O menu vive num portal para não ser recortado pela caixa da modalidade.
+ * `valor` verdadeiro é o primeiro texto, o destacado.
  */
-function OficialControl({ id, label, oficial }: { id: string; label: string; oficial: boolean }) {
+function PastilhaDeDuas({
+  label,
+  valor: oficial,
+  textos,
+  corDoSegundo = "bg-sunken text-ink-2",
+  onEscolher,
+}: {
+  label: string;
+  valor: boolean;
+  textos: [string, string];
+  /** As classes da pastilha quando o valor é o segundo (falso). Por omissão, cinzento. */
+  corDoSegundo?: string;
+  onEscolher: (valor: boolean) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
@@ -334,7 +376,7 @@ function OficialControl({ id, label, oficial }: { id: string; label: string; ofi
     if (valor === oficial || busy) return;
     setBusy(true);
     try {
-      await setItemOfficial(id, valor);
+      await onEscolher(valor);
     } finally {
       setBusy(false);
     }
@@ -349,13 +391,13 @@ function OficialControl({ id, label, oficial }: { id: string; label: string; ofi
         disabled={busy}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`${label}: ${oficial ? "oficial" : "não oficial"}. Alterar`}
+        aria-label={`${label}: ${(oficial ? textos[0] : textos[1]).toLowerCase()}. Alterar`}
         className={cx(
           "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-tight font-semibold transition-opacity duration-[120ms] hover:opacity-75 disabled:opacity-50",
-          oficial ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-2",
+          oficial ? "bg-signal-soft text-signal-ink" : corDoSegundo,
         )}
       >
-        {oficial ? "Oficial" : "Não oficial"}
+        {oficial ? textos[0] : textos[1]}
         <ChevronDown className="size-3" strokeWidth={2.5} />
       </button>
 
@@ -370,8 +412,8 @@ function OficialControl({ id, label, oficial }: { id: string; label: string; ofi
               className="fixed z-50 w-[168px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
             >
               {[
-                { valor: true, texto: "Oficial" },
-                { valor: false, texto: "Não oficial" },
+                { valor: true, texto: textos[0] },
+                { valor: false, texto: textos[1] },
               ].map((o) => (
                 <button
                   key={o.texto}

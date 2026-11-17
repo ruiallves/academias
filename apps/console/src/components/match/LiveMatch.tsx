@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { adiarRecarga } from "@academia/ui/versao";
 import { cx } from "@/components/primitives";
 import { Check, Pause, Play, Repeat, Trash2, X } from "@/lib/icons";
 import { sportById } from "@/lib/api";
@@ -192,6 +193,14 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
   const [aGravar, setAGravar] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [gravado, setGravado] = useState(false);
+
+  /*
+   * Uma versão nova não recarrega o ecrã a meio do jogo, nem quando o
+   * telemóvel bloqueia no banco. O estado já fica no `localStorage`, mas um
+   * ecrã que pisca durante o jogo é o que não pode acontecer. Ver
+   * `packages/ui/src/versao.ts`.
+   */
+  useEffect(() => adiarRecarga(), []);
 
   const mudar = (novo: Estado) => {
     setEstado(novo);

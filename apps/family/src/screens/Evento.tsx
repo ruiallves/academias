@@ -81,8 +81,10 @@ export default function Evento() {
           {jogo && (child.teamIds.length > 1 || jogo.guest) && jogo.team ? ` · ${jogo.team}` : ""}
           {jogo?.guest ? " · convidado" : ""}
         </p>
-        <h1 className="mt-0.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-          {jogo ? `${jogo.isHome ? "vs" : "@"} ${jogo.opponent}` : treino?.team || child.team}
+        <h1 className="mt-0.5 flex items-center gap-2.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">
+          {/* O emblema do adversário, quando o clube o tem (do diretório ou carregado). */}
+          {jogo?.opponentLogo && <img src={jogo.opponentLogo.grande} alt="" className="size-10 shrink-0 rounded-[10px] border border-line bg-surface object-contain p-0.5" />}
+          <span>{jogo ? `${jogo.isHome ? "vs" : "@"} ${jogo.opponent}` : treino?.team || child.team}</span>
         </h1>
         <p className="mt-1 text-[14px] text-ink-2">
           {dayName(start)}, {dateShort(start)} · {time(start)}–{time(end)}

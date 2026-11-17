@@ -186,6 +186,9 @@ export type MatchDetail = {
   endsAt: string;
   venue: string;
   opponent: string;
+  /** O adversário no diretório dos clubes, e o emblema (do diretório ou carregado por este clube). */
+  opponentClubId?: string | null;
+  opponentLogo?: { pequeno: string; grande: string } | null;
   isHome: boolean;
   /** A prova. `null` num amigável, ou num jogo marcado antes de isto existir. */
   competition: { id: string; label: string } | null;
@@ -236,6 +239,8 @@ export type MatchListRow = {
   endsAt: string;
   venue: string;
   opponent: string;
+  opponentClubId?: string | null;
+  opponentLogo?: { pequeno: string; grande: string } | null;
   isHome: boolean;
   status: MatchStatus;
   ourScore: number | null;

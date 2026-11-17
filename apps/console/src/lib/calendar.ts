@@ -109,6 +109,9 @@ export type MatchAppearance = {
 
 export type MatchInfo = {
   opponent: string;
+  /** O adversário no diretório dos clubes, e o emblema (do diretório ou carregado). */
+  opponentClubId?: string | null;
+  opponentLogo?: { pequeno: string; grande: string } | null;
   home: boolean;
   callUps: CallUp[];
   /**
@@ -173,6 +176,8 @@ export type CalendarEvent = {
   mine?: boolean;
   /** Mostra-se no site do clube. Só nos eventos que não são treino nem jogo. */
   isPublic?: boolean;
+  /** O tipo é privado: só o staff vê este evento. Ver `CatalogItem.staffOnly`. */
+  privado?: boolean;
   /** Só em `kind === "match"`. */
   match?: MatchInfo;
 };
@@ -310,6 +315,7 @@ export function fromApiEvent(e: ApiEvent): CalendarEvent {
     coachName: e.coachName ?? undefined,
     cancelled: e.cancelled,
     isPublic: e.isPublic ?? false,
+    privado: e.privado === true,
   };
 }
 
@@ -346,6 +352,8 @@ export function fromApiMatch(m: ApiMatch): CalendarEvent {
     coachName: m.coachName ?? undefined,
     match: {
       opponent: m.opponent,
+      opponentClubId: m.opponentClubId ?? null,
+      opponentLogo: m.opponentLogo ?? null,
       home: m.isHome,
       competition: m.competition,
       callUps: m.calledUp.map((c) => ({

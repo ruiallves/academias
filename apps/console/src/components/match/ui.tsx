@@ -73,12 +73,13 @@ export function iniciais(nome: string): string {
  * O emblema de uma equipa.
  *
  * O nosso é o símbolo do clube (ou as iniciais sobre a cor do clube). O do
- * adversário são as iniciais sobre cinzento: não temos o símbolo dele, e um
- * círculo com letras é mais honesto do que um escudo inventado.
+ * adversário é o emblema do diretório dos clubes, ou o que o clube carregou
+ * (desde 17/11/2026); sem nenhum, as iniciais sobre cinzento: um círculo com
+ * letras é mais honesto do que um escudo inventado.
  */
 export function Emblema({ nome, logo, nosso, tamanho = 56 }: { nome: string; logo?: string | null; nosso?: boolean; tamanho?: number }) {
   const raio = Math.round(tamanho * 0.3);
-  if (nosso && logo) {
+  if (logo) {
     return (
       <span className="flex shrink-0 items-center justify-center overflow-hidden border border-line bg-surface" style={{ width: tamanho, height: tamanho, borderRadius: raio }}>
         <img src={logo} alt="" className="size-full object-contain p-[12%]" />

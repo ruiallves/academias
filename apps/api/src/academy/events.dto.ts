@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Length, Max, Min, ValidateIf, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 /**
@@ -160,6 +160,13 @@ export class CreateEventDto {
   @Length(1, 80)
   opponent?: string;
 
+  /** O adversário no diretório dos clubes (`KnownClub`), quando foi escolhido de lá. Nulo = nome escrito à mão. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  @Length(1, 64)
+  opponentClubId?: string | null;
+
   /** Só para `kind: "MATCH"`. Em casa por omissão — é o caso mais frequente. */
   @IsOptional()
   @IsBoolean()
@@ -286,6 +293,8 @@ export class EditEventDto {
   /** Mostrar no site do clube. Ver `CreateEventDto.isPublic`. */
   @IsOptional() @IsBoolean() isPublic?: boolean;
   @IsOptional() @IsString() @Length(1, 80) opponent?: string;
+  /** Nulo tira a ligação ao diretório (o nome passou a ser escrito à mão). Ausente não mexe. */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @Length(1, 64) opponentClubId?: string | null;
   @IsOptional() @IsBoolean() isHome?: boolean;
   @IsOptional() @IsString() @Length(1, 40) competitionId?: string;
   /** Quem avisa a falta a este treino. Ver `CreateEventDto.respondBy`. */

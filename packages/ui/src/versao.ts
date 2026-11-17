@@ -1,5 +1,6 @@
 /**
- * A app está sempre na versão que o servidor serve.
+ * A app está sempre na versão que o servidor serve, sem apagar o que a pessoa
+ * está a escrever.
  *
  * ## O problema, tal como apareceu
  *
@@ -13,18 +14,43 @@
  * Isto é pior do que uma avaria: é um produto que se comporta de duas maneiras
  * ao mesmo tempo, e quem dá apoio anda a caçar fantasmas — já aconteceu aqui.
  *
- * ## Como se garante
+ * ## Como se descobre
  *
  * Cada build escreve um `version.json` ao lado do `index.html` e assina o
- * próprio bundle com o mesmo identificador (ver `plugin-versao.ts`). A app
- * pergunta pela versão do servidor **sem cache** em quatro momentos: ao
+ * próprio bundle com o mesmo identificador (ver `scripts/vite-versao.mjs`). A
+ * app pergunta pela versão do servidor **sem cache** em quatro momentos: ao
  * arrancar, quando o ecrã volta a estar à frente, quando a rede volta, e de
- * quinze em quinze minutos. Se o servidor tiver outra, recarrega.
+ * quinze em quinze minutos.
  *
- * Recarregar é a única saída honesta. Um aviso "há uma versão nova, carrega
- * aqui" deixa a escolha a quem não tem como saber o que está a perder, e foi
- * exactamente essa escolha que deixou uma pessoa a trabalhar numa versão de há
- * uma semana.
+ * ## Quando se recarrega
+ *
+ * Recarregar é a única saída honesta: um aviso "há uma versão nova, carrega
+ * aqui" deixa a escolha a quem não tem como saber o que está a perder. Mas
+ * recarregar **mal se descobre** apagava o formulário que alguém estivesse a
+ * preencher no momento do deploy. Por isso recarrega-se no primeiro momento
+ * seguro:
+ *
+ *  - **Ao arrancar**, já. A pessoa acabou de entrar e não há nada a perder.
+ *  - **Ao voltar à app** depois de um minuto fora: é como abri-la outra vez.
+ *  - **Ao sair da app** (outra app, ecrã bloqueado, outro separador), sem
+ *    ninguém ver.
+ *  - **Ao mudar de página**: em vez da navegação dentro da app, uma carga
+ *    completa já para a página de destino. Por fora é igual a um toque normal.
+ *
+ * Nenhum destes acontece com trabalho por gravar (ver `haTrabalhoPorGravar`).
+ * Passadas 24 horas com a versão nova à espera, ao sair da app recarrega-se na
+ * mesma: alguém dias numa versão velha é o problema de onde isto partiu.
+ *
+ * ## O service worker
+ *
+ * A app da família é uma PWA, e o service worker guarda o `index.html` em
+ * cache. Recarregar com o service worker antigo ao comando devolve o HTML
+ * velho: a app "recarrega" e continua velha. Era isso que punha a faixa
+ * "Actualizar" nos telemóveis a cada versão: o `update()` acaba quando o
+ * service worker novo está descarregado, não quando toma conta da página, e a
+ * recarga ia logo a seguir. Agora, mal se descobre a versão nova, pede-se o
+ * service worker novo e espera-se pelo `controllerchange` (com `skipWaiting` e
+ * `clientsClaim`, do `autoUpdate`). A recarga só fica disponível depois disso.
  *
  * ## O que impede um ciclo de recargas
  *
@@ -61,6 +87,94 @@ export type VigiarVersaoOpcoes = {
 const QUINZE_MINUTOS = 15 * 60 * 1000;
 /** Duas perguntas seguidas não valem a pena: o utilizador troca de janela dez vezes por minuto. */
 const ESPERA_MINIMA_MS = 30 * 1000;
+/** Fora da app durante este tempo, voltar conta como abri-la de novo. */
+const FORA_QUE_CONTA_MS = 60 * 1000;
+/** O máximo que se espera pelo service worker novo antes de recarregar na mesma. */
+const ESPERA_DO_SW_MS = 15 * 1000;
+/** Ao fim disto com versão nova à espera, recarrega-se ao sair da app, haja o que houver. */
+const TECTO_MS = 24 * 60 * 60 * 1000;
+
+type Origem = "arranque" | "voltar" | "rede" | "relogio";
+
+/* ── Trabalho por gravar ─────────────────────────────────────────────────── */
+
+/** Escreveu-se num campo desde a última mudança de página. */
+let escreveu = false;
+/** Ecrãs que pediram para não recarregar enquanto estão abertos (ver `adiarRecarga`). */
+let retencoes = 0;
+
+/**
+ * Um ecrã que não pode ser recarregado enquanto está aberto, mesmo sem campos
+ * por gravar (o jogo ao vivo, por exemplo). Devolve a função que o liberta;
+ * num componente React: `useEffect(() => adiarRecarga(), [])`.
+ */
+export function adiarRecarga(): () => void {
+  retencoes += 1;
+  let libertado = false;
+  return () => {
+    if (libertado) return;
+    libertado = true;
+    retencoes -= 1;
+  };
+}
+
+/** Campos onde escrever não é trabalho que se perca: caixas de procura. */
+function ignoravel(alvo: EventTarget | null): boolean {
+  if (!(alvo instanceof HTMLElement)) return true;
+  if (alvo.closest("[data-versao-ignorar]")) return true;
+  if (alvo instanceof HTMLInputElement) {
+    const tipo = alvo.type;
+    if (tipo === "search") return true;
+    if (alvo.getAttribute("role") === "combobox") return true;
+  }
+  return false;
+}
+
+/**
+ * Há alguma coisa no ecrã que uma recarga apagaria?
+ *
+ * Detecção geral, para não ter de mexer em cada formulário: escreveu-se num
+ * campo desde a última mudança de página, há uma janela aberta (quase todos os
+ * formulários da consola vivem numa), ou um ecrã pediu explicitamente.
+ */
+function haTrabalhoPorGravar(): boolean {
+  if (escreveu || retencoes > 0) return true;
+  /* Os menus que abrem por cima (navegação, notificações) levam `data-versao-ignorar`: não guardam nada. */
+  const janela = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+  return Array.from(document.querySelectorAll(janela)).some((el) => !el.closest("[data-versao-ignorar]"));
+}
+
+/* ── Service worker ──────────────────────────────────────────────────────── */
+
+const esperar = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+/**
+ * Põe o service worker novo ao comando da página antes de recarregar.
+ *
+ * Sem service worker (consola, plataforma) não há nada a fazer. Com ele, pede-se
+ * o novo e espera-se que tome conta (`controllerchange`). Se não houver nenhum a
+ * instalar depois do `update()`, o que está já é o da versão nova (o browser
+ * também os procura sozinho). O tecto de espera impede que um service worker
+ * avariado deixe a app velha para sempre: recarrega-se na mesma, e o guarda do
+ * `sessionStorage` trata do resto.
+ */
+async function prepararServiceWorker(): Promise<void> {
+  if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return;
+  try {
+    const mudou = new Promise<void>((resolve) =>
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true }),
+    );
+    const registos = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registos.map((reg) => reg.update()));
+    const aCaminho = registos.some((reg) => reg.installing || reg.waiting);
+    if (!aCaminho) return;
+    await Promise.race([mudou, esperar(ESPERA_DO_SW_MS)]);
+  } catch {
+    /* Ignorado de propósito: a recarga a seguir é o que interessa. */
+  }
+}
+
+/* ── Vigilância ──────────────────────────────────────────────────────────── */
 
 export function vigiarVersao({
   atual,
@@ -79,63 +193,80 @@ export function vigiarVersao({
   const chave = "academias:recarregada-para";
   let ultimaPergunta = 0;
   let aPerguntar = false;
+  /** A versão nova, já com o service worker pronto, à espera de um momento seguro. */
+  let pronta: { build: string; desde: number } | null = null;
+  let saiuEm: number | null = null;
+  /**
+   * Voltou-se à app depois de um minuto fora e ainda não se decidiu nada.
+   *
+   * É uma bandeira, e não um argumento de `perguntar`, porque o `focus` e o
+   * `visibilitychange` chegam juntos e só um deles chega a perguntar: seja qual
+   * for, é ele que a vê.
+   */
+  let regressoLongo = false;
+  let aRecarregar = false;
 
-  const perguntar = async (forcar = false): Promise<void> => {
-    if (aPerguntar) return;
+  /**
+   * Recarrega para a versão nova, ou mostra o aviso se já se tentou.
+   *
+   * `destino` é a página para onde a pessoa ia, quando a recarga substitui uma
+   * mudança de página. Devolve `false` quando não recarregou.
+   */
+  const recarregar = (destino?: string): boolean => {
+    if (!pronta || aRecarregar) return false;
+    let jaTentou = false;
+    try {
+      jaTentou = sessionStorage.getItem(chave) === pronta.build;
+    } catch {
+      /* Sem `sessionStorage` (janela privada, armazenamento bloqueado) recarrega-se uma vez. */
+    }
+    if (jaTentou) {
+      aoFicarVelha?.(pronta.build);
+      pronta = null;
+      return false;
+    }
+    try {
+      sessionStorage.setItem(chave, pronta.build);
+    } catch {
+      /* Paciência: o pior caso é uma recarga a mais. */
+    }
+    aRecarregar = true;
+    if (destino) window.location.assign(destino);
+    else window.location.reload();
+    return true;
+  };
+
+  const seSeguro = (destino?: string): boolean => (haTrabalhoPorGravar() ? false : recarregar(destino));
+
+  const perguntar = async (origem: Origem): Promise<void> => {
+    if (aPerguntar || aRecarregar) return;
     const agora = Date.now();
-    if (!forcar && agora - ultimaPergunta < ESPERA_MINIMA_MS) return;
+    if (origem === "voltar" && agora - ultimaPergunta < ESPERA_MINIMA_MS && !pronta && !regressoLongo) return;
     ultimaPergunta = agora;
     aPerguntar = true;
     try {
-      /*
-       * `cache: "no-store"` e um parâmetro sempre diferente.
-       *
-       * O cabeçalho chega para o browser; o parâmetro é para o que estiver pelo
-       * meio (um proxy, um service worker de outra app na mesma origem) e que
-       * possa responder do bolso sem falar com o servidor.
-       */
-      const r = await fetch(`${base}version.json?t=${agora}`, { cache: "no-store" });
-      if (!r.ok) return;
-      const servida = (await r.json()) as VersaoServida | null;
-      const novo = servida?.build;
-      if (!novo || novo === atual) return;
-
-      /* Já se recarregou por esta versão e continua diferente: não insistir. */
-      let jaTentou = false;
-      try {
-        jaTentou = sessionStorage.getItem(chave) === novo;
-      } catch {
-        /* Sem `sessionStorage` (janela privada, armazenamento bloqueado) recarrega-se uma vez. */
-      }
-      if (jaTentou) {
-        aoFicarVelha?.(novo);
-        return;
-      }
-      try {
-        sessionStorage.setItem(chave, novo);
-      } catch {
-        /* Paciência: o pior caso é uma recarga a mais. */
+      if (!pronta) {
+        /*
+         * `cache: "no-store"` e um parâmetro sempre diferente.
+         *
+         * O cabeçalho chega para o browser; o parâmetro é para o que estiver pelo
+         * meio (um proxy, um service worker de outra app na mesma origem) e que
+         * possa responder do bolso sem falar com o servidor.
+         */
+        const r = await fetch(`${base}version.json?t=${agora}`, { cache: "no-store" });
+        if (!r.ok) return;
+        const servida = (await r.json()) as VersaoServida | null;
+        const novo = servida?.build;
+        if (!novo || novo === atual) return;
+        await prepararServiceWorker();
+        pronta = { build: novo, desde: Date.now() };
       }
 
-      /*
-       * O service worker primeiro.
-       *
-       * Numa PWA, recarregar sem tirar o service worker antigo da frente
-       * devolve o mesmo HTML que já estava em cache — a app "recarrega" e
-       * continua velha. `update()` vai buscar o novo e o `autoUpdate` do
-       * vite-plugin-pwa assume o controlo; `reload()` a seguir chega ao HTML
-       * novo. Falhar aqui não impede a recarga.
-       */
-      if ("serviceWorker" in navigator) {
-        try {
-          const registos = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(registos.map((reg) => reg.update()));
-        } catch {
-          /* Ignorado de propósito: a recarga a seguir é o que interessa. */
-        }
+      if (origem === "arranque" || regressoLongo) {
+        regressoLongo = false;
+        seSeguro();
       }
-
-      window.location.reload();
+      /* Nos outros casos fica à espera: sair da app ou mudar de página. */
     } catch {
       /* Sem rede não há versão nova para descobrir. Tenta-se na próxima. */
     } finally {
@@ -143,24 +274,78 @@ export function vigiarVersao({
     }
   };
 
-  const aoVoltar = () => {
-    if (document.visibilityState === "visible") void perguntar();
+  const aoMudarVisibilidade = () => {
+    if (document.visibilityState === "hidden") {
+      saiuEm = Date.now();
+      regressoLongo = false;
+      if (!pronta) return;
+      /* A pessoa não está a ver: o melhor momento. Ao fim de 24 horas, mesmo com trabalho a meio. */
+      if (Date.now() - pronta.desde >= TECTO_MS) recarregar();
+      else seSeguro();
+      return;
+    }
+    regressoLongo = saiuEm !== null && Date.now() - saiuEm >= FORA_QUE_CONTA_MS;
+    saiuEm = null;
+    void perguntar("voltar");
   };
-  const aoLigar = () => void perguntar(true);
+  const aoFocar = () => void perguntar("voltar");
+  const aoLigar = () => void perguntar("rede");
 
-  document.addEventListener("visibilitychange", aoVoltar);
-  window.addEventListener("focus", aoVoltar);
+  /* Escrever num campo é trabalho que uma recarga apagaria. */
+  const aoEscrever = (e: Event) => {
+    if (!ignoravel(e.target)) escreveu = true;
+  };
+
+  /*
+   * Mudar de página com a versão nova pronta: carga completa para o destino.
+   *
+   * Apanha-se no `history.pushState`, por onde passam os `<Link>` e o
+   * `navigate()` do react-router. Sem o `pushState`, o router lê o endereço,
+   * vê o mesmo, e não desenha nada: a página fica como estava até chegar a
+   * nova. O `replaceState` fica de fora de propósito: é o que os filtros e as
+   * pesquisas usam para mudar a query a cada tecla.
+   *
+   * Com trabalho por gravar, a navegação segue normal e a página nova começa
+   * limpa; a recarga fica para a mudança seguinte.
+   */
+  const pushStateOriginal = history.pushState;
+  const pushStateVigiado: History["pushState"] = function (this: History, data, unused, url) {
+    if (pronta && url != null) {
+      try {
+        const destino = new URL(String(url), window.location.href);
+        if (destino.origin === window.location.origin && seSeguro(destino.href)) return;
+      } catch {
+        /* Endereço que não se percebe: navega-se normalmente. */
+      }
+    }
+    escreveu = false;
+    return pushStateOriginal.call(this, data, unused, url);
+  };
+  history.pushState = pushStateVigiado;
+  const aoVoltarAtras = () => {
+    escreveu = false;
+  };
+
+  document.addEventListener("visibilitychange", aoMudarVisibilidade);
+  window.addEventListener("focus", aoFocar);
   window.addEventListener("online", aoLigar);
-  const relogio = window.setInterval(() => void perguntar(true), intervaloMs);
+  window.addEventListener("popstate", aoVoltarAtras);
+  document.addEventListener("input", aoEscrever, true);
+  document.addEventListener("change", aoEscrever, true);
+  const relogio = window.setInterval(() => void perguntar("relogio"), intervaloMs);
 
   /* À entrada, sem esperar: é o momento em que uma app velha se apanha mais barato. */
-  void perguntar(true);
+  void perguntar("arranque");
 
   return () => {
-    document.removeEventListener("visibilitychange", aoVoltar);
-    window.removeEventListener("focus", aoVoltar);
+    document.removeEventListener("visibilitychange", aoMudarVisibilidade);
+    window.removeEventListener("focus", aoFocar);
     window.removeEventListener("online", aoLigar);
+    window.removeEventListener("popstate", aoVoltarAtras);
+    document.removeEventListener("input", aoEscrever, true);
+    document.removeEventListener("change", aoEscrever, true);
     window.clearInterval(relogio);
+    if (history.pushState === pushStateVigiado) history.pushState = pushStateOriginal;
   };
 }
 
