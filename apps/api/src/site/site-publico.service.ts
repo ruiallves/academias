@@ -32,6 +32,7 @@ import { lojaVende } from "../loja/regras";
 import { vendeOnline, tiposQueSeVendem } from "../common/vendas-online";
 import { SELECT_PRODUTO_PARA_VENDA, produtoParaVenda, reservadosPorLinha, type ProdutoLido } from "../loja/contexto";
 import { FALLBACK_HEADLINE, FALLBACK_INTRO, FALLBACK_POINTS } from "../landing/membership.template";
+import { emblemasDosAdversarios, type Emblema } from "../clubes/emblemas";
 
 /**
  * Os tectos do formulário de contactos de **um** clube. Um clube pequeno
@@ -402,8 +403,15 @@ export class SitePublicoService {
         orderBy: { startsAt: "asc" },
         select: SELECT_JOGO,
       });
-      return jogos.filter((j) => semResultado(j, a.equipas, agora) !== "esconder").map((j) => jogoPublico(j, a.vendeOnline, a.equipas));
+      const mostrar = jogos.filter((j) => semResultado(j, a.equipas, agora) !== "esconder");
+      // O emblema de cada adversário, como na consola (diretório ou o que o clube carregou), numa ida só.
+      const emblemas = await emblemasDosAdversarios(db, this.baseDosEmblemas(), mostrar);
+      return mostrar.map((j) => jogoPublico(j, a.vendeOnline, a.equipas, emblemas.get(j.id)));
     });
+  }
+
+  private baseDosEmblemas(): string {
+    return this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
   }
 
   async jogo(slug: string, id: string) {
@@ -417,7 +425,8 @@ export class SitePublicoService {
       if (!j || !visiveis.has(j.teamId)) throw new NotFoundException();
       // Uma equipa sem resultados no site: um jogo já jogado também não se abre pelo endereço.
       if (semResultado(j, a.equipas, Date.now()) === "esconder") throw new NotFoundException();
-      return jogoPublico(j, a.vendeOnline, a.equipas);
+      const emblemas = await emblemasDosAdversarios(db, this.baseDosEmblemas(), [j]);
+      return jogoPublico(j, a.vendeOnline, a.equipas, emblemas.get(j.id));
     });
   }
 
@@ -671,6 +680,7 @@ const SELECT_JOGO = {
   startsAt: true,
   venue: true,
   opponent: true,
+  opponentClubId: true,
   isHome: true,
   status: true,
   roundLabel: true,
@@ -710,7 +720,7 @@ function jogoPublico(j: {
     membersOnly: boolean;
     closesAt: Date | null;
   } | null;
-}, cobra: boolean, equipas: Record<string, EquipaNoSite>) {
+}, cobra: boolean, equipas: Record<string, EquipaNoSite>, emblema?: Emblema | null) {
   const comResultado = equipas[j.teamId]?.resultados !== false;
   const comVenda = j.status !== "CANCELLED" ? j.siteTickets : null;
   const tipos = comVenda ? tiposQueSeVendem(tiposValidos(comVenda.types), cobra) : [];
@@ -724,6 +734,8 @@ function jogoPublico(j: {
     startsAt: j.startsAt.toISOString(),
     venue: j.venue,
     opponent: j.opponent,
+    // O de 256 px: o cartaz mostra-o a 64 e num ecrã de alta densidade precisa do dobro. Endereço fixo, cache de um ano.
+    opponentLogoUrl: emblema?.grande,
     isHome: j.isHome,
     competition: j.competition?.label,
     roundLabel: j.roundLabel ?? undefined,

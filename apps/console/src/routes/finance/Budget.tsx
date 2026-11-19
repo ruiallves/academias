@@ -24,7 +24,7 @@ import { copyBudget, euros, getBudgetHistory, getBudgets, setBudget, type Budget
  * época ainda sem orçamento oferece copiar o de outra, só nas categorias que
  * ainda não têm valor.
  */
-export default function Budget() {
+export default function Budget({ embutido = false }: { embutido?: boolean }) {
   const { session } = useSession();
   const podeEscrever = can(session, "finance:write");
 
@@ -136,26 +136,36 @@ export default function Budget() {
   if (erro && !dados) return <Empty title="Orçamento" detail={erro} icon={TriangleAlert} />;
   if (!dados) return <Loading />;
 
+  const escolhaDeEpoca = historico.length > 1 && (
+    <SelectField
+      value={dados.season.id}
+      onChange={escolherEpoca}
+      options={historico.map((h) => ({ value: h.seasonId, label: h.current ? `${h.label} · em curso` : h.label }))}
+    />
+  );
+
   return (
     <>
-      <Link to="/contas" className="mb-3 inline-flex items-center gap-1.5 text-meta font-medium text-ink-3 hover:text-ink">
-        <ArrowLeft className="size-3.5" strokeWidth={1.75} />
-        Contas
-      </Link>
+      {embutido ? (
+        /* Dentro das Contas: só a frase do que isto é, e a época ao lado. */
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-body text-ink-3">
+            Época {dados.season.label}: o tecto de cada categoria de despesa, contra o gasto real.
+          </p>
+          {escolhaDeEpoca}
+        </div>
+      ) : (
+        <>
+          <Link to="/contas" className="mb-3 inline-flex items-center gap-1.5 text-meta font-medium text-ink-3 hover:text-ink">
+            <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+            Contas
+          </Link>
 
-      <PageHeader
-        eyebrow="Contas"
-        title="Orçamento"
-        subtitle={`Época ${dados.season.label} — o tecto de cada categoria de despesa, contra o gasto real.`}
-      >
-        {historico.length > 1 && (
-          <SelectField
-            value={dados.season.id}
-            onChange={escolherEpoca}
-            options={historico.map((h) => ({ value: h.seasonId, label: h.current ? `${h.label} · em curso` : h.label }))}
-          />
-        )}
-      </PageHeader>
+          <PageHeader eyebrow="Contas" title="Orçamento" subtitle={`Época ${dados.season.label}: o tecto de cada categoria de despesa, contra o gasto real.`}>
+            {escolhaDeEpoca}
+          </PageHeader>
+        </>
+      )}
 
       {erro && <p className="mb-2 text-meta text-risk">{erro}</p>}
 

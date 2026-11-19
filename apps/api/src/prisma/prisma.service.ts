@@ -223,6 +223,7 @@ const TENANT_SCOPED = new Set<string>([
   "FinancialTransaction",
   "FinanceSettings",
   "FinancialBudget",
+  "Salary",
   // Academias AI. `AIAnalysisPlayer` fica de fora — herda o tenant da análise,
   // e a RLS trata-o por junção. `AIModelVersion` é global de propósito.
   "AIAnalysis",

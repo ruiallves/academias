@@ -79,6 +79,10 @@ const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: {
 await db.connect();
 
 const limpar = async () => {
+  // As cobranças dos pagamentos de teste (o título é o nome do artigo), e os pagamentos delas.
+  await db.query(`DELETE FROM "Payment" WHERE "chargeId" IN (SELECT id FROM "Charge" WHERE title LIKE 'ZI %')`);
+  await db.query(`UPDATE "InventoryAssignment" SET "chargeId" = NULL WHERE "chargeId" IN (SELECT id FROM "Charge" WHERE title LIKE 'ZI %')`);
+  await db.query(`DELETE FROM "Charge" WHERE title LIKE 'ZI %'`);
   await db.query(`DELETE FROM "InventoryItem" WHERE name LIKE 'ZI %'`);
   await db.query(`DELETE FROM "CatalogItem" WHERE label LIKE 'ZI %'`);
 };
@@ -942,6 +946,100 @@ check("uma segunda vez dá 404, não devolve as unidades outra vez", segundaVez.
 
 // O que estava entregue volta, para o artigo poder ser apagado na limpeza.
 await call(director, "POST", `/api/inventory/assignments/${guardadaId}/return`, { condition: "GOOD" });
+
+console.log("\n=== Datas: entregue noutro dia, pago noutro dia, stock de outro dia ===");
+/*
+ * Rui, 19/11/2026: uma entrega pode ter sido feita num dia que já passou, e uma
+ * peça paga não foi necessariamente paga no dia da entrega. O dia do pagamento
+ * é o que decide o mês das Contas. E chegou/saiu/contagem também levam dia.
+ */
+const diaHa = (n) => {
+  const d = new Date(Date.now() - n * 86_400_000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(d);
+};
+const amanha = diaHa(-1);
+const diaDe = async (sql, params) =>
+  (await db.query(`SELECT to_char((${sql}) AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD') AS d`, params)).rows[0]?.d;
+
+const datas = await call(director, "POST", "/api/inventory/items", { name: "ZI Kit das datas", variants: [{ label: "Único", quantity: 10 }] });
+const datasVar = (await call(director, "GET", `/api/inventory/items/${datas.body.id}`)).body.variants[0].id;
+const stockDatas = async () =>
+  (await db.query(`SELECT "totalQuantity" t, "assignedQuantity" a FROM "InventoryVariant" WHERE id = $1`, [datasVar])).rows[0];
+
+const futuraEntrega = await call(director, "POST", "/api/inventory/assignments/lote", {
+  athleteId: atleta.id, deliveredOn: amanha, linhas: [{ variantId: datasVar, quantity: 1 }],
+});
+check("uma entrega com dia futuro é recusada (400)", futuraEntrega.status === 400, `${futuraEntrega.status} ${JSON.stringify(futuraEntrega.body).slice(0, 120)}`);
+const futuroPago = await call(director, "POST", "/api/inventory/assignments/lote", {
+  athleteId: atleta.id, linhas: [{ variantId: datasVar, quantity: 1, pagamento: { modo: "pago", priceCents: 2000, method: "CASH", paidOn: amanha } }],
+});
+check("um pagamento com dia futuro é recusado (400)", futuroPago.status === 400, `${futuroPago.status}`);
+check("e nenhuma das duas tirou stock", (await stockDatas()).a === 0, JSON.stringify(await stockDatas()));
+
+const antiga = await call(director, "POST", "/api/inventory/assignments/lote", {
+  athleteId: atleta.id,
+  deliveredOn: diaHa(10),
+  linhas: [{ variantId: datasVar, quantity: 1, pagamento: { modo: "pago", priceCents: 2000, method: "TRANSFER", paidOn: diaHa(5) } }],
+});
+const antigaId = antiga.body?.entregas?.[0]?.id;
+check("entregue há 10 dias e paga há 5 passa", antiga.status === 201 && Boolean(antigaId) && !antiga.body.entregas[0].erroDoPagamento, `${antiga.status} ${JSON.stringify(antiga.body).slice(0, 200)}`);
+check("a entrega fica com o dia da entrega", (await diaDe(`SELECT "assignedAt" FROM "InventoryAssignment" WHERE id = $1`, [antigaId])) === diaHa(10));
+check(
+  "e o movimento do armazém também",
+  (await diaDe(`SELECT "createdAt" FROM "InventoryMovement" WHERE "assignmentId" = $1 AND type = 'ASSIGNMENT'`, [antigaId])) === diaHa(10),
+);
+const cobrancaAntiga = (await db.query(`SELECT "chargeId" FROM "InventoryAssignment" WHERE id = $1`, [antigaId])).rows[0]?.chargeId;
+check("a cobrança fica paga no dia do pagamento, não no da entrega", (await diaDe(`SELECT "settledAt" FROM "Charge" WHERE id = $1`, [cobrancaAntiga])) === diaHa(5));
+const pagamentoAntigo = (await db.query(`SELECT method FROM "Payment" WHERE "chargeId" = $1 AND status = 'PAID'`, [cobrancaAntiga])).rows[0];
+check(
+  "e o pagamento também, com o método",
+  pagamentoAntigo?.method === "TRANSFER" && (await diaDe(`SELECT "paidAt" FROM "Payment" WHERE "chargeId" = $1 AND status = 'PAID'`, [cobrancaAntiga])) === diaHa(5),
+  JSON.stringify(pagamentoAntigo),
+);
+const naLista = (await call(director, "GET", `/api/inventory/assignments?itemId=${datas.body.id}`)).body.find((x) => x.id === antigaId);
+check("a lista devolve o dia do pagamento (pagoEm)", Boolean(naLista?.pagamento?.pagoEm), JSON.stringify(naLista?.pagamento));
+
+const corrigePago = await call(director, "PATCH", `/api/inventory/assignments/${antigaId}`, {
+  pagamento: { modo: "pago", priceCents: 2000, method: "MBWAY", paidOn: diaHa(3) },
+});
+check("corrigir o dia e o método do pagamento passa", corrigePago.status === 200, `${corrigePago.status} ${JSON.stringify(corrigePago.body).slice(0, 160)}`);
+check("o pagamento muda de dia e de método", (await diaDe(`SELECT "settledAt" FROM "Charge" WHERE id = $1`, [cobrancaAntiga])) === diaHa(3) && (await db.query(`SELECT method FROM "Payment" WHERE "chargeId" = $1 AND status = 'PAID'`, [cobrancaAntiga])).rows[0]?.method === "MBWAY");
+check("sem criar outro pagamento", (await db.query(`SELECT 1 FROM "Payment" WHERE "chargeId" = $1`, [cobrancaAntiga])).rowCount === 1);
+
+const corrigeEntrega = await call(director, "PATCH", `/api/inventory/assignments/${antigaId}`, { deliveredOn: diaHa(7) });
+check("corrigir o dia de uma entrega passa", corrigeEntrega.status === 200, `${corrigeEntrega.status}`);
+check(
+  "a entrega e o movimento passam ao dia novo",
+  (await diaDe(`SELECT "assignedAt" FROM "InventoryAssignment" WHERE id = $1`, [antigaId])) === diaHa(7) &&
+    (await diaDe(`SELECT "createdAt" FROM "InventoryMovement" WHERE "assignmentId" = $1 AND type = 'ASSIGNMENT'`, [antigaId])) === diaHa(7),
+);
+const corrigeFuturo = await call(director, "PATCH", `/api/inventory/assignments/${antigaId}`, { deliveredOn: amanha });
+check("corrigir para um dia futuro é recusado (400)", corrigeFuturo.status === 400, `${corrigeFuturo.status}`);
+
+const guardadaDatas = await call(director, "POST", "/api/inventory/assignments/lote", {
+  athleteId: atleta.id, entregue: false, linhas: [{ variantId: datasVar, quantity: 1 }],
+});
+const guardadaDatasId = guardadaDatas.body?.entregas?.[0]?.id;
+const entregaAntiga = await call(director, "POST", `/api/inventory/assignments/${guardadaDatasId}/entregar`, { deliveredOn: diaHa(2) });
+check("entregar o que estava guardado, há 2 dias, passa", entregaAntiga.status === 201, `${entregaAntiga.status}`);
+check(
+  "e fica com esse dia, na entrega e no movimento",
+  (await diaDe(`SELECT "assignedAt" FROM "InventoryAssignment" WHERE id = $1`, [guardadaDatasId])) === diaHa(2) &&
+    (await diaDe(`SELECT "createdAt" FROM "InventoryMovement" WHERE "assignmentId" = $1 AND type = 'HANDOVER'`, [guardadaDatasId])) === diaHa(2),
+);
+
+const chegouAntes = await call(director, "POST", `/api/inventory/variants/${datasVar}/stock`, { type: "ENTRY", quantity: 4, on: diaHa(4), reason: "ZI encomenda" });
+check("dar entrada com o dia em que chegou passa", chegouAntes.status === 201 && (await stockDatas()).t === 14, `${chegouAntes.status} ${JSON.stringify(await stockDatas())}`);
+check(
+  "e o movimento fica nesse dia",
+  (await diaDe(`SELECT "createdAt" FROM "InventoryMovement" WHERE "variantId" = $1 AND type = 'ENTRY' AND reason = 'ZI encomenda'`, [datasVar])) === diaHa(4),
+);
+const chegouAmanha = await call(director, "POST", `/api/inventory/variants/${datasVar}/stock`, { type: "ENTRY", quantity: 1, on: amanha });
+check("uma entrada com dia futuro é recusada (400) e o stock não mexe", chegouAmanha.status === 400 && (await stockDatas()).t === 14, `${chegouAmanha.status}`);
+
+// Devolver as duas entregues para a limpeza poder apagar o artigo.
+await call(director, "POST", `/api/inventory/assignments/${antigaId}/return`, { condition: "GOOD" });
+await call(director, "POST", `/api/inventory/assignments/${guardadaDatasId}/return`, { condition: "GOOD" });
 
 /* ------------------------------------------------------------------ limpeza */
 await limpar();

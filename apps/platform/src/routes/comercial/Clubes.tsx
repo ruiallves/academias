@@ -11,6 +11,7 @@ import { googleEventUrl } from "@/lib/google";
 import { apiPatch } from "@/lib/http";
 import { useApi } from "@/lib/query";
 import { livreParaMim } from "@/lib/comercial";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 import {
   ASSOCIACOES_FUTEBOL,
   CONTACT_STATUS,
@@ -83,6 +84,25 @@ export default function Clubes({ me }: { me: Me }) {
           : true,
       );
   }, [all, filter, grupo, query, dono, me.id]);
+
+  // Ordenar por qualquer coluna. A resposta ordena pela ordem do funil (`CONTACT_STATUS`), não pelo nome.
+  const t = useOrdenacao(
+    rows,
+    (coluna, c) => {
+      switch (coluna) {
+        case "clube": return c.name;
+        case "responsavel": return c.owner ? (c.owner.id === me.id ? "Eu" : c.owner.name) : null;
+        case "associacao": return c.association ?? null;
+        case "email": return c.emailedAt ? new Date(c.emailedAt) : null;
+        case "chamada": return c.calledAt ? new Date(c.calledAt) : null;
+        case "resposta": return CONTACT_STATUS.indexOf(c.status);
+        case "seguimento": return c.nextActionAt ? new Date(c.nextActionAt) : null;
+        default: return null;
+      }
+    },
+    "plataforma-comercial-clubes",
+  );
+  const { linhas: ordenadas, ordem } = t;
 
   if (loading && !lista) return <Skeleton />;
   if (error && !lista) return <Failed message={error} onRetry={reload} />;
@@ -223,20 +243,29 @@ export default function Clubes({ me }: { me: Me }) {
           />
         ) : (
           <div className="overflow-x-auto">
+            <BarraDeFiltros t={t} />
             <table className="w-full border-collapse text-body">
               <thead>
                 <tr className="border-b border-line bg-sunken/60 text-meta font-medium text-ink-3">
-                  <th className="px-5 py-2 text-left">Clube</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Responsável</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Associação</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Email</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Chamada</th>
-                  <th className="px-3 py-2 text-left">Resposta</th>
-                  <th className="px-5 py-2 text-left whitespace-nowrap">Seguimento</th>
+                  {(
+                    [
+                      ["clube", "Clube", "px-5"],
+                      ["responsavel", "Responsável", "px-3 whitespace-nowrap"],
+                      ["associacao", "Associação", "px-3 whitespace-nowrap"],
+                      ["email", "Email", "px-3 whitespace-nowrap"],
+                      ["chamada", "Chamada", "px-3 whitespace-nowrap"],
+                      ["resposta", "Resposta", "px-3"],
+                      ["seguimento", "Seguimento", "px-5 whitespace-nowrap"],
+                    ] as const
+                  ).map(([k, rotulo, cls]) => (
+                    <th key={k} className={`py-2 text-left ${cls}`} aria-sort={ariaSort(ordem, k)}>
+                      <Coluna t={t} coluna={k}>{rotulo}</Coluna>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((c) => (
+                {ordenadas.map((c) => (
                   <tr
                     key={c.id}
                     onClick={() => setOpen(c)}

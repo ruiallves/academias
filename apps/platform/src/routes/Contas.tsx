@@ -9,6 +9,7 @@ import { euros, eurosExact, shortDate } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { ChartHero, SaldoChart } from "@/components/chart/Chart";
 import type { ContasResumo, GastoFixo, MensalidadeDoClube, Previsao, Transacao } from "@/lib/types";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 
 /**
  * As contas do negócio.
@@ -317,6 +318,25 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
   const meses = previsao.meses;
   const fim = meses[meses.length - 1];
   const viraEm = meses.find((m) => m.acumuladoCents >= 0 && m.saldoCents > 0);
+  // A tabela por baixo ordena por qualquer coluna; o gráfico fica sempre pela ordem dos meses.
+  const t = useOrdenacao(
+    meses,
+    (coluna, m) =>
+      coluna === "mes" ? m.mes
+      : coluna === "receita" ? m.receitaCents
+      : coluna === "simulado" ? m.receitaSimuladaCents
+      : coluna === "gastos" ? m.gastosCents
+      : coluna === "saldo" ? m.saldoCents
+      : coluna === "somado" ? m.acumuladoCents
+      : null,
+    "plataforma-contas-previsao",
+  );
+  const { linhas: mesesNaTabela, ordem } = t;
+  const cab = (k: string, rotulo: string, direita = true) => (
+    <th className={cx("py-2 font-medium", direita ? "text-right" : "text-left")} aria-sort={ariaSort(ordem, k)}>
+      <Coluna t={t} coluna={k} direita={direita}>{rotulo}</Coluna>
+    </th>
+  );
 
   return (
     <>
@@ -354,20 +374,21 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
         {simulando && " A simulação já está somada: são clubes que ainda não existem."}
       </p>
 
+      <BarraDeFiltros t={t} />
       <div className="overflow-x-auto px-5 pb-4">
         <table className="w-full min-w-[520px] border-collapse text-meta">
           <thead>
             <tr className="text-ink-3">
-              <th className="py-2 text-left font-medium">Mês</th>
-              <th className="py-2 text-right font-medium">Entra dos clubes</th>
-              {simulando && <th className="py-2 text-right font-medium">Simulado</th>}
-              <th className="py-2 text-right font-medium">Gastos fixos</th>
-              <th className="py-2 text-right font-medium">Saldo do mês</th>
-              <th className="py-2 text-right font-medium">Somado</th>
+              {cab("mes", "Mês", false)}
+              {cab("receita", "Entra dos clubes")}
+              {simulando && cab("simulado", "Simulado")}
+              {cab("gastos", "Gastos fixos")}
+              {cab("saldo", "Saldo do mês")}
+              {cab("somado", "Somado")}
             </tr>
           </thead>
           <tbody>
-            {previsao.meses.map((m) => (
+            {mesesNaTabela.map((m) => (
               <tr key={m.mes} className="border-t border-line text-ink-2">
                 <td className="py-1.5">{mesLabel(m.mes)}</td>
                 <td className="py-1.5 text-right tabular">{euros(m.receitaCents)}</td>

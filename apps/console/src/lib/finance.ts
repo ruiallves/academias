@@ -62,10 +62,14 @@ export type TransactionRow = {
   notes: string | null;
   /** Preenchido quando a linha é um mês de uma despesa (ou receita) fixa. */
   seriesId: string | null;
+  /** Quando a linha paga um mês de vencimento: o mês (`AAAA-MM`). Ausente num servidor antigo. */
+  salaryPeriod?: string | null;
+  salaryId?: string | null;
   category: { id: string; label: string } | null;
   athlete: { id: string; name: string } | null;
   member: { id: string; name: string } | null;
   team: { id: string; name: string } | null;
+  staffId?: string | null;
   staffName: string | null;
   match: { id: string; label: string; teamName: string } | null;
   calendarEvent: { id: string; title: string } | null;
@@ -103,10 +107,137 @@ export type Overview = {
   /** Os quatro horizontes numa resposta — o selector troca sem ir ao servidor. */
   forecast: { days: number; income: number; expense: number }[];
   includeFees: boolean;
+  /** Quantos meses tem a série e o "por categoria" (6, 12 ou 24). Ausente num servidor antigo. */
+  meses?: number;
+  /** `AAAA-MM` do mês corrente, na hora do clube. */
+  mesAtual?: string;
   monthly: { month: string; income: number; expense: number }[];
   proximasDespesas: UpcomingRow[];
   proximasReceitas: UpcomingRow[];
+  /** Receitas e despesas por categoria, no período da série (mensalidades e quotas incluídas). */
   porCategoria: { kind: FinanceKind; label: string; amountCents: number }[];
+  /** A folha de vencimentos em resumo. Ausente num servidor antigo. */
+  vencimentos?: ResumoDeVencimentos;
+  /** O orçamento da época em curso, em totais. */
+  orcamento?: { epoca: string; budgetCents: number; spentCents: number; categorias: number; acima: number } | null;
+  /** O que precisa de atenção. Só o que existe. */
+  atencao?: Atencao[];
+};
+
+export type Atencao =
+  | { tipo: "vencimentos-atraso"; n: number; amountCents: number }
+  | { tipo: "vencimentos-mes"; n: number; amountCents: number }
+  | { tipo: "previstos-vencidos"; n: number; amountCents: number; receitasCents: number }
+  | { tipo: "orcamento"; epoca: string; categorias: { label: string; budgetCents: number; spentCents: number }[] }
+  | { tipo: "saldo-projetado"; amountCents: number };
+
+/* -------------------------------------------------------------------------- */
+/* Vencimentos                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** Um período de vencimento: "600 € por mês de setembro em diante". */
+export type PeriodoDeVencimento = {
+  id: string;
+  amountCents: number;
+  /** `AAAA-MM-DD`, sempre o dia 1. */
+  startsOn: string;
+  /** `AAAA-MM-DD`, o último dia do último mês; nulo = em vigor. */
+  endsOn: string | null;
+  /** 1–28; nulo = o último dia do mês. */
+  payDay: number | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type EstadoDoMes = "pago" | "atraso" | "este-mes" | "futuro";
+
+export type MesDeVencimento = {
+  /** `AAAA-MM` */
+  period: string;
+  amountCents: number;
+  /** `AAAA-MM-DD` em que vence. */
+  vence: string;
+  salaryId: string;
+  estado: EstadoDoMes;
+  pagamento: { id: string; amountCents: number; occurredAt: string; method: string | null } | null;
+};
+
+export type PessoaComVencimento = {
+  tipo: "staff" | "atleta";
+  /** O id da pessoa: `membershipId` no staff, `athleteId` no atleta. */
+  id: string;
+  nome: string;
+  /** O cargo, ou a equipa do atleta. */
+  detalhe: string | null;
+  ativo: boolean;
+  /** O período em vigor no mês corrente. */
+  atual: PeriodoDeVencimento | null;
+  /** Todos os períodos, do mais recente para trás. */
+  periodos: PeriodoDeVencimento[];
+  /** Os meses da janela (12 para trás, 1 para a frente), do mais antigo para o mais recente. */
+  meses: MesDeVencimento[];
+  emAtraso: MesDeVencimento[];
+  esteMes: MesDeVencimento | null;
+  ultimoPagamento: { id: string; period: string | null; amountCents: number; occurredAt: string } | null;
+};
+
+export type ResumoDeVencimentos = {
+  pessoas: number;
+  folhaMensal: number;
+  pagoEsteMes: { n: number; amountCents: number };
+  porPagarEsteMes: { n: number; amountCents: number };
+  emAtraso: { n: number; amountCents: number };
+};
+
+export type Folha = {
+  hoje: string;
+  mesAtual: string;
+  resumo: ResumoDeVencimentos;
+  pessoas: PessoaComVencimento[];
+};
+
+export const ESTADO_DO_MES_LABEL: Record<EstadoDoMes, string> = {
+  pago: "Pago",
+  atraso: "Em atraso",
+  "este-mes": "Por pagar",
+  futuro: "A vencer",
+};
+
+/** A folha inteira, ou a de uma pessoa. */
+export const getFolha = (filtro: { membershipId?: string; athleteId?: string } = {}) =>
+  apiGet<Folha>("/api/finance/salaries", filtro);
+
+export const createSalary = async (body: {
+  membershipId?: string;
+  athleteId?: string;
+  amountCents: number;
+  startsOn: string;
+  payDay: number | null;
+  notes?: string;
+}) => {
+  const r = await apiPost<{ id: string }>("/api/finance/salaries", body);
+  esquecerMovimentos();
+  return r;
+};
+
+export const updateSalary = (id: string, body: Record<string, unknown>) =>
+  apiPatch<{ ok: true }>(`/api/finance/salaries/${id}`, body);
+
+export const deleteSalary = (id: string) => apiDelete<{ ok: true }>(`/api/finance/salaries/${id}`);
+
+export const paySalary = async (
+  id: string,
+  body: { period: string; paidOn?: string; amountCents?: number; method?: string; notes?: string },
+) => {
+  const r = await apiPost<{ id: string; amountCents: number }>(`/api/finance/salaries/${id}/pagar`, body);
+  esquecerMovimentos();
+  return r;
+};
+
+export const payMonth = async (body: { period: string; salaryIds?: string[]; paidOn?: string; method?: string }) => {
+  const r = await apiPost<{ pagos: number; amountCents: number }>("/api/finance/salaries/pagar-mes", body);
+  esquecerMovimentos();
+  return r;
 };
 
 export type FinanceSettings = {
@@ -129,8 +260,11 @@ export type TransactionFilters = {
 
 /* -------------------------------------------------------------------------- */
 
-export const getOverview = (horizon?: number) =>
-  apiGet<Overview>("/api/finance/overview", horizon ? { horizon: String(horizon) } : undefined);
+export const getOverview = (opts: { horizon?: number; meses?: number } = {}) =>
+  apiGet<Overview>("/api/finance/overview", {
+    ...(opts.horizon ? { horizon: String(opts.horizon) } : {}),
+    ...(opts.meses ? { meses: String(opts.meses) } : {}),
+  });
 
 export const listTransactions = (f: TransactionFilters = {}) =>
   apiGet<TransactionRow[]>("/api/finance/transactions", f as Record<string, string | undefined>);
@@ -259,4 +393,39 @@ export function euros(cents: number): string {
 export function eurosComSinal(cents: number): string {
   const abs = euros(Math.abs(cents));
   return cents >= 0 ? `+${abs}` : `−${abs}`;
+}
+
+/** "2,4 mil €" / "850 €": para os eixos dos gráficos, onde a casa decimal não cabe. */
+export function eurosCurtos(cents: number): string {
+  const v = cents / 100;
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} M€`;
+  if (abs >= 10_000) return `${Math.round(v / 1000).toLocaleString("pt-PT")} mil €`;
+  if (abs >= 1_000) return `${(v / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} mil €`;
+  return `${Math.round(v).toLocaleString("pt-PT")} €`;
+}
+
+const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/** "nov" / "nov 26" a partir de "2026-11". */
+export function mesCurto(chave: string, comAno = false): string {
+  const [ano, mes] = chave.split("-");
+  const nome = MESES_CURTOS[Number(mes) - 1] ?? chave;
+  return comAno ? `${nome} ${ano.slice(2)}` : nome;
+}
+
+/** "novembro de 2026" a partir de "2026-11". */
+export function mesLongo(chave: string): string {
+  const [ano, mes] = chave.split("-");
+  const nome = MESES_LONGOS[Number(mes) - 1];
+  return nome ? `${nome} de ${ano}` : chave;
+}
+
+/** `AAAA-MM` mais `n` meses. */
+export function somarMeses(chave: string, n: number): string {
+  const [a, m] = chave.split("-").map(Number);
+  const total = a * 12 + (m - 1) + n;
+  const ano = Math.floor(total / 12);
+  return `${ano}-${String(total - ano * 12 + 1).padStart(2, "0")}`;
 }

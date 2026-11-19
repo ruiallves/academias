@@ -6,10 +6,11 @@ import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { reloadFees } from "@/lib/store";
 import { useSession } from "@/session";
-import { naoEntregar, updateAssignment, type Assignment } from "@/lib/inventory";
-import { CampoDaEntrega } from "./PorEntregar";
+import { diaISO, hojeISO, naoEntregar, updateAssignment, type Assignment } from "@/lib/inventory";
+import { CampoDaEntrega, entregaValida, type EstadoDaEntrega } from "./PorEntregar";
 import {
   PagamentoDaEntregaField,
+  oQueFaltaNoPagamento,
   pagamentoValido,
   pedidoDe,
   valorDe,
@@ -54,8 +55,17 @@ export function EditAssignmentDialog({
 
   /* Só o que ainda é assunto muda de estado; o que foi devolvido já fechou. */
   const aberta = assignment.status === "ACTIVE" || assignment.status === "RESERVED";
-  const entregueInicial = assignment.status !== "RESERVED";
-  const [entregue, setEntregue] = useState(entregueInicial);
+  const jaEntregue = assignment.status === "ACTIVE";
+  /*
+   * A entrega como começa: uma peça já entregue mostra o dia gravado (para se
+   * corrigir); uma por entregar começa em "por entregar", e passa a "entregue
+   * agora" ou "noutro dia".
+   */
+  const entregaInicial: EstadoDaEntrega = jaEntregue
+    ? { modo: "dia", dia: diaISO(assignment.assignedAt) }
+    : { modo: "porEntregar", dia: "" };
+  const [entrega, setEntrega] = useState<EstadoDaEntrega>(entregaInicial);
+  const entregue = entrega.modo !== "porEntregar";
 
   const inicial = valorDe(assignment.pagamento);
   const [pagamento, setPagamento] = useState<ValorDoPagamento>(inicial);
@@ -65,14 +75,24 @@ export function EditAssignmentDialog({
   /** "Não vai ser entregue" pede um segundo toque: a linha sai e a peça volta ao stock. */
   const [confirmarNao, setConfirmarNao] = useState(false);
 
-  const entregaMudou = aberta && entregue !== entregueInicial;
+  const estadoMudou = aberta && entregue !== jaEntregue;
+  /* Uma peça entregue que continua entregue, com outro dia: corrige-se o dia. */
+  const diaMudou = aberta && jaEntregue && entrega.modo === "dia" && entrega.dia !== entregaInicial.dia;
+  const entregaMudou = estadoMudou || diaMudou;
   const pagamentoMudou =
     pagamento.modo !== inicial.modo ||
     (pagamento.modo !== "nenhum" && pagamento.valor !== inicial.valor) ||
-    (pagamento.modo === "pago" && pagamento.metodo !== inicial.metodo);
+    (pagamento.modo === "pago" && (pagamento.metodo !== inicial.metodo || pagamento.dia !== inicial.dia));
   const notasMudaram = notas.trim() !== (assignment.notes ?? "").trim();
   const algoMudou = entregaMudou || pagamentoMudou || notasMudaram;
-  const valido = algoMudou && (!pagamentoMudou || pagamentoValido(pagamento));
+  const valido = algoMudou && entregaValida(entrega) && (!pagamentoMudou || pagamentoValido(pagamento));
+  const motivo = !algoMudou || busy
+    ? null
+    : !entregaValida(entrega)
+      ? entrega.dia ? "O dia da entrega não pode ser depois de hoje." : "Escolhe o dia em que foi entregue."
+      : pagamentoMudou
+        ? oQueFaltaNoPagamento(pagamento)
+        : null;
 
   async function guardar(e: FormEvent) {
     e.preventDefault();
@@ -83,7 +103,9 @@ export function EditAssignmentDialog({
       await updateAssignment(assignment.id, {
         ...(notasMudaram ? { notes: notas.trim() } : {}),
         ...(pagamentoMudou && podeCobrar ? { pagamento: pedidoDe(pagamento) } : {}),
-        ...(entregaMudou ? { entregue } : {}),
+        ...(estadoMudou ? { entregue } : {}),
+        // O dia vai quando passa a entregue "noutro dia", ou quando se corrige o de uma entregue.
+        ...((estadoMudou && entrega.modo === "dia") || diaMudou ? { deliveredOn: entrega.dia } : {}),
       });
       if (pagamentoMudou) void reloadFees();
       onDone();
@@ -114,7 +136,7 @@ export function EditAssignmentDialog({
 
   const rotuloGuardar = busy
     ? "A guardar…"
-    : entregaMudou && entregue && !pagamentoMudou && !notasMudaram
+    : estadoMudou && entregue && !pagamentoMudou && !notasMudaram
       ? "Marcar entregue"
       : "Guardar";
 
@@ -128,13 +150,14 @@ export function EditAssignmentDialog({
       width={560}
       footer={
         <>
-          {onDevolver && assignment.status === "ACTIVE" && !entregaMudou && (
+          {motivo && <span className="mr-auto text-meta text-ink-3">{motivo}</span>}
+          {onDevolver && assignment.status === "ACTIVE" && !entregaMudou && !motivo && (
             <button type="button" className="ctl-ghost mr-auto" onClick={onDevolver} disabled={busy}>
               <Undo2 className="size-3.5" strokeWidth={1.75} />
               Devolver
             </button>
           )}
-          {assignment.status === "RESERVED" && (
+          {assignment.status === "RESERVED" && !motivo && (
             <button
               type="button"
               className={cx("ctl-ghost mr-auto", confirmarNao ? "text-risk" : "text-ink-3")}
@@ -162,7 +185,7 @@ export function EditAssignmentDialog({
           {assignment.assignedBy ? ` por ${assignment.assignedBy}` : ""}
         </p>
 
-        {aberta && <CampoDaEntrega value={entregue} onChange={setEntregue} primeiroNome={primeiroNome} />}
+        {aberta && <CampoDaEntrega value={entrega} onChange={setEntrega} primeiroNome={primeiroNome} jaEntregue={jaEntregue} />}
 
         {podeCobrar ? (
           <PagamentoDaEntregaField
@@ -170,6 +193,8 @@ export function EditAssignmentDialog({
             onChange={setPagamento}
             primeiroNome={primeiroNome}
             athleteId={assignment.athleteId}
+            /* Quem marca como pago aqui está quase sempre a registar o pagamento de hoje; muda-se se não foi. */
+            diaSugerido={hojeISO()}
           />
         ) : (
           <p className="rounded-[var(--radius-control)] bg-sunken/60 px-3 py-2.5 text-meta text-ink-3">

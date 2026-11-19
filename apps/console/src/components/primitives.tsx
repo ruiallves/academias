@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useMobile } from "@/lib/viewport";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ariaSort, BarraDeFiltros, Coluna, textoDe, textoDoValor, useOrdenacao, type ValorOrdenavel } from "@academia/ui/ordenar";
 import { ArrowRight, ChevronDown, TrendingDown, TrendingUp, type LucideIcon, ChevronRight } from "@/lib/icons";
 import { initials } from "@/lib/format";
 import { Spinner, useBusy } from "@/components/Busy";
@@ -239,7 +240,27 @@ export type Column<T> = {
    */
   primary?: true;
   render: (row: T) => ReactNode;
+  /**
+   * O valor por onde se ordena, quando o que a célula mostra não chega.
+   *
+   * Sem isto, ordena-se pelo texto da célula (`textoDe`), e as datas e os
+   * montantes escritos ("05/11/2026", "12,50 €") já se comparam pelo valor. Dá-se
+   * quando a célula é só um ícone ou uma cor, ou quando o texto é um resumo do
+   * valor (ex.: "há 3 dias" → a data).
+   */
+  sortValue?: (row: T) => ValorOrdenavel;
+  /**
+   * O texto desta linha na lista do filtro da coluna, quando a célula não tem
+   * texto (uma pastilha que se desenha sozinha) e o `sortValue` é um número de
+   * prioridade que não se lê ("Esgotado", e não "0"). Por omissão, o texto da
+   * célula, ou o `sortValue` escrito.
+   */
+  filterValue?: (row: T) => string;
+  /** `false` para uma coluna que não faz sentido ordenar (as ações). As colunas sem cabeçalho também não ordenam. */
+  sortable?: false;
 };
+
+const ordenavel = <T,>(c: Column<T>) => c.sortable !== false && c.header.trim() !== "";
 
 /**
  * O nome que abre a ficha, dentro de uma linha que faz outra coisa.
@@ -293,10 +314,17 @@ export function DataTable<T>({
   onRowClick,
   empty,
   selection,
+  sortKey,
 }: {
   columns: Column<T>[];
   rows: T[];
   keyOf: (row: T) => string;
+  /**
+   * O nome com que a ordem escolhida fica lembrada durante a sessão. Por omissão,
+   * a página e as colunas: chega para distinguir as tabelas da consola. Dá-se
+   * quando a mesma página tem duas tabelas com as mesmas colunas.
+   */
+  sortKey?: string;
   /** A linha leva a uma página. */
   to?: (row: T) => string;
   /**
@@ -325,10 +353,58 @@ export function DataTable<T>({
   };
 }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const mobile = useMobile();
   const hide = { sm: "hidden sm:table-cell", md: "hidden md:table-cell", lg: "hidden lg:table-cell" };
 
+  /*
+   * Ordenar e filtrar por qualquer coluna, como no Excel: o cabeçalho abre um
+   * menu com ascendente e descendente, uma pesquisa e a lista dos valores da
+   * coluna para escolher os que ficam à vista. Ordena pelo `sortValue` (ou pelo
+   * texto da célula); a lista do filtro mostra o texto da célula (ou o
+   * `filterValue`). Ver `packages/ui/src/ordenar.tsx`.
+   */
+  const porChave = new Map(columns.map((c) => [c.key, c]));
+  const t = useOrdenacao(
+    rows,
+    (coluna, row) => {
+      const c = porChave.get(coluna);
+      if (!c) return null;
+      return c.sortValue ? c.sortValue(row) : textoDe(c.render(row));
+    },
+    sortKey ?? `${pathname}|${columns.map((c) => c.key).join(",")}`,
+    (coluna, row) => {
+      const c = porChave.get(coluna);
+      if (!c) return "";
+      if (c.filterValue) return c.filterValue(row);
+      const visto = textoDe(c.render(row));
+      return visto.trim() ? visto : textoDoValor(c.sortValue?.(row));
+    },
+  );
+  const { linhas: ordenadas, ordem } = t;
+
   if (rows.length === 0) return <div className="px-5 py-14">{empty ?? <Empty title="Sem resultados" />}</div>;
+
+  /*
+   * Os filtros esconderam tudo: dizê-lo dentro da tabela, com a saída à mão.
+   *
+   * Dentro, e não no lugar dela: o gesto normal é "Selecionar tudo" para
+   * desmarcar tudo e depois marcar dois ou três, e nesse meio a tabela fica
+   * vazia. Se os cabeçalhos saíssem, o menu aberto fechava-se a meio.
+   */
+  const semLinhas =
+    ordenadas.length === 0 ? (
+      <div className="px-5 py-12">
+        <Empty
+          title="Nenhuma linha com estes filtros"
+          detail={`${t.total} ${t.total === 1 ? "linha escondida" : "linhas escondidas"} pelos filtros das colunas.`}
+        >
+          <button type="button" onClick={t.limparFiltros} className="ctl-outline mt-3">
+            Limpar filtros
+          </button>
+        </Empty>
+      </div>
+    ) : null;
 
   /*
    * "Todos" é todos os **visíveis**, não todos os que existem.
@@ -337,7 +413,8 @@ export function DataTable<T>({
    * alternativa — marcar a base inteira — é a origem clássica do apagar em massa
    * que ninguém queria.
    */
-  const elegiveis = rows.filter((r) => !selection?.disabled?.(r)).map(keyOf);
+  // Também com os filtros das colunas: o "todos" marca só as linhas que ficaram à vista.
+  const elegiveis = ordenadas.filter((r) => !selection?.disabled?.(r)).map(keyOf);
   const todosMarcados = elegiveis.length > 0 && elegiveis.every((id) => selection?.selected.has(id));
   const algunsMarcados = !todosMarcados && elegiveis.some((id) => selection?.selected.has(id));
 
@@ -436,9 +513,24 @@ export function DataTable<T>({
   if (mobile) {
     const principal = columns.find((c) => c.primary) ?? columns[0];
     const resto = columns.filter((c) => c !== principal);
+    // No telemóvel não há cabeçalhos: os nomes das colunas ficam numa fila por cima dos cartões, e cada um abre o mesmo menu.
+    const comMenu = columns.filter(ordenavel);
 
     return (
       <div>
+        {rows.length > 1 && comMenu.length > 0 && (
+          <div className="flex min-h-11 items-center gap-3 overflow-x-auto border-b border-line px-4 text-meta whitespace-nowrap text-ink-3">
+            <span className="shrink-0">Ordenar e filtrar</span>
+            {comMenu.map((c) => (
+              <span key={c.key} className="shrink-0 rounded-full border border-line px-2.5 py-1 font-medium text-ink-2">
+                <Coluna t={t} coluna={c.key}>
+                  {c.header}
+                </Coluna>
+              </span>
+            ))}
+          </div>
+        )}
+        <BarraDeFiltros t={t} />
         {selection && elegiveis.length > 0 && (
           <label className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-line bg-sunken/40 px-4 text-meta text-ink-2 select-none">
             <input
@@ -454,8 +546,9 @@ export function DataTable<T>({
             {todosMarcados ? "Desmarcar todos" : algunsMarcados ? `${selection.selected.size} escolhidos` : "Escolher todos os visíveis"}
           </label>
         )}
+        {semLinhas}
         <ul>
-          {rows.map((row) => {
+          {ordenadas.map((row) => {
             const id = keyOf(row);
             const { href, clickable, aoClicar } = gestoDe(row);
             const marcada = Boolean(selection?.selected.has(id));
@@ -513,6 +606,8 @@ export function DataTable<T>({
   }
 
   return (
+    <div>
+    <BarraDeFiltros t={t} />
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-body">
         <thead>
@@ -537,6 +632,7 @@ export function DataTable<T>({
               <th
                 key={c.key}
                 scope="col"
+                aria-sort={ordenavel(c) ? ariaSort(ordem, c.key) : undefined}
                 style={c.width ? { width: c.width } : undefined}
                 className={cx(
                   "px-5 py-2 text-meta font-medium text-ink-3 whitespace-nowrap",
@@ -544,13 +640,24 @@ export function DataTable<T>({
                   c.hideBelow && hide[c.hideBelow],
                 )}
               >
-                {c.header}
+                {ordenavel(c) ? (
+                  <Coluna t={t} coluna={c.key} direita={c.align === "right"}>
+                    {c.header}
+                  </Coluna>
+                ) : (
+                  c.header
+                )}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {semLinhas && (
+            <tr>
+              <td colSpan={columns.length + (selection ? 1 : 0)}>{semLinhas}</td>
+            </tr>
+          )}
+          {ordenadas.map((row) => {
             const { clickable, aoClicar } = gestoDe(row);
 
             return (
@@ -598,6 +705,7 @@ export function DataTable<T>({
           })}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

@@ -79,6 +79,13 @@ const academia = (await db.query(`SELECT id FROM "Academy" WHERE slug = 'life-cl
 
 const limpar = async () => {
   await db.query(`DELETE FROM "FinancialTransaction" WHERE description LIKE 'ZF %'`);
+  // Os pagamentos de vencimentos de teste (os períodos de teste levam a nota "ZF").
+  await db.query(
+    `DELETE FROM "FinancialTransaction" WHERE "academyId" = $1 AND "salaryPeriod" IS NOT NULL
+       AND ("salaryId" IN (SELECT id FROM "Salary" WHERE notes = 'ZF') OR "salaryId" IS NULL AND description LIKE 'Vencimento de %')`,
+    [academia],
+  );
+  await db.query(`DELETE FROM "Salary" WHERE "academyId" = $1 AND notes = 'ZF'`, [academia]);
   await db.query(`DELETE FROM "FinancialBudget" WHERE "academyId" = $1`, [academia]);
   await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZF %'`);
 };
@@ -216,8 +223,11 @@ check(
   `${automaticas.length} linhas`,
 );
 
+// As automáticas escrevem-se "Mensalidade de setembro de 2026 · Nome" e sem autor; uma linha com esse
+// nome escrita pela direção é um movimento manual legítimo (há três de 09/2026 no Life Club), não uma cópia.
 const copiadas = await db.query(
-  `SELECT COUNT(*)::int AS n FROM "FinancialTransaction" WHERE "academyId" = $1 AND description LIKE 'Mensalidade %'`,
+  `SELECT COUNT(*)::int AS n FROM "FinancialTransaction"
+    WHERE "academyId" = $1 AND description LIKE 'Mensalidade de %' AND "createdById" IS NULL`,
   [academia],
 );
 check("nenhuma cobrança foi copiada para a tabela de movimentos", copiadas.rows[0].n === 0, `${copiadas.rows[0].n}`);
@@ -596,7 +606,13 @@ const saldoEsperado = async (desde) => {
        FROM "Charge" WHERE "academyId" = $1 AND status = 'SETTLED' AND "settledAt" >= $2`,
     [academia, desde],
   );
-  return t.rows[0].v + c.rows[0].v;
+  // As quotas dos sócios pagas são a outra fonte automática, com a mesma regra.
+  const q = await db.query(
+    `SELECT COALESCE(SUM("amountCents"), 0)::int AS v
+       FROM "MemberFee" WHERE "academyId" = $1 AND status = 'SETTLED' AND "settledAt" >= $2`,
+    [academia, desde],
+  );
+  return t.rows[0].v + c.rows[0].v + q.rows[0].v;
 };
 
 for (const [quando, dias] of [
@@ -622,6 +638,153 @@ if (outra) {
   check("nem se mexe num movimento de fora (403/404)", mexerDeFora.status === 403 || mexerDeFora.status === 404, `${mexerDeFora.status}`);
 } else {
   console.log("  (só existe uma academia nesta base — salto)");
+}
+
+/* ======================================================= vencimentos ==== */
+
+/*
+ * Os vencimentos (18/11/2026): um período por pessoa ("600 € por mês desde
+ * setembro"), os meses devidos calculados na leitura, e cada mês pago é uma
+ * despesa concluída ligada à pessoa. O que não pode falhar: a folha diz o que
+ * falta; pagar mexe no saldo uma vez só; o mesmo mês não se paga duas vezes;
+ * um valor novo fecha o anterior sem o apagar; e um treinador não vê nada.
+ */
+console.log("\n=== Vencimentos ===");
+// Os meses que sobraram da série de teste ocupavam as seis "próximas despesas"; já provaram o que tinham a provar.
+await db.query(`DELETE FROM "FinancialTransaction" WHERE description LIKE 'ZF Serie a apagar%'`);
+const mesKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const agora = new Date();
+const mesAtual = mesKey(agora);
+const haTresMeses = mesKey(new Date(agora.getFullYear(), agora.getMonth() - 3, 1));
+const haDoisMeses = mesKey(new Date(agora.getFullYear(), agora.getMonth() - 2, 1));
+const proximoMes = mesKey(new Date(agora.getFullYear(), agora.getMonth() + 1, 1));
+
+const pessoaStaff = (
+  await db.query(
+    `SELECT m.id, u.name FROM "Membership" m JOIN "User" u ON u.id = m."userId"
+      WHERE m."academyId" = $1 AND m.role IN ('COACH','STAFF','COORDINATOR') AND m."isActive" = true ORDER BY m."createdAt" LIMIT 1`,
+    [academia],
+  )
+).rows[0];
+const atletaPago = (await db.query(`SELECT id, name FROM "Athlete" WHERE "academyId" = $1 AND status = 'ACTIVE' ORDER BY "createdAt" LIMIT 1`, [academia])).rows[0];
+check("há uma pessoa do staff e um atleta para o teste", Boolean(pessoaStaff && atletaPago));
+
+const coachFolha = await call(coach, "GET", "/api/finance/salaries");
+check("um treinador não vê a folha de vencimentos (403)", coachFolha.status === 403, `${coachFolha.status}`);
+const coachDefine = await call(coach, "POST", "/api/finance/salaries", { membershipId: pessoaStaff.id, amountCents: 1, startsOn: `${mesAtual}-01` });
+check("nem define vencimentos (403)", coachDefine.status === 403, `${coachDefine.status}`);
+
+const semPessoa = await call(director, "POST", "/api/finance/salaries", { amountCents: 60_000, startsOn: `${mesAtual}-01`, notes: "ZF" });
+check("um vencimento sem pessoa é recusado (400)", semPessoa.status === 400, `${semPessoa.status}`);
+const duasPessoas = await call(director, "POST", "/api/finance/salaries", {
+  membershipId: pessoaStaff.id, athleteId: atletaPago.id, amountCents: 60_000, startsOn: `${mesAtual}-01`, notes: "ZF",
+});
+check("com staff e atleta ao mesmo tempo também (400)", duasPessoas.status === 400, `${duasPessoas.status}`);
+
+const ovAntesDosVencimentos = await overview(30);
+const venc = await call(director, "POST", "/api/finance/salaries", {
+  membershipId: pessoaStaff.id, amountCents: 60_000, startsOn: `${haTresMeses}-15`, notes: "ZF",
+});
+check("define-se 600 € por mês desde há três meses (201)", venc.status === 201 && Boolean(venc.body?.id), `${venc.status} ${JSON.stringify(venc.body)}`);
+
+const folha1 = (await call(director, "GET", "/api/finance/salaries")).body;
+const pessoa1 = folha1?.pessoas?.find((p) => p.id === pessoaStaff.id);
+check("a folha tem a pessoa, com o período em vigor", pessoa1?.atual?.amountCents === 60_000, JSON.stringify(pessoa1?.atual));
+check("o início ficou no dia 1 do mês", pessoa1?.atual?.startsOn === `${haTresMeses}-01`, pessoa1?.atual?.startsOn);
+check("três meses em atraso", pessoa1?.emAtraso?.length === 3, `${pessoa1?.emAtraso?.length}`);
+check("o mês corrente está por pagar", pessoa1?.esteMes?.estado === "este-mes", pessoa1?.esteMes?.estado);
+check("o mês seguinte aparece como a vencer", pessoa1?.meses?.find((m) => m.period === proximoMes)?.estado === "futuro");
+check("sem dia marcado, vence no último dia do mês", /-(28|29|30|31)$/.test(pessoa1?.esteMes?.vence ?? ""), pessoa1?.esteMes?.vence);
+check("o resumo soma a folha mensal", folha1?.resumo?.folhaMensal >= 60_000, `${folha1?.resumo?.folhaMensal}`);
+check("e os meses em atraso", folha1?.resumo?.emAtraso?.n >= 3 && folha1?.resumo?.emAtraso?.amountCents >= 180_000, JSON.stringify(folha1?.resumo?.emAtraso));
+
+const ovComVencimentos = await overview(30);
+check("o painel traz o resumo dos vencimentos", ovComVencimentos.vencimentos?.emAtraso?.n >= 3, JSON.stringify(ovComVencimentos.vencimentos));
+check("e aponta os atrasos em 'precisa de atenção'", ovComVencimentos.atencao?.some?.((a) => a.tipo === "vencimentos-atraso"), JSON.stringify(ovComVencimentos.atencao));
+check(
+  "os meses por pagar entram nas despesas previstas (pelo menos os três em atraso)",
+  ovComVencimentos.despesasPrevistas >= ovAntesDosVencimentos.despesasPrevistas + 180_000,
+  `${ovAntesDosVencimentos.despesasPrevistas} -> ${ovComVencimentos.despesasPrevistas}`,
+);
+check("o saldo não mexe por se definir um vencimento", ovComVencimentos.saldo === ovAntesDosVencimentos.saldo, `${ovAntesDosVencimentos.saldo} -> ${ovComVencimentos.saldo}`);
+check(
+  "e as próximas despesas mostram o vencimento",
+  ovComVencimentos.proximasDespesas.some((d) => d.id.startsWith("salary_") && d.description.includes(pessoaStaff.name)),
+  JSON.stringify(ovComVencimentos.proximasDespesas.map((d) => d.description)),
+);
+
+console.log("\n=== Pagar um mês ===");
+const pago = await call(director, "POST", `/api/finance/salaries/${venc.body.id}/pagar`, { period: haTresMeses, paidOn: dia(), method: "TRANSFER" });
+check("paga-se o mês mais antigo (201)", pago.status === 201 && pago.body?.amountCents === 60_000, `${pago.status} ${JSON.stringify(pago.body)}`);
+const ovPago = await overview(30);
+check("o saldo desce 600 €", ovPago.saldo === ovComVencimentos.saldo - 60_000, `${ovComVencimentos.saldo} -> ${ovPago.saldo}`);
+check("as despesas previstas largam esse mês", ovPago.despesasPrevistas === ovComVencimentos.despesasPrevistas - 60_000, `${ovComVencimentos.despesasPrevistas} -> ${ovPago.despesasPrevistas}`);
+
+const folha2 = (await call(director, "GET", `/api/finance/salaries?membershipId=${pessoaStaff.id}`)).body;
+const pessoa2 = folha2?.pessoas?.[0];
+check("a folha filtrada à pessoa traz só ela", folha2?.pessoas?.length === 1 && pessoa2?.id === pessoaStaff.id);
+check("ficam dois meses em atraso", pessoa2?.emAtraso?.length === 2, `${pessoa2?.emAtraso?.length}`);
+const mesPago = pessoa2?.meses?.find((m) => m.period === haTresMeses);
+check("o mês pago diz-se pago, com o pagamento", mesPago?.estado === "pago" && mesPago?.pagamento?.id === pago.body.id, JSON.stringify(mesPago));
+
+const linhaDoPagamento = (await db.query(`SELECT * FROM "FinancialTransaction" WHERE id = $1`, [pago.body.id])).rows[0];
+check("o pagamento é uma despesa concluída", linhaDoPagamento?.kind === "EXPENSE" && linhaDoPagamento?.status === "COMPLETED");
+check("ligada à pessoa e ao mês", linhaDoPagamento?.staffId === pessoaStaff.id && linhaDoPagamento?.salaryPeriod === haTresMeses && linhaDoPagamento?.salaryId === venc.body.id);
+const categoriaDoPagamento = (await db.query(`SELECT label FROM "CatalogItem" WHERE id = $1`, [linhaDoPagamento?.categoryId])).rows[0];
+check("na categoria dos salários", /sal[aá]rios|vencimentos/i.test(categoriaDoPagamento?.label ?? ""), categoriaDoPagamento?.label);
+const naLista = (await call(director, "GET", "/api/finance/transactions")).body;
+check("e aparece nos movimentos com o mês do vencimento", naLista.some((t) => t.id === pago.body.id && t.salaryPeriod === haTresMeses));
+
+const repetido = await call(director, "POST", `/api/finance/salaries/${venc.body.id}/pagar`, { period: haTresMeses });
+check("pagar o mesmo mês outra vez é recusado (400)", repetido.status === 400, `${repetido.status}`);
+const antesDoInicio = await call(director, "POST", `/api/finance/salaries/${venc.body.id}/pagar`, { period: "2020-01" });
+check("pagar um mês fora do período é recusado (400)", antesDoInicio.status === 400, `${antesDoInicio.status}`);
+const longe = await call(director, "POST", `/api/finance/salaries/${venc.body.id}/pagar`, { period: mesKey(new Date(agora.getFullYear(), agora.getMonth() + 3, 1)) });
+check("pagar daqui a três meses é recusado (400)", longe.status === 400, `${longe.status}`);
+
+const outroValor = await call(director, "POST", `/api/finance/salaries/${venc.body.id}/pagar`, { period: haDoisMeses, amountCents: 65_000, notes: "com prémio" });
+check("um mês paga-se por outro valor quando foi outro (201)", outroValor.status === 201 && outroValor.body?.amountCents === 65_000, JSON.stringify(outroValor.body));
+
+console.log("\n=== Pagar o mês a todos ===");
+const atleta = await call(director, "POST", "/api/finance/salaries", { athleteId: atletaPago.id, amountCents: 30_000, startsOn: `${mesAtual}-01`, payDay: 5, notes: "ZF" });
+check("um atleta também tem vencimento (201)", atleta.status === 201, `${atleta.status} ${JSON.stringify(atleta.body)}`);
+const folha3 = (await call(director, "GET", "/api/finance/salaries")).body;
+const atletaNaFolha = folha3.pessoas.find((p) => p.tipo === "atleta" && p.id === atletaPago.id);
+check("e aparece na folha como atleta, a vencer no dia 5", atletaNaFolha?.esteMes?.vence === `${mesAtual}-05`, JSON.stringify(atletaNaFolha?.esteMes));
+const porPagarAntes = folha3.resumo.porPagarEsteMes.n;
+check("há pelo menos duas pessoas por pagar este mês", porPagarAntes >= 2, `${porPagarAntes}`);
+
+const todos = await call(director, "POST", "/api/finance/salaries/pagar-mes", { period: mesAtual, salaryIds: [venc.body.id, atleta.body.id], method: "TRANSFER" });
+check("paga-se o mês aos dois de uma vez", todos.status === 201 && todos.body?.pagos === 2 && todos.body?.amountCents === 90_000, JSON.stringify(todos.body));
+const folha4 = (await call(director, "GET", "/api/finance/salaries")).body;
+check("e os dois ficam com o mês pago", ["staff", "atleta"].every((tipo) => folha4.pessoas.find((p) => p.tipo === tipo && p.notes !== "x" && (p.id === pessoaStaff.id || p.id === atletaPago.id))?.esteMes?.estado === "pago"));
+const outraVezTodos = await call(director, "POST", "/api/finance/salaries/pagar-mes", { period: mesAtual, salaryIds: [venc.body.id, atleta.body.id] });
+check("repetir não paga ninguém", outraVezTodos.body?.pagos === 0, JSON.stringify(outraVezTodos.body));
+
+console.log("\n=== Um valor novo fecha o anterior ===");
+const subida = await call(director, "POST", "/api/finance/salaries", { membershipId: pessoaStaff.id, amountCents: 70_000, startsOn: `${proximoMes}-01`, notes: "ZF" });
+check("define-se 700 € a partir do mês que vem (201)", subida.status === 201, `${subida.status}`);
+const folha5 = (await call(director, "GET", `/api/finance/salaries?membershipId=${pessoaStaff.id}`)).body;
+const pessoa5 = folha5.pessoas[0];
+check("ficam dois períodos", pessoa5.periodos.length === 2, `${pessoa5.periodos.length}`);
+check("o antigo fechou no fim deste mês", pessoa5.periodos.find((p) => p.id === venc.body.id)?.endsOn?.startsWith(mesAtual), JSON.stringify(pessoa5.periodos));
+check("este mês continua a 600 €, o seguinte a 700 €", pessoa5.atual?.amountCents === 60_000 && pessoa5.meses.find((m) => m.period === proximoMes)?.amountCents === 70_000);
+check("os pagamentos antigos ficam", pessoa5.meses.filter((m) => m.estado === "pago").length === 3, `${pessoa5.meses.filter((m) => m.estado === "pago").length}`);
+
+const periodoCorrigido = await call(director, "PATCH", `/api/finance/salaries/${subida.body.id}`, { amountCents: 72_000, payDay: 28 });
+check("corrige-se o valor e o dia de um período (200)", periodoCorrigido.status === 200, `${periodoCorrigido.status}`);
+const folha6 = (await call(director, "GET", `/api/finance/salaries?membershipId=${pessoaStaff.id}`)).body;
+const seguinte = folha6.pessoas[0].meses.find((m) => m.period === proximoMes);
+check("e o mês seguinte reflecte-o", seguinte?.amountCents === 72_000 && seguinte?.vence === `${proximoMes}-28`, JSON.stringify(seguinte));
+
+const periodoApagado = await call(director, "DELETE", `/api/finance/salaries/${subida.body.id}`);
+check("apaga-se um período (200)", periodoApagado.status === 200, `${periodoApagado.status}`);
+const pagamentosFicam = (await db.query(`SELECT COUNT(*)::int AS n FROM "FinancialTransaction" WHERE id = ANY($1)`, [[pago.body.id, outroValor.body.id]])).rows[0];
+check("os pagamentos já feitos ficam nos movimentos", pagamentosFicam.n === 2, `${pagamentosFicam.n}`);
+
+if (outra) {
+  const deFora = await call(director, "GET", "/api/finance/salaries", undefined, outra.slug);
+  check("a folha do Life Club não abre em outro clube (403/404)", deFora.status === 403 || deFora.status === 404, `${deFora.status}`);
 }
 
 /* =========================================================== limpeza ==== */

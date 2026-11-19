@@ -56,13 +56,28 @@ function anoLectivoDeHoje(): string {
   return `${ano}/${String((ano + 1) % 100).padStart(2, "0")}`;
 }
 
+/**
+ * Os anos lectivos em que se pode submeter: o actual e os onze anteriores, do
+ * mais recente para trás. É a mesma regra do servidor (`anosLectivosAbertos`):
+ * doze anos cobrem a escolaridade toda, e um ano futuro ainda não tem notas.
+ */
+const ANOS_ANTERIORES = 11;
+function anosAbertos(): string[] {
+  const atual = Number(anoLectivoDeHoje().slice(0, 4));
+  return Array.from({ length: ANOS_ANTERIORES + 1 }, (_, i) => {
+    const ano = atual - i;
+    return `${ano}/${String((ano + 1) % 100).padStart(2, "0")}`;
+  });
+}
+
 const negativa = (n: { grade: number; scale: number }) => (n.scale === 5 ? n.grade < 3 : n.grade < 10);
 const chave = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 export function NotasDaEscola({ childId, childName }: { childId: string; childName: string }) {
   const [notas, setNotas] = useState<Nota[] | null>(null);
   const [editable, setEditable] = useState(false);
-  const [aberta, setAberta] = useState<Nota | "nova" | null>(null);
+  /* "nova" com o ano em que começa: o de hoje, ou o do cartão onde se tocou. */
+  const [aberta, setAberta] = useState<Nota | { nova: string } | null>(null);
 
   const carregar = useCallback(() => {
     apiGet<{ editable: boolean; notas: Nota[] }>(`/api/athletes/${childId}/notas-escolares`)
@@ -91,7 +106,7 @@ export function NotasDaEscola({ childId, childName }: { childId: string; childNa
       <div className="mb-1 flex items-center justify-between px-1">
         <h2 className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Escola</h2>
         {editable && notas.length > 0 && (
-          <button type="button" onClick={() => setAberta("nova")} className="flex items-center gap-1 text-[13px] font-semibold text-signal-ink">
+          <button type="button" onClick={() => setAberta({ nova: ano })} className="flex items-center gap-1 text-[13px] font-semibold text-signal-ink">
             <Plus className="size-4" strokeWidth={2.2} />
             Nota
           </button>
@@ -105,9 +120,9 @@ export function NotasDaEscola({ childId, childName }: { childId: string; childNa
           </span>
           <p className="mt-3 text-body font-semibold text-ink">As notas da escola</p>
           <p className="mx-auto mt-1 max-w-[30ch] text-[13px] leading-relaxed text-ink-3">
-            O clube acompanha a escola dos atletas. Submete aqui as notas de cada período.
+            O clube acompanha a escola dos atletas. Submete aqui as notas de cada período, deste ano e dos anteriores.
           </p>
-          <button type="button" onClick={() => setAberta("nova")} className="cta mt-4 w-full justify-center gap-2">
+          <button type="button" onClick={() => setAberta({ nova: ano })} className="cta mt-4 w-full justify-center gap-2">
             <Plus className="size-[18px]" strokeWidth={2.2} />
             Submeter notas
           </button>
@@ -126,7 +141,20 @@ export function NotasDaEscola({ childId, childName }: { childId: string; childNa
                     <div key={p.key} className="border-b border-line last:border-0">
                       <div className="flex items-baseline justify-between px-4 pt-3 pb-1">
                         <span className="text-[13px] font-semibold text-ink">{p.label}</span>
-                        <span className="num text-[12px] text-ink-4">{a}</span>
+                        {/* O ano do cartão também é o atalho para juntar mais uma nota desse ano. */}
+                        {editable ? (
+                          <button
+                            type="button"
+                            onClick={() => setAberta({ nova: a })}
+                            className="num flex items-center gap-1 text-[12px] font-medium text-ink-4"
+                            aria-label={`Juntar uma nota de ${a}`}
+                          >
+                            {a}
+                            <Plus className="size-3.5" strokeWidth={2.2} />
+                          </button>
+                        ) : (
+                          <span className="num text-[12px] text-ink-4">{a}</span>
+                        )}
                       </div>
                       <ul>
                         {doPeriodo.map((n) => (
@@ -158,9 +186,9 @@ export function NotasDaEscola({ childId, childName }: { childId: string; childNa
         <NotaSheet
           childId={childId}
           childName={childName}
-          nota={aberta === "nova" ? null : aberta}
+          nota={"nova" in aberta ? null : aberta}
           existentes={notas}
-          anoPorOmissao={ano}
+          anoPorOmissao={"nova" in aberta ? aberta.nova : ano}
           onChanged={carregar}
           onClose={() => setAberta(null)}
         />
@@ -193,7 +221,13 @@ function NotaSheet({
    * da última submetida. Quem está a meio de uma pauta não volta a escolher.
    */
   const ultima = existentes[existentes.length - 1];
-  const schoolYear = nota?.schoolYear ?? anoPorOmissao;
+  /*
+   * O ano lectivo escolhe-se aqui, numa fila como a das disciplinas: o de hoje
+   * primeiro e os anteriores para trás. Numa nota a corrigir fica preso, como o
+   * período e a disciplina: mudar o ano de uma nota é outra nota.
+   */
+  const anos = anosAbertos();
+  const [schoolYear, setSchoolYear] = useState(nota?.schoolYear ?? anoPorOmissao);
   const [period, setPeriod] = useState(nota?.period ?? ultima?.period ?? "1P");
   const [subject, setSubject] = useState(nota?.subject ?? "");
   const [scale, setScale] = useState<number>(nota?.scale ?? ultima?.scale ?? 5);
@@ -280,6 +314,35 @@ function NotaSheet({
             {gravadas.length === 1 ? `${gravadas[0]} gravada.` : `${gravadas.length} notas gravadas.`} Podes submeter a
             seguinte.
           </p>
+        )}
+
+        {/* ---- o ano lectivo ---- */}
+        {!nota && (
+          <>
+            <div className="mb-1.5 text-meta font-medium text-ink-3">Ano lectivo</div>
+            <div className="-mx-5 mb-4 flex gap-1.5 overflow-x-auto px-5 pb-1 [scrollbar-width:none]" role="radiogroup" aria-label="Ano lectivo">
+              {anos.map((a, i) => (
+                <button
+                  key={a}
+                  type="button"
+                  role="radio"
+                  aria-checked={schoolYear === a}
+                  onClick={() => {
+                    setSchoolYear(a);
+                    // As gravadas eram de outro ano: as sugestões voltam a contar do zero.
+                    setGravadas([]);
+                  }}
+                  className={cx(
+                    "num shrink-0 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors",
+                    schoolYear === a ? "bg-signal-strong text-signal-on" : "bg-sunken text-ink-2",
+                  )}
+                >
+                  {a}
+                  {i === 0 && <span className="ml-1 font-medium opacity-75">· este ano</span>}
+                </button>
+              ))}
+            </div>
+          </>
         )}
 
         {/* ---- o período ---- */}
@@ -408,7 +471,7 @@ function NotaSheet({
           </button>
         ) : (
           <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-4">
-            {nomeDoPeriodo(period)}. O clube vê as notas na ficha do atleta.
+            {nomeDoPeriodo(period)} de {schoolYear}. O clube vê as notas na ficha do atleta.
           </p>
         )}
       </div>

@@ -322,6 +322,7 @@ model Academy {
   financialTransactions FinancialTransaction[]
   financeSettings       FinanceSettings?
   financialBudgets      FinancialBudget[]
+  salaries              Salary[]
   directDebitMandates   DirectDebitMandate[]
 
   /// Academias AI — análise de vídeo. Ver a secção no fim do ficheiro.
@@ -708,6 +709,9 @@ model Membership {
   financeAsStaff     FinancialTransaction[] @relation("FinanceStaff")
   financeCreated     FinancialTransaction[] @relation("FinanceCreatedBy")
   financeUpdated     FinancialTransaction[] @relation("FinanceUpdatedBy")
+  /// O vencimento desta pessoa (um por período em vigor), e os que registou.
+  salaries           Salary[]               @relation("SalaryStaff")
+  salariesCreated    Salary[]               @relation("SalaryCreatedBy")
   directDebitMandate DirectDebitMandate?
 
   /// Academias AI: análises criadas, vídeos carregados e correções feitas.
@@ -1219,6 +1223,8 @@ model Athlete {
 
   /// O dinheiro que lhe diz respeito — seguros, inscrições, transferências.
   financialTransactions FinancialTransaction[]
+  /// O vencimento, quando o atleta é pago pelo clube. Ver `Salary`.
+  salaries              Salary[]
 
   /// Academias AI: presenças em análises, tracks, eventos, insights e o perfil
   /// de identidade visual (sem biometria facial — ver `PlayerIdentityProfile`).
@@ -6479,6 +6485,21 @@ model FinancialTransaction {
    */
   seriesId String?
 
+  /**
+   * O vencimento que este movimento paga, e o mês a que respeita (`AAAA-MM`).
+   *
+   * Pagar um vencimento é registar uma despesa concluída como qualquer outra —
+   * entra no saldo, na lista e no gráfico pelo caminho de sempre. O que estas
+   * duas colunas acrescentam é a memória de **que mês ficou pago**: é por elas
+   * que a folha de vencimentos sabe o que falta, e que o mesmo mês não se paga
+   * duas vezes (a verificação é do serviço, para um pagamento cancelado não
+   * impedir o certo a seguir). `SetNull`: apagar o vencimento não apaga o que
+   * se pagou.
+   */
+  salaryId     String?
+  salary       Salary? @relation(fields: [salaryId], references: [id], onDelete: SetNull)
+  salaryPeriod String?
+
   /// Auditoria: quem registou e quem mexeu por último. `SetNull` — o registo
   /// fica mesmo que a pessoa saia do clube.
   createdById String?
@@ -6495,6 +6516,53 @@ model FinancialTransaction {
   @@index([calendarEventId])
   @@index([trainingSessionId])
   @@index([academyId, seriesId])
+  @@index([salaryId, salaryPeriod])
+}
+
+/// O vencimento de uma pessoa do clube — alguém do staff ou um atleta.
+///
+/// Uma linha é um **período**: "600 € por mês, de setembro de 2026 em diante".
+/// Mudar o valor fecha a linha em vigor (`endsOn`) e abre outra: é assim que a
+/// ficha mostra o histórico ("subiu em janeiro") sem uma tabela de alterações.
+/// Exatamente um de `membershipId` e `athleteId` está preenchido.
+///
+/// O que se deve calcula-se na leitura, a partir do período e dos meses já
+/// pagos (`FinancialTransaction.salaryPeriod`): não há linhas de "vencimento
+/// por pagar" guardadas, pela mesma razão por que o saldo não se guarda — a
+/// verdade do que foi pago vive nos movimentos, e uma cópia divergia à primeira
+/// correção.
+model Salary {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  membershipId String?
+  membership   Membership? @relation("SalaryStaff", fields: [membershipId], references: [id], onDelete: Cascade)
+  athleteId    String?
+  athlete      Athlete?    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// Por mês, em cêntimos, sempre positivo.
+  amountCents Int
+  /// O primeiro mês em que vale (guarda-se o dia 1).
+  startsOn DateTime  @db.Date
+  /// O último mês em que vale (o último dia dele); nulo = em vigor.
+  endsOn   DateTime? @db.Date
+  /// O dia do mês em que se costuma pagar (1–28); nulo = o último dia do mês.
+  /// Só serve às previsões: o pagamento regista-se no dia em que acontece.
+  payDay   Int?
+  notes    String?
+
+  /// Os meses pagos deste vencimento.
+  payments FinancialTransaction[]
+
+  createdById String?
+  createdBy   Membership? @relation("SalaryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, membershipId])
+  @@index([academyId, athleteId])
 }
 
 /// O ponto de partida do saldo, e o que conta para ele.

@@ -5,7 +5,7 @@ import { guardiansOf } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { money } from "@/lib/format";
-import type { ModoDePagamento, PagamentoDaEntrega, PagamentoPedido } from "@/lib/inventory";
+import { diaISO, hojeISO, type ModoDePagamento, type PagamentoDaEntrega, type PagamentoPedido } from "@/lib/inventory";
 
 /**
  * O pagamento de uma entrega de equipamento, como se escolhe.
@@ -16,6 +16,14 @@ import type { ModoDePagamento, PagamentoDaEntrega, PagamentoPedido } from "@/lib
  * pergunta, num interruptor: se vai também para os Pagamentos da app (onde a
  * família recebe uma notificação e paga lá) ou se fica só no Equipamento, como
  * uma nota de que falta pagar. Ver \`definirPagamento\` na API.
+ *
+ * ## Pago, e em que dia
+ *
+ * "Pago" pergunta o método **e o dia**. Uma peça entregue em setembro e paga em
+ * outubro entra nas Contas de outubro, e o dia da entrega não diz nada sobre o
+ * do pagamento (Rui, 19/11/2026: "não podemos assumir que foi pago no dia da
+ * entrega"). Quem abre o cartão decide se o dia já vem com hoje (\`diaSugerido\`):
+ * ao entregar agora, sim; ao registar uma entrega antiga, fica vazio e pede-se.
  */
 export type ValorDoPagamento = {
   /** O que o seletor mostra. \`app\` é "por pagar" com o interruptor ligado. */
@@ -23,9 +31,11 @@ export type ValorDoPagamento = {
   /** Em euros, como se escreve ("12,50"). */
   valor: string;
   metodo: MetodoManual | null;
+  /** O dia em que foi pago, \`AAAA-MM-DD\`. Só conta em "pago". */
+  dia: string;
 };
 
-export const PAGAMENTO_VAZIO: ValorDoPagamento = { modo: "nenhum", valor: "", metodo: null };
+export const PAGAMENTO_VAZIO: ValorDoPagamento = { modo: "nenhum", valor: "", metodo: null, dia: "" };
 
 /** O valor do formulário a partir do estado guardado de uma entrega. */
 export function valorDe(p: PagamentoDaEntrega | undefined): ValorDoPagamento {
@@ -34,24 +44,42 @@ export function valorDe(p: PagamentoDaEntrega | undefined): ValorDoPagamento {
     modo: p.estado,
     valor: p.valorCents ? (p.valorCents / 100).toFixed(2).replace(".", ",") : "",
     metodo: (p.metodo as MetodoManual | null) ?? null,
+    dia: p.estado === "pago" ? diaISO(p.pagoEm) : "",
   };
 }
 
 export const centsDe = (v: ValorDoPagamento) => Math.round(Number(v.valor.replace(/\s/g, "").replace(",", ".")) * 100);
 
-/** O resto do pagamento, sem o valor: pago precisa de método. Para a entrega de vários artigos. */
-export const pagamentoSemValorValido = (v: ValorDoPagamento) => v.modo !== "pago" || v.metodo !== null;
+/** Um dia que já aconteceu (hoje ou antes). */
+const diaValido = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= hojeISO();
 
-/** Pronto a gravar? Com cobrança, precisa de valor; pago precisa de método. */
+/** O resto do pagamento, sem o valor: pago precisa de método e de dia. Para a entrega de vários artigos. */
+export const pagamentoSemValorValido = (v: ValorDoPagamento) => v.modo !== "pago" || (v.metodo !== null && diaValido(v.dia));
+
+/** Pronto a gravar? Com cobrança, precisa de valor; pago precisa de método e de dia. */
 export function pagamentoValido(v: ValorDoPagamento): boolean {
   if (v.modo === "nenhum") return true;
   const c = centsDe(v);
-  return Number.isFinite(c) && c > 0 && (v.modo !== "pago" || v.metodo !== null);
+  return Number.isFinite(c) && c > 0 && pagamentoSemValorValido(v);
+}
+
+/** O que falta para gravar o pagamento, dito por extenso. Nulo quando está tudo. */
+export function oQueFaltaNoPagamento(v: ValorDoPagamento): string | null {
+  if (v.modo !== "pago") return null;
+  if (!v.metodo) return "Escolhe como foi pago.";
+  if (!v.dia) return "Escolhe o dia em que foi pago.";
+  if (!diaValido(v.dia)) return "O dia do pagamento não pode ser depois de hoje.";
+  return null;
 }
 
 export function pedidoDe(v: ValorDoPagamento): PagamentoPedido {
   if (v.modo === "nenhum") return { modo: "nenhum" };
-  return { modo: v.modo, priceCents: centsDe(v), ...(v.modo === "pago" && v.metodo ? { method: v.metodo } : {}) };
+  return {
+    modo: v.modo,
+    priceCents: centsDe(v),
+    ...(v.modo === "pago" && v.metodo ? { method: v.metodo } : {}),
+    ...(v.modo === "pago" && v.dia ? { paidOn: v.dia } : {}),
+  };
 }
 
 /**
@@ -107,9 +135,15 @@ export function PagamentoDaEntregaField({
   primeiroNome,
   athleteId,
   semValor,
+  diaSugerido,
 }: {
   value: ValorDoPagamento;
   onChange: (v: ValorDoPagamento) => void;
+  /**
+   * O dia que "Pago" traz já escrito ao ser escolhido (hoje, ao balcão). Sem
+   * isto, o dia fica vazio e tem de se escolher: é o caso de uma entrega antiga.
+   */
+  diaSugerido?: string;
   /** Para a frase "Vai para a app do encarregado de Tomás". */
   primeiroNome?: string;
   /** Para avisar quando ainda não há encarregado com a app. */
@@ -156,7 +190,13 @@ export function PagamentoDaEntregaField({
               type="button"
               role="radio"
               aria-checked={escolha === v}
-              onClick={() => set({ modo: v === "porPagar" ? (value.modo === "app" ? "app" : "porPagar") : v })}
+              onClick={() =>
+                set({
+                  modo: v === "porPagar" ? (value.modo === "app" ? "app" : "porPagar") : v,
+                  // Ao passar a pago, o dia vem sugerido (ou fica vazio para se escolher).
+                  ...(v === "pago" && !value.dia ? { dia: diaSugerido ?? "" } : {}),
+                })
+              }
               className={cx(
                 "rounded-[calc(var(--radius-control)-2px)] px-2.5 py-1 text-meta font-medium transition-colors duration-[120ms]",
                 escolha === v ? "bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-ink-3 hover:text-ink",
@@ -239,6 +279,32 @@ export function PagamentoDaEntregaField({
               <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
               <span>{aviso}</span>
             </p>
+          )}
+
+          {escolha === "pago" && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius-control)] bg-surface px-3 py-2.5">
+              <label htmlFor="dia-do-pagamento" className="min-w-0 flex-1">
+                <span className="block text-meta font-medium text-ink">Pago a</span>
+                <span className="block text-[12px] leading-snug text-ink-3">É este dia que conta nas Contas do clube.</span>
+              </label>
+              <input
+                id="dia-do-pagamento"
+                type="date"
+                value={value.dia}
+                max={hojeISO()}
+                onChange={(e) => set({ dia: e.target.value })}
+                aria-invalid={!value.dia}
+                className={cx(
+                  "h-9 rounded-[var(--radius-control)] border bg-surface px-2.5 text-body text-ink tabular focus:border-line-strong focus:outline-none",
+                  value.dia ? "border-line" : "border-warn",
+                )}
+              />
+              {value.dia !== hojeISO() && (
+                <button type="button" onClick={() => set({ dia: hojeISO() })} className="text-meta font-medium text-ink-3 underline-offset-2 hover:text-ink hover:underline">
+                  Hoje
+                </button>
+              )}
+            </div>
           )}
 
           {escolha === "pago" && (

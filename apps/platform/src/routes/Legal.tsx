@@ -6,6 +6,7 @@ import { LegalDocumentDialog } from "@/components/LegalDocumentDialog";
 import { Failed, Skeleton } from "./Overview";
 import { useApi } from "@/lib/query";
 import { shortDate } from "@/lib/format";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 import {
   CONTEXT_LABEL,
   STATUS_LABEL,
@@ -304,24 +305,46 @@ function Acceptance({ stats }: { stats: LegalStats | undefined }) {
 }
 
 function Recent({ rows }: { rows: LegalAcceptanceRow[] | undefined }) {
+  const t = useOrdenacao(
+    rows ?? [],
+    (coluna, r) =>
+      coluna === "quando" ? new Date(r.acceptedAt)
+      : coluna === "quem" ? r.user.name
+      : coluna === "clube" ? r.academy?.name ?? null
+      : coluna === "documento" ? `${r.label} v${r.version}`
+      : coluna === "contexto" ? CONTEXT_LABEL[r.context]
+      : coluna === "ip" ? r.ip ?? null
+      : null,
+    "plataforma-legal-aceitacoes",
+  );
+  const { linhas: ordenadas, ordem } = t;
   if (!rows || rows.length === 0) return null;
   return (
     <Panel className="mt-6">
       <PanelHead title="Aceitações recentes" hint="as últimas 40, com dispositivo" />
+      <BarraDeFiltros t={t} />
       <div className="overflow-x-auto">
         <table className="w-full text-body">
           <thead className="text-meta text-ink-3">
             <tr className="border-b border-line">
-              <th className="px-5 py-2 text-left font-medium">Quando</th>
-              <th className="px-5 py-2 text-left font-medium">Quem</th>
-              <th className="px-5 py-2 text-left font-medium">Clube</th>
-              <th className="px-5 py-2 text-left font-medium">Documento</th>
-              <th className="px-5 py-2 text-left font-medium">Contexto</th>
-              <th className="px-5 py-2 text-left font-medium">IP</th>
+              {(
+                [
+                  ["quando", "Quando"],
+                  ["quem", "Quem"],
+                  ["clube", "Clube"],
+                  ["documento", "Documento"],
+                  ["contexto", "Contexto"],
+                  ["ip", "IP"],
+                ] as const
+              ).map(([k, rotulo]) => (
+                <th key={k} className="px-5 py-2 text-left font-medium" aria-sort={ariaSort(ordem, k)}>
+                  <Coluna t={t} coluna={k}>{rotulo}</Coluna>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {ordenadas.map((r) => (
               <tr key={r.id} className="border-b border-line last:border-0">
                 <td className="whitespace-nowrap px-5 py-2 tabular-nums text-ink-2">{shortDate(r.acceptedAt)}</td>
                 <td className="px-5 py-2">

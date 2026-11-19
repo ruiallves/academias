@@ -71,7 +71,7 @@ import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
 import { partesDoJogo, profileOf } from "@/lib/sports";
 import { TEAM_GENDER_LABEL } from "@/lib/genero";
 import { substituicoesVolantes } from "@/components/match/substituicoes";
-import { medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
+import { MEDICAL_STATE_LABEL, medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { can, type Session } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -634,7 +634,9 @@ function RosterTab({
   const allColumns: Column<Athlete>[] = [
     {
       key: "name",
-      header: "Atleta",
+      header: "Nome",
+      sortValue: (a) => a.name,
+      filterValue: (a) => a.name,
       render: (a) => (
         <div className="flex items-center gap-2.5">
           <Monogram name={a.name} photoUrl={a.photoUrl} />
@@ -648,26 +650,27 @@ function RosterTab({
         </div>
       ),
     },
+    /*
+     * Nome, número e posição em três colunas (pedido do Rui, 18/11/2026), para
+     * cada uma se ordenar e filtrar à parte. O número e a posição são **desta
+     * equipa**: o 10 no futebol pode ser o 7 no futsal.
+     */
     {
-      /*
-       * O número da camisola ao lado da posição (pedido do Rui, 17/11/2026).
-       * Os dois são **desta equipa**: o 10 no futebol pode ser o 7 no futsal,
-       * e antes a posição vinha da equipa principal do atleta.
-       */
-      key: "position",
-      header: "N.º e posição",
+      key: "number",
+      header: "N.º",
+      align: "right",
+      width: "64px",
+      sortValue: (a) => numeroNaEquipa(a, team.id) ?? null,
       render: (a) => {
         const numero = numeroNaEquipa(a, team.id);
-        const posicao = posicaoNaEquipa(a, team.id);
-        return (
-          <div className="flex items-center gap-2.5">
-            <span className={cx("w-6 shrink-0 text-right font-semibold tabular", numero != null ? "text-ink" : "text-ink-4")}>
-              {numero ?? "—"}
-            </span>
-            <span className="text-ink-2">{posicao ?? "—"}</span>
-          </div>
-        );
+        return <span className={cx("font-semibold tabular", numero != null ? "text-ink" : "text-ink-4")}>{numero ?? "—"}</span>;
       },
+    },
+    {
+      key: "position",
+      header: "Posição",
+      sortValue: (a) => posicaoNaEquipa(a, team.id) ?? null,
+      render: (a) => <span className={posicaoNaEquipa(a, team.id) ? "text-ink-2" : "text-ink-4"}>{posicaoNaEquipa(a, team.id) ?? "—"}</span>,
     },
     {
       key: "guardian",
@@ -682,6 +685,8 @@ function RosterTab({
       key: "socio",
       header: "Sócio",
       hideBelow: "sm",
+      // Pelo número de sócio; quem não é sócio (ou não tem número) fica no fim.
+      sortValue: (a) => socios?.get(a.id)?.number ?? null,
       render: (a) => {
         if (!socios) return null;
         const m = socios.get(a.id);
@@ -700,6 +705,9 @@ function RosterTab({
       key: "medical",
       header: "Ficha médica",
       hideBelow: "sm",
+      // Pela validade; sem ficha vem antes das expiradas (é o mais urgente).
+      sortValue: (a) => medicalExpiry(a) ?? new Date(0),
+      filterValue: (a) => MEDICAL_STATE_LABEL[medicalState(a)],
       render: (a) => <MedicalPill athlete={a} />,
     },
     {

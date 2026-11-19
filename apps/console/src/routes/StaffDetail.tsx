@@ -1,6 +1,7 @@
 import { cargoDe, departamentoDe, eDoClinico, semCargo } from "@/lib/staff";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { VencimentoPanel } from "@/components/finance/VencimentoPanel";
 import {
   DataTable,
   Empty,
@@ -31,6 +32,7 @@ import {
   Shield,
   Trophy,
   Users,
+  Wallet,
 } from "@/lib/icons";
 import { sportById } from "@/lib/api";
 import { useCustomEvents } from "@/lib/calendar";
@@ -53,7 +55,10 @@ import { PhotoPicker } from "@/components/PhotoPicker";
 import { removeStaffPhoto, uploadStaffPhoto } from "@/lib/photos";
 import { reloadAcademy, useStore } from "@/lib/store";
 
-type Tab = "overview" | "teams" | "activity" | "access" | "history";
+type Tab = "overview" | "teams" | "activity" | "salary" | "access" | "history";
+
+/** Os separadores que se abrem por link (`?separador=`), com o nome em português. */
+const SEPARADOR_DO_LINK: Record<string, Tab> = { vencimento: "salary", acesso: "access" };
 
 /**
  * A ficha de uma pessoa da academia.
@@ -74,7 +79,9 @@ type Tab = "overview" | "teams" | "activity" | "access" | "history";
 export default function StaffDetail() {
   const { id = "" } = useParams();
   const { session } = useSession();
-  const [tab, setTab] = useState<Tab>("overview");
+  /* `?separador=vencimento` abre já no vencimento: é por aí que a folha das Contas chega à ficha. */
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => SEPARADOR_DO_LINK[params.get("separador") ?? ""] ?? "overview");
   const [editing, setEditing] = useState(false);
   const [atribuir, setAtribuir] = useState(false);
 
@@ -126,6 +133,12 @@ export default function StaffDetail() {
     ...(worksWithTeams && can(session, "attendance:read")
       ? [{ value: "activity" as const, label: "Atividade", icon: Gauge }]
       : []),
+    /*
+      O vencimento: só a quem vê as Contas. É dinheiro do clube, e um treinador
+      que abre a ficha de um colega não tem porque o saber. Não depende de a
+      pessoa ter vencimento: é aqui que se define o primeiro.
+    */
+    ...(can(session, "finance:read") ? [{ value: "salary" as const, label: "Vencimento", icon: Wallet }] : []),
     // O acesso de outra pessoa não é assunto de toda a gente: é preciso poder
     // geri-lo, ou pelo menos poder ver quem tem o quê.
     ...(can(session, "access:write") || can(session, "settings:write")
@@ -166,6 +179,7 @@ export default function StaffDetail() {
         />
       )}
       {tab === "activity" && <Activity member={member} />}
+      {tab === "salary" && <VencimentoPanel tipo="staff" id={member.id} nome={member.name} />}
       {tab === "access" && <AccessPanel member={member} session={session} />}
       {tab === "history" && (
         <div className="space-y-3">
@@ -516,6 +530,7 @@ function Activity({ member }: { member: StaffMember }) {
     {
       key: "date",
       header: "Data",
+      sortValue: (m) => new Date(m.date),
       render: (m) => <span className="text-ink-2 tabular">{shortDate(m.date)}</span>,
     },
     {
@@ -545,6 +560,8 @@ function Activity({ member }: { member: StaffMember }) {
       key: "result",
       header: "Resultado",
       align: "right",
+      // Pela diferença de golos: vitórias, empates e derrotas ficam juntos.
+      sortValue: (m) => m.ourScore - m.theirScore,
       render: (m) => (
         <span className="inline-flex items-center gap-2">
           <span className="font-medium text-ink tabular">

@@ -4,10 +4,10 @@ import { PageHeader } from "@/components/Shell";
 import { AvailabilityTag, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { HeartPulse, Plus } from "@/lib/icons";
-import { medicalExpiry, medicalState } from "@/lib/medical";
+import { MEDICAL_STATE_LABEL, medicalExpiry, medicalState } from "@/lib/medical";
 import { ClinicalEntryDialog } from "@/components/ClinicalEntryDialog";
 import { listAthletes, teamById, today } from "@/lib/api";
-import { activeRestriction, availabilityOf, clinicalOf, useClinicalRecords } from "@/lib/clinical";
+import { AVAILABILITY_LABEL, activeRestriction, availabilityOf, clinicalOf, useClinicalRecords } from "@/lib/clinical";
 import { relativeDays, shortDate, shortName } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -79,6 +79,12 @@ export default function MedicalClinical() {
     {
       key: "status",
       header: "Estado",
+      // Por gravidade, como a ordem da página: de baixa, condicionado, apto.
+      sortValue: (a) => {
+        const av = availabilityOf(a.id);
+        return av === "out" ? 0 : av === "limited" ? 1 : 2;
+      },
+      filterValue: (a) => AVAILABILITY_LABEL[availabilityOf(a.id)],
       render: (a) => {
         const av = availabilityOf(a.id);
         return av === "available" ? <Pill tone="ok">Apto</Pill> : <AvailabilityTag availability={av} size="sm" />;
@@ -101,6 +107,10 @@ export default function MedicalClinical() {
       key: "return",
       header: "Retoma",
       hideBelow: "sm",
+      sortValue: (a) => {
+        const r = activeRestriction(a.id)?.expectedReturn;
+        return r ? new Date(r) : null;
+      },
       render: (a) => {
         const entry = activeRestriction(a.id);
         if (!entry?.expectedReturn) return <span className="text-ink-4">—</span>;
@@ -114,6 +124,9 @@ export default function MedicalClinical() {
       key: "exam",
       header: "Exame",
       hideBelow: "lg",
+      // Pela validade; sem exame vem antes dos expirados (é o mais urgente).
+      sortValue: (a) => medicalExpiry(a) ?? new Date(0),
+      filterValue: (a) => (medicalState(a) === "missing" ? "Sem exame" : MEDICAL_STATE_LABEL[medicalState(a)]),
       render: (a) => {
         const state = medicalState(a);
         if (state === "missing") return <Pill tone="neutral">Sem exame</Pill>;

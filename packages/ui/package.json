@@ -9,6 +9,7 @@
     "./legal-markdown": "./src/legal-markdown.tsx",
     "./versao": "./src/versao.ts",
     "./imagem": "./src/imagem.ts",
-    "./estadio": "./src/estadio.tsx"
+    "./estadio": "./src/estadio.tsx",
+    "./ordenar": "./src/ordenar.tsx"
   }
 }

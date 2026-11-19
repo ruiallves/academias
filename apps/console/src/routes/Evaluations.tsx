@@ -12,6 +12,7 @@ import { average, currentPeriodLabel, periodsFor, SCALE, type ApiEvaluation } fr
 import { shortName } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 
 /**
  * Avaliações.
@@ -75,7 +76,7 @@ export default function Evaluations() {
       );
   }, [athletes, evaluations, teamId]);
 
-  const rows = useMemo(() => {
+  const filtradas = useMemo(() => {
     const q = query.trim().toLowerCase();
     return roster
       .filter((r) => {
@@ -86,6 +87,25 @@ export default function Evaluations() {
       })
       .filter((r) => (q ? r.athlete.name.toLowerCase().includes(q) : true));
   }, [roster, filter, query]);
+
+  /*
+   * Ordenar por qualquer coluna (atleta, cada competência, média, estado). A ordem
+   * escolhida também é a do "seguinte" no editor, que anda por `rows`. Sem ordem
+   * escolhida, fica a do trabalho que falta (acima).
+   */
+  const t = useOrdenacao(
+    filtradas,
+    (coluna, r) => {
+      const e = r.evaluation;
+      if (coluna === "atleta") return r.athlete.name;
+      if (coluna === "media") return e ? average(e.scores) : null;
+      if (coluna === "estado") return !e ? 0 : e.status === "DRAFT" ? 1 : 2;
+      if (coluna.startsWith("skill:")) return e?.scores[coluna.slice(6)] ?? null;
+      return null;
+    },
+    `avaliacoes|${teamId}`,
+  );
+  const { linhas: rows, ordem } = t;
 
   const counts = {
     todos: roster.length,
@@ -283,6 +303,7 @@ export default function Evaluations() {
           </ul>
         ) : (
           <div className="overflow-x-auto">
+            <BarraDeFiltros t={t} />
             <table className="w-full border-collapse text-body">
               <thead>
                 <tr className="border-b border-line bg-sunken/50 text-meta font-medium text-ink-3">
@@ -297,14 +318,20 @@ export default function Evaluations() {
                       />
                     </th>
                   )}
-                  <th className="px-3 py-2 text-left">Atleta</th>
+                  <th className="px-3 py-2 text-left" aria-sort={ariaSort(ordem, "atleta")}>
+                    <Coluna t={t} coluna="atleta">Atleta</Coluna>
+                  </th>
                   {skills.map((s) => (
-                    <th key={s} className="hidden px-2 py-2 text-center whitespace-nowrap lg:table-cell">
-                      {s}
+                    <th key={s} className="hidden px-2 py-2 text-center whitespace-nowrap lg:table-cell" aria-sort={ariaSort(ordem, `skill:${s}`)}>
+                      <Coluna t={t} coluna={`skill:${s}`}>{s}</Coluna>
                     </th>
                   ))}
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Média</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Estado</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap" aria-sort={ariaSort(ordem, "media")}>
+                    <Coluna t={t} coluna="media" direita>Média</Coluna>
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap" aria-sort={ariaSort(ordem, "estado")}>
+                    <Coluna t={t} coluna="estado">Estado</Coluna>
+                  </th>
                   <th className="px-5 py-2 text-right">Acção</th>
                 </tr>
               </thead>

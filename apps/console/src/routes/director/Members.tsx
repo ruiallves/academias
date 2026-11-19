@@ -157,6 +157,7 @@ export default function Members() {
       key: "tier",
       header: "Categoria",
       hideBelow: "md",
+      sortValue: (m) => m.tier?.name ?? null,
       render: (m) =>
         m.tier ? (
           <div className="min-w-0 max-w-[170px]">
@@ -199,6 +200,8 @@ export default function Members() {
       key: "quotas",
       header: "Última quota",
       hideBelow: "md",
+      // Pelo período ("2026-09"); sem registo vem antes do mais antigo.
+      sortValue: (m) => m.lastPaidPeriod ?? "0000",
       render: (m) => {
         const estado = feeStanding(m.lastPaidPeriod, new Date(), m.annualStart);
         /* O que está em atraso de facto, por baixo: quantas e quanto. */
@@ -262,7 +265,7 @@ export default function Members() {
           <span className="text-meta text-ink-4">—</span>
         ),
     },
-    { key: "status", header: "Estado", render: (m) => <StatusPill status={m.status} /> },
+    { key: "status", header: "Estado", sortValue: (m) => STATUS_LABEL[m.status], render: (m) => <StatusPill status={m.status} /> },
   ];
 
   return (

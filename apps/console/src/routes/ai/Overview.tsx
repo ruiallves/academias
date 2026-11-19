@@ -183,6 +183,7 @@ export function AnalysesTable({ rows, mayWrite }: { rows: AnalysisRow[]; mayWrit
           align: "right",
           width: "100px",
           hideBelow: "sm",
+          sortValue: (a) => (a.reviewCount > 0 ? a.reviewCount : null),
           render: (a) =>
             a.reviewCount > 0 ? (
               <Pill tone="warn">{a.reviewCount} {a.reviewCount === 1 ? "item" : "itens"}</Pill>

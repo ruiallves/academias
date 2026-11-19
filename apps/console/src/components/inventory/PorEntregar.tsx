@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { cx } from "@/components/primitives";
-import { Hourglass, PackageCheck } from "@/lib/icons";
+import { CalendarDays, Hourglass, PackageCheck } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
-import { entregarGuardada, type Assignment } from "@/lib/inventory";
+import { entregarGuardada, hojeISO, type Assignment } from "@/lib/inventory";
 
 /**
  * O equipamento por entregar, nas listas.
@@ -85,41 +85,67 @@ export function EstadoDaEntregaPill({ status, onClick }: { status: Assignment["s
 }
 
 /**
- * Entregue ou por entregar, num seletor: no "Entregar equipamento" (onde diz
- * "Entregue agora") e no "Editar entrega". O mesmo desenho do pagamento, que
- * vem logo a seguir: são as duas perguntas do balcão.
+ * Como foi a entrega. Três respostas, porque são três situações diferentes ao
+ * balcão (Rui, 19/11/2026):
+ *
+ * - **Entregue agora**: o atleta leva a peça neste momento;
+ * - **Noutro dia**: foi entregue num dia que já passou, e só agora se regista
+ *   (o kit da pré-época que nunca chegou a entrar no sistema);
+ * - **Por entregar**: é dele mas fica no clube, guardada.
+ */
+export type EstadoDaEntrega = { modo: "agora" | "dia" | "porEntregar"; dia: string };
+
+export const ENTREGUE_AGORA: EstadoDaEntrega = { modo: "agora", dia: "" };
+
+/** Pronto a gravar? "Noutro dia" precisa de um dia que já aconteceu. */
+export const entregaValida = (e: EstadoDaEntrega) =>
+  e.modo !== "dia" || (/^\d{4}-\d{2}-\d{2}$/.test(e.dia) && e.dia <= hojeISO());
+
+/**
+ * O seletor da entrega: no "Entregar equipamento" e no "Editar equipamento".
+ * O mesmo desenho do pagamento, que vem logo a seguir: são as duas perguntas
+ * do balcão.
+ *
+ * `jaEntregue` é o editar de uma peça que já está com o atleta: aí "Entregue"
+ * é uma opção só, com o dia gravado à vista para se corrigir.
  */
 export function CampoDaEntrega({
   value,
   onChange,
   primeiroNome,
-  rotuloEntregue = "Entregue",
+  jaEntregue = false,
 }: {
-  value: boolean;
-  onChange: (entregue: boolean) => void;
+  value: EstadoDaEntrega;
+  onChange: (e: EstadoDaEntrega) => void;
   primeiroNome?: string;
-  rotuloEntregue?: string;
+  jaEntregue?: boolean;
 }) {
+  const opcoes: [EstadoDaEntrega["modo"], string][] = jaEntregue
+    ? [
+        ["dia", "Entregue"],
+        ["porEntregar", "Por entregar"],
+      ]
+    : [
+        ["agora", "Entregue agora"],
+        ["dia", "Noutro dia"],
+        ["porEntregar", "Por entregar"],
+      ];
+
   return (
     <section className="overflow-hidden rounded-[12px] border border-line">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3.5 py-2.5">
         <span className="text-meta font-medium text-ink-2">Entrega</span>
         <div role="radiogroup" aria-label="Entrega" className="flex rounded-[var(--radius-control)] bg-sunken p-0.5">
-          {(
-            [
-              [true, rotuloEntregue],
-              [false, "Por entregar"],
-            ] as const
-          ).map(([v, rotulo]) => (
+          {opcoes.map(([v, rotulo]) => (
             <button
-              key={rotulo}
+              key={v}
               type="button"
               role="radio"
-              aria-checked={value === v}
-              onClick={() => onChange(v)}
+              aria-checked={value.modo === v}
+              onClick={() => onChange({ modo: v, dia: v === "dia" ? value.dia : "" })}
               className={cx(
                 "rounded-[calc(var(--radius-control)-2px)] px-2.5 py-1 text-meta font-medium transition-colors duration-[120ms]",
-                value === v ? "bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-ink-3 hover:text-ink",
+                value.modo === v ? "bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-ink-3 hover:text-ink",
               )}
             >
               {rotulo}
@@ -127,7 +153,27 @@ export function CampoDaEntrega({
           ))}
         </div>
       </div>
-      {!value && (
+      {value.modo === "dia" && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line bg-sunken/40 px-3.5 py-3">
+          <CalendarDays className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
+          <label htmlFor="dia-da-entrega" className="min-w-0 flex-1 text-meta leading-relaxed text-ink-2">
+            {jaEntregue ? "Entregue a" : `Em que dia ${primeiroNome ?? "o atleta"} levou o material?`}
+          </label>
+          <input
+            id="dia-da-entrega"
+            type="date"
+            value={value.dia}
+            max={hojeISO()}
+            onChange={(e) => onChange({ modo: "dia", dia: e.target.value })}
+            aria-invalid={!value.dia}
+            className={cx(
+              "h-9 rounded-[var(--radius-control)] border bg-surface px-2.5 text-body text-ink tabular focus:border-line-strong focus:outline-none",
+              value.dia ? "border-line" : "border-warn",
+            )}
+          />
+        </div>
+      )}
+      {value.modo === "porEntregar" && (
         <p className="flex items-start gap-2 border-t border-line bg-sunken/40 px-3.5 py-3 text-meta leading-relaxed text-ink-2">
           <Hourglass className="mt-0.5 size-3.5 shrink-0 text-warn" strokeWidth={1.75} />
           <span>

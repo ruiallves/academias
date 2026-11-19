@@ -1,4 +1,7 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min, ValidateNested } from "class-validator";
+
+/** Um dia, `AAAA-MM-DD`. A validação a sério (existe, não é futuro) é do serviço. */
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
 import { Type } from "class-transformer";
 
 /**
@@ -87,6 +90,11 @@ export class StockMovementDto {
   @IsIn(MOVEMENT_TYPES as unknown as string[]) type!: string;
   @IsInt() @Min(0) @Max(1_000_000) quantity!: number;
   @IsOptional() @IsString() @Length(0, 200) reason?: string;
+  /**
+   * O dia em que chegou, saiu ou se contou (`AAAA-MM-DD`). Omitido = agora. A
+   * encomenda que chegou na sexta e só se registou na segunda fica na sexta.
+   */
+  @IsOptional() @Matches(DIA, { message: "A data não é válida" }) on?: string;
 }
 
 /**
@@ -149,6 +157,12 @@ export class PagamentoDaEntregaDto {
   @IsIn(["nenhum", "porPagar", "app", "pago"]) modo!: "nenhum" | "porPagar" | "app" | "pago";
   @IsOptional() @IsInt() @Min(1) @Max(100_000_00) priceCents?: number;
   @IsOptional() @IsIn(["MBWAY", "CASH", "CARD", "TRANSFER"]) method?: "MBWAY" | "CASH" | "CARD" | "TRANSFER";
+  /**
+   * O dia em que foi pago, só em `pago`. Omitido = hoje. Uma peça entregue em
+   * setembro e paga em outubro entra nas Contas de outubro, e não se pode
+   * adivinhar qual foi o dia a partir da entrega.
+   */
+  @IsOptional() @Matches(DIA, { message: "A data do pagamento não é válida" }) paidOn?: string;
 }
 
 export class AssignDto {
@@ -159,6 +173,8 @@ export class AssignDto {
   @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
   /** `false`: fica por entregar (guardado para o atleta). Ausente = entregue agora. */
   @IsOptional() @IsBoolean() entregue?: boolean;
+  /** Entregue num dia que já passou (`AAAA-MM-DD`). Omitido = agora. Ignorado em por entregar. */
+  @IsOptional() @Matches(DIA, { message: "A data da entrega não é válida" }) deliveredOn?: string;
 }
 
 /** Um artigo de uma entrega de vários: o tamanho, quantas, e o pagamento dele. */
@@ -180,6 +196,8 @@ export class AssignLoteDto {
   linhas!: LinhaDeEntregaDto[];
   /** `false`: tudo fica por entregar (guardado para o atleta). Ausente = entregue agora. */
   @IsOptional() @IsBoolean() entregue?: boolean;
+  /** Entregue num dia que já passou (`AAAA-MM-DD`). Omitido = agora. Ignorado em por entregar. */
+  @IsOptional() @Matches(DIA, { message: "A data da entrega não é válida" }) deliveredOn?: string;
 }
 
 /** Editar uma entrega: as notas, o pagamento e se já foi entregue. A devolução tem rota própria. */
@@ -188,6 +206,16 @@ export class UpdateAssignmentDto {
   @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
   /** `true`: por entregar → entregue. `false`: entregue → por entregar (marcado por engano). */
   @IsOptional() @IsBoolean() entregue?: boolean;
+  /**
+   * O dia da entrega (`AAAA-MM-DD`): ao passar a entregue, o dia em que foi;
+   * numa peça já entregue, corrige o dia gravado.
+   */
+  @IsOptional() @Matches(DIA, { message: "A data da entrega não é válida" }) deliveredOn?: string;
+}
+
+/** Entregar o que estava por entregar, hoje ou num dia que já passou. */
+export class EntregarDto {
+  @IsOptional() @Matches(DIA, { message: "A data da entrega não é válida" }) deliveredOn?: string;
 }
 
 /**

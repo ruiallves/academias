@@ -56,6 +56,7 @@ export default function Denuncias() {
     {
       key: "caso",
       header: "Caso",
+      sortValue: (d) => d.number,
       render: (d) => (
         <div className="flex items-center gap-3">
           {/* O ponto do "por ler": a única coisa que grita nesta lista. */}
@@ -103,6 +104,7 @@ export default function Denuncias() {
       header: "Chegou",
       align: "right",
       hideBelow: "sm",
+      sortValue: (d) => new Date(d.createdAt),
       render: (d) => (
         <span className="text-ink-3" title={shortDate(new Date(d.createdAt))}>
           {relativeDays(new Date(d.createdAt), new Date())}

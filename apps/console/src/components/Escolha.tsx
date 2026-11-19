@@ -360,7 +360,8 @@ export function MenuDeEscolha({
         ) : (
           <span className="flex min-w-0 items-center gap-2">
             <span className={cx("min-w-0 flex-1 truncate text-left", !escolhida && "text-ink-4")}>{rotulo}</span>
-            <ChevronDown className={cx("size-3.5 shrink-0 text-ink-3 transition-transform duration-[120ms]", aberto && "rotate-180")} strokeWidth={2} />
+            {/* Na cor do texto, mais suave: cinzenta num campo normal, clara numa barra escura, verde num estado verde. */}
+            <ChevronDown className={cx("size-3.5 shrink-0 opacity-60 transition-transform duration-[120ms]", aberto && "rotate-180")} strokeWidth={2} />
           </span>
         )}
       </button>

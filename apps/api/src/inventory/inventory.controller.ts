@@ -13,6 +13,7 @@ import {
   ReturnDto,
   StockMovementDto,
   UpdateAssignmentDto,
+  EntregarDto,
   UpdateItemDto,
   UpdateVariantDto,
   VariantInputDto,
@@ -173,10 +174,10 @@ export class InventoryController {
     return this.inventory.updateAssignment(req.ctx, id, dto);
   }
 
-  /** Entregar o que estava por entregar. Ver `entregarGuardada`. */
+  /** Entregar o que estava por entregar, hoje ou num dia que já passou. Ver `entregarGuardada`. */
   @Post("assignments/:id/entregar")
-  entregarGuardada(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.inventory.entregarGuardada(req.ctx, id);
+  entregarGuardada(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: EntregarDto) {
+    return this.inventory.entregarGuardada(req.ctx, id, dto?.deliveredOn);
   }
 
   /** O que estava por entregar não vai ser entregue: volta ao disponível. Ver `naoEntregar`. */

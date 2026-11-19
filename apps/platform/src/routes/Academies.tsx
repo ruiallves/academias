@@ -10,6 +10,7 @@ import { euros, shortDate, tamanho } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { type Academy, type Me } from "@/lib/types";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial, temReceita } from "@/lib/estado";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 
 /**
  * Os três estados por que se olha para esta lista.
@@ -87,6 +88,36 @@ export default function Academies({ me }: { me: Me }) {
       })
       .filter((a) => (q ? a.name.toLowerCase().includes(q) || a.slug.includes(q) : true));
   }, [data, filter, query, highlight]);
+
+  /*
+   * Ordenar por qualquer coluna (cabeçalho: ascendente, descendente, ordem da
+   * página). A mensalidade ordena pela gravidade (suspenso, em falta pelos dias,
+   * falta fatura, em dia); o espaço pela fração do limite. Ver `@academia/ui/ordenar`.
+   */
+  const t = useOrdenacao(
+    rows,
+    (coluna, a) => {
+      switch (coluna) {
+        case "academia": return a.name;
+        case "estado": return ESTADO_LABEL[estadoComercial(a)];
+        case "plano": return a.plan ?? null;
+        case "mrr": return temReceita(estadoComercial(a)) && a.mrrCents > 0 ? a.mrrCents : null;
+        case "staff": return a.staff;
+        case "online": return a.online.total;
+        case "onboarding": return a.onboarding.percent;
+        case "mensalidade": {
+          const m = a.mensalidade;
+          if (m.estado === "sem-plano") return null;
+          return m.estado === "suspenso" ? 1000 : m.estado === "em-falta" ? 100 + m.emFaltaDias : m.faturasEmFalta > 0 ? 1 : 0;
+        }
+        case "espaco": return a.storageLimitMb > 0 ? a.storageUsedBytes / (a.storageLimitMb * 1024 * 1024) : a.storageUsedBytes;
+        case "entrou": return new Date(a.createdAt);
+        default: return null;
+      }
+    },
+    "plataforma-academias",
+  );
+  const { linhas: ordenadas, ordem } = t;
 
   /*
    * O esqueleto é para a **primeira** leitura, não para as seguintes.
@@ -184,13 +215,22 @@ export default function Academies({ me }: { me: Me }) {
           <Empty title="Nenhuma academia neste filtro" />
         ) : (
           <div className="overflow-x-auto">
+            <BarraDeFiltros t={t} />
             <table className="w-full border-collapse text-body">
               <thead>
                 <tr className="border-b border-line bg-sunken/60 text-meta font-medium text-ink-3">
-                  <th className="px-5 py-2 text-left">Academia</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Estado</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Plano</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">MRR / avaliação</th>
+                  <th className="px-5 py-2 text-left" aria-sort={ariaSort(ordem, "academia")}>
+                    <Coluna t={t} coluna="academia">Academia</Coluna>
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap" aria-sort={ariaSort(ordem, "estado")}>
+                    <Coluna t={t} coluna="estado">Estado</Coluna>
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap" aria-sort={ariaSort(ordem, "plano")}>
+                    <Coluna t={t} coluna="plano">Plano</Coluna>
+                  </th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap" aria-sort={ariaSort(ordem, "mrr")}>
+                    <Coluna t={t} coluna="mrr" direita>MRR / avaliação</Coluna>
+                  </th>
                   {/*
                     A coluna de atletas saiu daqui.
 
@@ -201,24 +241,36 @@ export default function Academies({ me }: { me: Me }) {
                     contexto. Menos uma coluna é mais espaço para as que mudam
                     uma decisão.
                   */}
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Staff</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Online</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Onboarding</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap" aria-sort={ariaSort(ordem, "staff")}>
+                    <Coluna t={t} coluna="staff" direita>Staff</Coluna>
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap" aria-sort={ariaSort(ordem, "online")}>
+                    <Coluna t={t} coluna="online">Online</Coluna>
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap" aria-sort={ariaSort(ordem, "onboarding")}>
+                    <Coluna t={t} coluna="onboarding">Onboarding</Coluna>
+                  </th>
                   {/*
                     A mensalidade da plataforma, no lugar da "Atividade": se a
                     do período a correr está paga, há quantos dias falta, e
                     quando foi a última recebida. É a pergunta que se faz a esta
                     lista no dia 1 de cada mês; a actividade continua na ficha.
                   */}
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Mensalidade</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap" aria-sort={ariaSort(ordem, "mensalidade")}>
+                    <Coluna t={t} coluna="mensalidade">Mensalidade</Coluna>
+                  </th>
                   {/* O espaço de ficheiros: quem está perto do limite é a conversa de subir a mensalidade. */}
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Espaço</th>
-                  <th className="px-5 py-2 text-right whitespace-nowrap">Entrou</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap" aria-sort={ariaSort(ordem, "espaco")}>
+                    <Coluna t={t} coluna="espaco" direita>Espaço</Coluna>
+                  </th>
+                  <th className="px-5 py-2 text-right whitespace-nowrap" aria-sort={ariaSort(ordem, "entrou")}>
+                    <Coluna t={t} coluna="entrou" direita>Entrou</Coluna>
+                  </th>
                   <th className="px-3 py-2 text-right whitespace-nowrap"></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((a) => (
+                {ordenadas.map((a) => (
                   <tr
                     key={a.id}
                     className={cx(

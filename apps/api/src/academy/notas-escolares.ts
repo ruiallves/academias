@@ -23,6 +23,15 @@ export const ESCALAS = [5, 20] as const;
 
 export const MAX_DISCIPLINA = 60;
 
+/**
+ * Quantos anos lectivos para trás a família pode submeter, além do actual.
+ *
+ * Doze anos ao todo cobrem a escolaridade inteira, do 1.º ao 12.º ano: um
+ * atleta de 17 anos pode trazer as notas desde a primária. Mais para trás é um
+ * engano de dedo, e um ano futuro também (ainda não há notas dele).
+ */
+export const ANOS_ANTERIORES = 11;
+
 export type NotaEscolar = {
   schoolYear: string;
   period: Periodo;
@@ -55,12 +64,32 @@ export function chaveDaDisciplina(nome: string): string {
     .trim();
 }
 
-/** O que se grava, a partir do que a família escreveu. Lança `Error` com a razão. */
-export function limparNota(dto: Record<string, unknown>): NotaEscolar {
+/**
+ * Os anos lectivos em que a família pode submeter notas, do actual para trás.
+ * A app mostra-os por esta ordem; o servidor recusa os que ficam de fora.
+ */
+export function anosLectivosAbertos(hoje: Date = new Date()): string[] {
+  const atual = Number(anoLectivoDe(hoje).slice(0, 4));
+  return Array.from({ length: ANOS_ANTERIORES + 1 }, (_, i) => {
+    const ano = atual - i;
+    return `${ano}/${String((ano + 1) % 100).padStart(2, "0")}`;
+  });
+}
+
+/**
+ * O que se grava, a partir do que a família escreveu. Lança `Error` com a razão.
+ *
+ * `hoje` só existe para o teste poder fixar o dia; em produção é o dia de hoje.
+ */
+export function limparNota(dto: Record<string, unknown>, hoje: Date = new Date()): NotaEscolar {
   const schoolYear = typeof dto.schoolYear === "string" ? dto.schoolYear.trim() : "";
   const m = /^(20\d{2})\/(\d{2})$/.exec(schoolYear);
   // `2026/27` e não `2026/31`: o segundo ano é sempre o seguinte.
   if (!m || Number(m[2]) !== (Number(m[1]) + 1) % 100) throw new Error("Ano lectivo inválido");
+  const atual = Number(anoLectivoDe(hoje).slice(0, 4));
+  const ano = Number(m[1]);
+  if (ano > atual) throw new Error("Ainda não há notas desse ano lectivo");
+  if (ano < atual - ANOS_ANTERIORES) throw new Error(`Só se submetem notas dos últimos ${ANOS_ANTERIORES + 1} anos lectivos`);
 
   const period = dto.period;
   if (typeof period !== "string" || !(PERIODOS as readonly string[]).includes(period)) {

@@ -218,8 +218,16 @@ export type PagamentoDaEntrega = {
   valorCents: number | null;
   metodo: string | null;
   chargeId: string | null;
+  /** Quando foi pago (ISO), quando pago. Ausente num servidor antigo. */
+  pagoEm?: string | null;
 };
-export type PagamentoPedido = { modo: ModoDePagamento; priceCents?: number; method?: string };
+export type PagamentoPedido = {
+  modo: ModoDePagamento;
+  priceCents?: number;
+  method?: string;
+  /** O dia em que foi pago (`AAAA-MM-DD`), em `pago`. */
+  paidOn?: string;
+};
 
 export type Overview = {
   artigos: number;
@@ -297,8 +305,8 @@ export const addVariant = (itemId: string, body: Record<string, unknown>) =>
 export const updateVariant = (id: string, body: Record<string, unknown>) =>
   apiPatch<{ ok: true }>(`/api/inventory/variants/${id}`, body);
 
-/** Entrada, saída ou correcção de contagem. Ver `moveStock` no servidor. */
-export const moveStock = (variantId: string, body: { type: string; quantity: number; reason?: string }) =>
+/** Entrada, saída ou correcção de contagem. `on` é o dia em que aconteceu (omitido = agora). Ver `moveStock` no servidor. */
+export const moveStock = (variantId: string, body: { type: string; quantity: number; reason?: string; on?: string }) =>
   apiPost<{ ok: true; total: number; available: number }>(`/api/inventory/variants/${variantId}/stock`, body);
 
 export const listAssignments = (params: { teamId?: string; athleteId?: string; itemId?: string; status?: string } = {}) =>
@@ -331,6 +339,8 @@ export const assignLote = (body: {
   linhas: { variantId: string; quantity: number; pagamento?: PagamentoPedido }[];
   /** `false`: fica tudo por entregar (guardado para o atleta). */
   entregue?: boolean;
+  /** Entregue num dia que já passou (`AAAA-MM-DD`). */
+  deliveredOn?: string;
 }) =>
   apiPost<{
     athleteName: string;
@@ -349,15 +359,31 @@ export const assignLote = (body: {
  * Editar uma entrega: as notas, o pagamento e se já foi entregue (`entregue`:
  * por entregar ↔ entregue, nos dois sentidos).
  */
-export const updateAssignment = (id: string, body: { notes?: string; pagamento?: PagamentoPedido; entregue?: boolean }) =>
-  apiPatch<{ ok: true; pagamento?: PagamentoDaEntrega }>(`/api/inventory/assignments/${id}`, body);
+export const updateAssignment = (
+  id: string,
+  body: { notes?: string; pagamento?: PagamentoPedido; entregue?: boolean; deliveredOn?: string },
+) => apiPatch<{ ok: true; pagamento?: PagamentoDaEntrega }>(`/api/inventory/assignments/${id}`, body);
 
 export const returnAssignment = (id: string, body: { condition: string; quantity?: number; notes?: string }) =>
   apiPost<{ ok: true; status: AssignmentStatus }>(`/api/inventory/assignments/${id}/return`, body);
 
 /** Entregar o que estava por entregar. O stock não mexe: já tinha saído ao guardar. */
-export const entregarGuardada = (id: string) =>
-  apiPost<{ ok: true; status: "ACTIVE" }>(`/api/inventory/assignments/${id}/entregar`, {});
+export const entregarGuardada = (id: string, deliveredOn?: string) =>
+  apiPost<{ ok: true; status: "ACTIVE" }>(`/api/inventory/assignments/${id}/entregar`, deliveredOn ? { deliveredOn } : {});
+
+/** `AAAA-MM-DD` de hoje, na hora do computador: o valor por omissão dos campos de data. */
+export function hojeISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** `AAAA-MM-DD` de um instante ISO, na hora do computador. */
+export function diaISO(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 /**
  * O que estava por entregar não vai ser entregue: volta ao disponível e a linha

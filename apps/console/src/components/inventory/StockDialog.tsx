@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
 import { TriangleAlert } from "@/lib/icons";
-import { comAtletasTexto, moveStock, type Variant } from "@/lib/inventory";
+import { comAtletasTexto, hojeISO, moveStock, type Variant } from "@/lib/inventory";
 
 type Tipo = "ENTRY" | "EXIT" | "ADJUSTMENT";
 
@@ -32,18 +32,31 @@ export function StockDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
+  /*
+   * A contagem é do que está **no clube** (prontas mais as guardadas para
+   * atletas): é o que se consegue contar na arrecadação. O que está em casa
+   * dos atletas soma-se aqui, porque o servidor fixa o total. Antes pedia-se o
+   * total, e quem contava a prateleira apagava sem querer o que estava com eles.
+   */
+  const reservadas = variant.reserved ?? 0;
+  const comAtletas = variant.assigned - reservadas;
+  const noClube = variant.available + reservadas;
+
   const [tipo, setTipo] = useState<Tipo>(inicial);
-  const [quantidade, setQuantidade] = useState(String(quantidadeInicial ?? (inicial === "ADJUSTMENT" ? variant.total : 1)));
+  const [quantidade, setQuantidade] = useState(String(quantidadeInicial ?? (inicial === "ADJUSTMENT" ? noClube : 1)));
   const [razao, setRazao] = useState("");
+  /** O dia em que aconteceu: hoje por omissão, para o histórico ficar com o dia certo. */
+  const [dia, setDia] = useState(hojeISO());
+  const diaOk = /^\d{4}-\d{2}-\d{2}$/.test(dia) && dia <= hojeISO();
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const n = Number(quantidade) || 0;
-  const valido = tipo === "ADJUSTMENT" ? n >= 0 : n >= 1;
+  const valido = diaOk && (tipo === "ADJUSTMENT" ? n >= reservadas : n >= 1 && (tipo !== "EXIT" || n <= variant.available));
 
-  // O que o total passa a ser, dito antes de confirmar: um ajuste que fixa em
-  // vez de somar é a operação onde é mais fácil enganar-se.
-  const futuro = tipo === "ENTRY" ? variant.total + n : tipo === "EXIT" ? variant.total - n : n;
+  // O que fica pronto a entregar, dito antes de confirmar.
+  const futuro = tipo === "ENTRY" ? variant.total + n : tipo === "EXIT" ? variant.total - n : n + comAtletas;
+  const prontas = futuro - variant.assigned;
 
   async function submeter(e: React.FormEvent) {
     e.preventDefault();
@@ -51,7 +64,12 @@ export function StockDialog({
     setBusy(true);
     setErro(null);
     try {
-      await moveStock(variant.id, { type: tipo, quantity: n, reason: razao.trim() || undefined });
+      await moveStock(variant.id, {
+        type: tipo,
+        quantity: tipo === "ADJUSTMENT" ? futuro : n,
+        reason: razao.trim() || undefined,
+        ...(dia !== hojeISO() ? { on: dia } : {}),
+      });
       onDone();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível gravar.");
@@ -85,7 +103,7 @@ export function StockDialog({
               [
                 ["ENTRY", "Chegou"],
                 ["EXIT", "Saiu"],
-                ["ADJUSTMENT", "Contei"],
+                ["ADJUSTMENT", "Contagem"],
               ] as const
             ).map(([v, l]) => (
               <button
@@ -93,7 +111,7 @@ export function StockDialog({
                 type="button"
                 onClick={() => {
                   setTipo(v);
-                  if (v === "ADJUSTMENT") setQuantidade(String(variant.total));
+                  if (v === "ADJUSTMENT") setQuantidade(String(noClube));
                 }}
                 aria-pressed={tipo === v}
                 className={cx(
@@ -108,8 +126,8 @@ export function StockDialog({
         </fieldset>
 
         <DialogField
-          label={tipo === "ADJUSTMENT" ? "Quantas há, ao certo" : "Quantas unidades"}
-          hint={`o total passa a ${Math.max(0, futuro)}`}
+          label={tipo === "ADJUSTMENT" ? "Quantas contaste no clube" : "Quantas unidades"}
+          hint={`ficam ${Math.max(0, prontas)} prontas a entregar`}
         >
           <input
             type="number"
@@ -118,6 +136,19 @@ export function StockDialog({
             onChange={(e) => setQuantidade(e.target.value)}
             className={cx(dialogInputClass, "tabular")}
             autoFocus
+          />
+        </DialogField>
+
+        <DialogField
+          label={tipo === "ENTRY" ? "Chegou a" : tipo === "EXIT" ? "Saiu a" : "Contado a"}
+          hint={dia === hojeISO() ? "hoje" : diaOk ? undefined : "não pode ser depois de hoje"}
+        >
+          <input
+            type="date"
+            value={dia}
+            max={hojeISO()}
+            onChange={(e) => setDia(e.target.value)}
+            className={cx(dialogInputClass, "tabular", !diaOk && "border-risk")}
           />
         </DialogField>
 
@@ -130,10 +161,23 @@ export function StockDialog({
           />
         </DialogField>
 
-        {futuro < variant.assigned && (
+        {tipo === "ADJUSTMENT" && (
+          <p className="text-meta leading-relaxed text-ink-3">
+            Conta o que está no clube{reservadas > 0 ? `, incluindo as ${reservadas} guardadas para atletas` : ""}.
+            {comAtletas > 0 && ` As ${comAtletas} que estão com atletas juntam-se sozinhas.`}
+          </p>
+        )}
+
+        {tipo === "EXIT" && n > variant.available && (
           <p className="flex items-start gap-1.5 text-meta text-risk">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-            Há {variant.assigned} unidades com atletas ou por entregar, o total não pode ficar abaixo disso.
+            Só há {variant.available} prontas a sair.
+          </p>
+        )}
+        {tipo === "ADJUSTMENT" && n < reservadas && (
+          <p className="flex items-start gap-1.5 text-meta text-risk">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+            Há {reservadas} guardadas para atletas no clube; conta-as também.
           </p>
         )}
 

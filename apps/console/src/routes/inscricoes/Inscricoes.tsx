@@ -9,7 +9,6 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   ArrowRight,
   Check,
-  ChevronDown,
   ChevronRight,
   Download,
   ExternalLink,
@@ -264,6 +263,7 @@ export default function Inscricoes() {
     {
       key: "data",
       header: "Dados",
+      sortValue: (r) => r.missing.length,
       render: (r) =>
         r.missing.length === 0 ? (
           <span className="inline-flex items-center gap-1 text-meta text-ok">
@@ -280,6 +280,9 @@ export default function Inscricoes() {
     {
       key: "status",
       header: "Estado",
+      // Pela ordem dos passos (Por gerar → Validada), não pelo nome.
+      sortValue: (r) => indiceDoPasso(passoDe(r)),
+      filterValue: (r) => PASSOS.find((p) => p.key === passoDe(r))?.label ?? passoDe(r),
       render: (r) => (
         <EstadoDaLinha
           linha={r}
@@ -608,7 +611,7 @@ function EstadoDaLinha({
               disabled={ocupado}
               onChange={(e) => onMudar(e.target.value as Passo)}
               className={cx(
-                "h-7 cursor-pointer appearance-none rounded-[6px] border border-transparent bg-transparent pr-6 pl-1.5 -ml-1.5 text-meta font-medium whitespace-nowrap",
+                "h-7 cursor-pointer appearance-none rounded-[6px] border border-transparent bg-transparent pr-1.5 pl-1.5 -ml-1.5 text-meta font-medium whitespace-nowrap",
                 "transition-colors duration-[120ms] hover:border-line hover:bg-surface focus:border-line-strong focus:outline-none disabled:opacity-50",
                 cor,
               )}
@@ -619,7 +622,6 @@ function EstadoDaLinha({
                 </option>
               ))}
             </Escolha>
-            <ChevronDown className="pointer-events-none absolute right-1.5 size-3.5 text-ink-4" strokeWidth={1.75} />
           </span>
         ) : (
           <div className={cx("text-meta font-medium whitespace-nowrap", cor)}>{PASSOS[i].curto}</div>
@@ -700,7 +702,7 @@ function BarraDeEscolha({
             value=""
             disabled={ocupado}
             onChange={(e) => e.target.value && onMudar(e.target.value as Passo)}
-            className="h-[30px] cursor-pointer appearance-none rounded-full bg-white/10 pr-8 pl-3 text-meta font-semibold text-surface hover:bg-white/20 focus:outline-none disabled:opacity-40 [&>option]:text-ink"
+            className="h-[30px] cursor-pointer appearance-none rounded-full bg-white/10 pr-3 pl-3 text-meta font-semibold text-surface hover:bg-white/20 focus:outline-none disabled:opacity-40 [&>option]:text-ink"
           >
             <option value="" disabled>
               Mudar estado para…
@@ -711,7 +713,6 @@ function BarraDeEscolha({
               </option>
             ))}
           </Escolha>
-          <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-surface/70" strokeWidth={1.75} />
         </span>
         <button
           type="button"

@@ -28,8 +28,7 @@ import Sessions from "@/routes/Sessions";
 import CallUps from "@/routes/CallUps";
 import Matches from "@/routes/Matches";
 import Finance from "@/routes/finance/Finance";
-import FinanceMovements from "@/routes/finance/Movements";
-import FinanceBudget from "@/routes/finance/Budget";
+import { RedirecionarContas } from "@/routes/finance/Redirecionar";
 import Inventory from "@/routes/inventory/Inventory";
 import InventoryItems from "@/routes/inventory/Items";
 import InventoryItemDetail from "@/routes/inventory/ItemDetail";
@@ -100,9 +99,12 @@ export default function App() {
         {/* Inventário. O detalhe do artigo antes da lista não é possível aqui —
             o router resolve por especificidade —, mas a ordem segue a leitura:
             painel, lista, artigo, entregas. */}
+        {/* As Contas são uma página com separadores (`?vista=`); os endereços
+            antigos continuam a abrir, no separador certo. */}
         <Route path="contas" element={<Allow p="finance:read"><Finance /></Allow>} />
-        <Route path="contas/movimentos" element={<Allow p="finance:read"><FinanceMovements /></Allow>} />
-        <Route path="contas/orcamento" element={<Allow p="finance:read"><FinanceBudget /></Allow>} />
+        <Route path="contas/movimentos" element={<RedirecionarContas vista="movimentos" />} />
+        <Route path="contas/orcamento" element={<RedirecionarContas vista="orcamento" />} />
+        <Route path="contas/vencimentos" element={<RedirecionarContas vista="vencimentos" />} />
 
         <Route path="inventario" element={<Allow p="inventory:read"><Inventory /></Allow>} />
         <Route path="inventario/artigos" element={<Allow p="inventory:read"><InventoryItems /></Allow>} />

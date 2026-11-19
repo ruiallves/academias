@@ -1,7 +1,18 @@
 import { Body, Controller, Delete, Get, Patch, Post, Put, Query, Param, Req } from "@nestjs/common";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { FinanceService } from "./finance.service";
-import { BudgetDto, CopyBudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
+import {
+  BudgetDto,
+  CopyBudgetDto,
+  CreateTransactionDto,
+  DeleteTransactionDto,
+  PayMonthDto,
+  PaySalaryDto,
+  SalaryDto,
+  SettingsDto,
+  UpdateSalaryDto,
+  UpdateTransactionDto,
+} from "./finance.dto";
 
 /**
  * Contas. As permissões vivem no serviço, como em todo o produto — o
@@ -12,9 +23,49 @@ export class FinanceController {
   constructor(private readonly finance: FinanceService) {}
 
   @Get("overview")
-  overview(@Req() req: AuthedRequest, @Query("horizon") horizon?: string) {
+  overview(@Req() req: AuthedRequest, @Query("horizon") horizon?: string, @Query("meses") meses?: string) {
     const dias = Number(horizon);
-    return this.finance.overview(req.ctx, Number.isFinite(dias) && dias >= 7 && dias <= 365 ? dias : 30);
+    const n = Number(meses);
+    return this.finance.overview(
+      req.ctx,
+      Number.isFinite(dias) && dias >= 7 && dias <= 365 ? dias : 30,
+      n === 12 || n === 24 ? n : 6,
+    );
+  }
+
+  /* --------------------------------------------------------- vencimentos --- */
+
+  /** A folha: toda a gente com vencimento, o que está pago e o que falta. */
+  @Get("salaries")
+  salaries(@Req() req: AuthedRequest, @Query("membershipId") membershipId?: string, @Query("athleteId") athleteId?: string) {
+    return this.finance.salaries(req.ctx, { membershipId: membershipId || undefined, athleteId: athleteId || undefined });
+  }
+
+  @Post("salaries")
+  createSalary(@Req() req: AuthedRequest, @Body() dto: SalaryDto) {
+    return this.finance.createSalary(req.ctx, dto);
+  }
+
+  /** Pagar o mês a toda a gente (ou aos escolhidos) de uma vez. */
+  @Post("salaries/pagar-mes")
+  payMonth(@Req() req: AuthedRequest, @Body() dto: PayMonthDto) {
+    return this.finance.payMonth(req.ctx, dto);
+  }
+
+  @Patch("salaries/:id")
+  updateSalary(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: UpdateSalaryDto) {
+    return this.finance.updateSalary(req.ctx, id, dto);
+  }
+
+  @Delete("salaries/:id")
+  deleteSalary(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.finance.deleteSalary(req.ctx, id);
+  }
+
+  /** Pagar um mês deste vencimento: nasce uma despesa concluída ligada à pessoa. */
+  @Post("salaries/:id/pagar")
+  paySalary(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: PaySalaryDto) {
+    return this.finance.paySalary(req.ctx, id, dto);
   }
 
   @Get("transactions")

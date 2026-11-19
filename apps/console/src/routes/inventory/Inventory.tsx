@@ -20,6 +20,7 @@ import { longDate, money, shortDate, time } from "@/lib/format";
 import {
   ASSIGNMENT_LABEL,
   MOVEMENT_LABEL,
+  STATUS_LABEL as STOCK_LABEL,
   comAtletasTexto,
   getOverview,
   listAssignments,
@@ -584,12 +585,15 @@ function VistaArtigos({
                 key: "tamanhos",
                 header: "Disponíveis por tamanho",
                 hideBelow: "md",
+                // Quantos tamanhos têm peças prontas.
+                sortValue: (i) => i.variants.filter((v) => v.available > 0).length,
                 render: (i) => <TamanhosCompactos variants={i.variants} max={7} />,
               },
               {
                 key: "disp",
                 header: "Prontas",
                 align: "right",
+                sortValue: (i) => i.available,
                 render: (i) => (
                   <span className="tabular">
                     <span className="font-medium text-ink">{i.available}</span>
@@ -602,6 +606,7 @@ function VistaArtigos({
                 header: "Com atletas",
                 align: "right",
                 hideBelow: "sm",
+                sortValue: (i) => i.assigned,
                 render: (i) => (
                   <span className="tabular text-ink-2" title={comAtletasTexto(i) || undefined}>
                     {i.assigned}
@@ -609,7 +614,15 @@ function VistaArtigos({
                   </span>
                 ),
               },
-              { key: "estado", header: "Estado", align: "right", render: (i) => <EstadoDoStock status={i.status} /> },
+              {
+                key: "estado",
+                header: "Estado",
+                align: "right",
+                // Por gravidade: esgotado, stock baixo, disponível.
+                sortValue: (i) => ({ out: 0, low: 1, ok: 2 })[i.status],
+                filterValue: (i) => STOCK_LABEL[i.status],
+                render: (i) => <EstadoDoStock status={i.status} />,
+              },
             ]}
           />
         </Panel>

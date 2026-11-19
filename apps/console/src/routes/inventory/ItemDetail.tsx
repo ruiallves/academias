@@ -13,9 +13,9 @@ import { BotaoEntregar, EstadoDaEntregaPill, quandoDaEntrega } from "@/component
 import { EditAssignmentDialog } from "@/components/inventory/EditAssignmentDialog";
 import { ItemPhotos } from "@/components/inventory/ItemPhotos";
 import { PagamentoPill } from "@/components/inventory/PagamentoDaEntrega";
-import { StockDialog } from "@/components/inventory/StockDialog";
+import { AtualizarStockDialog } from "@/components/inventory/AtualizarStockDialog";
 import { BarraDoTamanho, EstadoDoStock, Miniatura, Sinal } from "@/components/inventory/Prateleira";
-import { ArrowLeft, Boxes, ExternalLink, PackageOpen, Pencil, Plus, ShoppingBag, Trash2, TriangleAlert, Undo2 } from "@/lib/icons";
+import { ArrowLeft, Boxes, ClipboardCheck, ExternalLink, PackageOpen, Pencil, Plus, ShoppingBag, Trash2, TriangleAlert, Undo2 } from "@/lib/icons";
 import { athleteById } from "@/lib/api";
 import { shortDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -43,8 +43,9 @@ import {
  *
  * Os tamanhos aparecem em mosaico, um quadrado por tamanho com o que está
  * pronto a entregar em grande e a barra a dizer quanto falta para o mínimo:
- * lê-se o armazém de relance, como numa prateleira. Tocar num tamanho mexe no
- * stock dele; o lápis muda o nome.
+ * lê-se o armazém de relance, como numa prateleira. "Atualizar stock" abre os
+ * tamanhos todos numa janela (chegou, saiu, contagem); tocar num quadrado abre
+ * a mesma janela já nesse tamanho. O lápis muda o nome e o mínimo.
  *
  * Por baixo, quem tem este artigo agora e o histórico, em separadores. A
  * coluna da direita fica para o que se mexe pouco: fotografias, a loja do
@@ -61,7 +62,8 @@ export default function ItemDetail() {
   const [comAtletas, setComAtletas] = useState<Assignment[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [separador, setSeparador] = useState<"atletas" | "historico">("atletas");
-  const [mexer, setMexer] = useState<Variant | null>(null);
+  /** A janela do stock: aberta, e em que tamanho começa o cursor (vazio = o primeiro). */
+  const [mexer, setMexer] = useState<{ foco?: string } | null>(null);
   const [novoTamanho, setNovoTamanho] = useState(false);
   const [tirar, setTirar] = useState(false);
   const [editar, setEditar] = useState(false);
@@ -146,26 +148,39 @@ export default function ItemDetail() {
               hint={`${data.available} prontas de ${data.total} · ${comAtletasTexto(data, "nenhum com atletas")}`}
             >
               {podeEscrever && (
-                <button type="button" className="ctl-ghost" onClick={() => setNovoTamanho(true)}>
-                  <Plus className="size-3.5" strokeWidth={1.75} />
-                  Tamanho
-                </button>
+                <>
+                  {/*
+                    As quantidades têm um botão com nome. O "Editar" do cabeçalho
+                    é o artigo (nome, marca, preço); este é quantas há de cada
+                    tamanho, e um clube perguntou onde estava a recontagem.
+                  */}
+                  {data.variants.length > 0 && (
+                    <button type="button" className="ctl-outline" onClick={() => setMexer({})}>
+                      <ClipboardCheck className="size-3.5" strokeWidth={1.75} />
+                      Atualizar stock
+                    </button>
+                  )}
+                  <button type="button" className="ctl-ghost" onClick={() => setNovoTamanho(true)}>
+                    <Plus className="size-3.5" strokeWidth={1.75} />
+                    Novo tamanho
+                  </button>
+                </>
               )}
             </PanelHead>
             {data.variants.length === 0 ? (
-              <Empty title="Sem tamanhos" detail="Junta o primeiro." icon={Boxes} compact />
+              <Empty title="Sem tamanhos" detail="Cria o primeiro em Novo tamanho." icon={Boxes} compact />
             ) : (
               <ul className="grid gap-2 p-4 max-sm:p-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,132px),1fr))]">
                 {data.variants.map((v) => (
                   <li key={v.id} className="min-w-0">
-                    <Mosaico v={v} podeEscrever={podeEscrever} onStock={() => setMexer(v)} onRenomear={() => setRenomear(v)} />
+                    <Mosaico v={v} podeEscrever={podeEscrever} onStock={() => setMexer({ foco: v.id })} onRenomear={() => setRenomear(v)} />
                   </li>
                 ))}
               </ul>
             )}
             {podeEscrever && data.variants.length > 0 && (
               <p className="border-t border-line px-5 py-2.5 text-meta text-ink-3 max-sm:px-3.5">
-                Toca num tamanho para dar entrada, dar saída ou corrigir a contagem. O traço na barra é o mínimo.
+                Para registar o que chegou, o que saiu ou uma contagem, usa Atualizar stock ou toca num tamanho. O traço na barra é o mínimo.
               </p>
             )}
           </Panel>
@@ -283,8 +298,14 @@ export default function ItemDetail() {
       </div>
 
       {mexer && (
-        <StockDialog
-          variant={mexer}
+        <AtualizarStockDialog
+          itemName={data.name}
+          variants={data.variants}
+          focoInicial={mexer.foco}
+          onEditarTamanho={(v) => {
+            setMexer(null);
+            setRenomear(v);
+          }}
           onClose={() => setMexer(null)}
           onDone={() => {
             setMexer(null);
@@ -405,7 +426,8 @@ function Mosaico({
         <button
           type="button"
           onClick={onStock}
-          aria-label={`Mexer no stock do tamanho ${v.label}`}
+          aria-label={`Atualizar o stock do tamanho ${v.label}`}
+          title="Atualizar stock"
           className="absolute inset-0 rounded-[10px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         />
       )}
@@ -703,7 +725,7 @@ function NewVariantDialog({ itemId, onClose, onDone }: { itemId: string; onClose
       });
       onDone();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não foi possível juntar o tamanho.");
+      setErro(err instanceof Error ? err.message : "Não foi possível criar o tamanho.");
     } finally {
       setBusy(false);
     }
@@ -713,6 +735,7 @@ function NewVariantDialog({ itemId, onClose, onDone }: { itemId: string; onClose
     <Dialog
       labelledBy="novo-tamanho"
       title="Novo tamanho"
+      subtitle="Um tamanho que este artigo ainda não tinha"
       onClose={onClose}
       footer={
         <>
@@ -720,7 +743,7 @@ function NewVariantDialog({ itemId, onClose, onDone }: { itemId: string; onClose
             Cancelar
           </button>
           <button type="submit" form="form-tamanho" className="ctl-primary" disabled={!label.trim() || busy}>
-            {busy ? "A juntar…" : "Juntar"}
+            {busy ? "A criar…" : "Criar tamanho"}
           </button>
         </>
       }
@@ -728,9 +751,9 @@ function NewVariantDialog({ itemId, onClose, onDone }: { itemId: string; onClose
       <form id="form-tamanho" onSubmit={submeter} className="space-y-4 p-5">
         <div className="grid grid-cols-3 gap-3">
           <DialogField label="Tamanho">
-            <input value={label} onChange={(e) => setLabel(e.target.value)} className={dialogInputClass} autoFocus />
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="XL" className={dialogInputClass} autoFocus />
           </DialogField>
-          <DialogField label="Quantas há">
+          <DialogField label="Unidades no clube">
             <input
               type="number"
               min={0}
@@ -749,6 +772,10 @@ function NewVariantDialog({ itemId, onClose, onDone }: { itemId: string; onClose
             />
           </DialogField>
         </div>
+
+        <p className="text-meta leading-relaxed text-ink-3">
+          O mínimo é o número abaixo do qual o tamanho aparece em A repor. Depois de criado, as quantidades mudam-se em Atualizar stock.
+        </p>
 
         {erro && (
           <p className="flex items-start gap-1.5 text-meta text-risk">
@@ -835,7 +862,7 @@ function EditVariantDialog({ variant, onClose, onDone }: { variant: Variant; onC
         </div>
 
         <p className="text-meta leading-relaxed text-ink-3">
-          As quantidades mexem-se clicando na linha — cada entrada, saída ou contagem fica no histórico.
+          Aqui muda-se o tamanho em si. As quantidades mudam-se em Atualizar stock, e cada entrada, saída ou contagem fica no histórico.
         </p>
 
         {erro && (

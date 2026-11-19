@@ -890,6 +890,7 @@ function Faturas({ resumo, mexe, onMudou }: { resumo: Estado["resumo"]; mexe: bo
       key: "numero",
       header: "Número",
       hideBelow: "lg",
+      sortValue: (f) => f.numero,
       render: (f) =>
         f.numero ? (
           f.permalink ? (

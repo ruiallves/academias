@@ -1,12 +1,35 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { formatarNoFuso } from "../common/fuso";
+import { formatarNoFuso, partesNoFuso } from "../common/fuso";
 import type { FinanceKind, FinanceStatus, PaymentMethod } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
-import type { BudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
+import type {
+  BudgetDto,
+  CreateTransactionDto,
+  DeleteTransactionDto,
+  PayMonthDto,
+  PaySalaryDto,
+  SalaryDto,
+  SettingsDto,
+  UpdateSalaryDto,
+  UpdateTransactionDto,
+} from "./finance.dto";
 import { chaveDoMes, mesDaReceita, nomeDoMes } from "./mes-da-receita";
+import {
+  chaveDoDia,
+  dataDoDia,
+  estadoDoMes,
+  mesDaData,
+  mesesDevidos,
+  periodoValido,
+  somarMeses,
+  type Dia,
+  type EstadoDoMes,
+  type MesDevido,
+  type PeriodoDeVencimento,
+} from "./vencimentos";
 
 /**
  * Contas — a gestão financeira do clube.
@@ -94,7 +117,7 @@ export class FinanceService {
    * `receitasPrevistas`/`despesasPrevistas` continuam a responder ao horizonte
    * pedido, para quem lê a API directamente.
    */
-  async overview(ctx: RequestContext, horizonDays = 30) {
+  async overview(ctx: RequestContext, horizonDays = 30, meses = 6) {
     this.mustRead(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
@@ -104,8 +127,14 @@ export class FinanceService {
       const hoje = new Date();
       const inicioDoMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
       const desdeOMes = maisTarde(inicioDoMes, desde);
-      const inicioDaSerie = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
+      /*
+       * A série: 6, 12 ou 24 meses, a escolha de quem olha. O período também
+       * manda no "por categoria", que deixou de ser só o mês corrente: um
+       * clube que quer saber em que gastou na época olha para a época.
+       */
+      const inicioDaSerie = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1), 1);
       const serieDesde = maisTarde(inicioDaSerie, desde);
+      const diaDeHoje = partesNoFuso(hoje);
       /*
        * As mensalidades e as quotas contam no mês em que foram pagas: o
        * dinheiro entra nas contas do clube no dia em que entrou. A de julho
@@ -186,6 +215,27 @@ export class FinanceService {
           : Promise.resolve(0),
       ]);
 
+      /*
+       * Os vencimentos: o que se deve e o que já se pagou. Ver `folha` — é a
+       * mesma conta da página dos vencimentos, para os dois ecrãs dizerem o
+       * mesmo número. E o orçamento da época em curso, para avisar do que
+       * passou do tecto.
+       */
+      const [folha, epoca] = await Promise.all([this.folha(db, diaDeHoje), currentSeason(db)]);
+      const [orcamentos, gastosDaEpoca] = epoca
+        ? await Promise.all([
+            db.financialBudget.findMany({
+              where: { seasonId: epoca.id },
+              select: { categoryId: true, amountCents: true, category: { select: { label: true } } },
+            }),
+            db.financialTransaction.groupBy({
+              by: ["categoryId"],
+              where: { kind: "EXPENSE", status: "COMPLETED", occurredAt: { gte: epoca.startsOn, lte: epoca.endsOn } },
+              _sum: { amountCents: true },
+            }),
+          ])
+        : [[], []];
+
       const doTipo = (k: FinanceKind) => totais.find((t) => t.kind === k)?._sum.amountCents ?? 0;
       const receitas = doTipo("INCOME");
       const despesas = doTipo("EXPENSE");
@@ -214,9 +264,17 @@ export class FinanceService {
       const receitasMes = doMes.filter((t) => t.kind === "INCOME").reduce((s, t) => s + t.amountCents, 0);
       const despesasMes = doMes.filter((t) => t.kind === "EXPENSE").reduce((s, t) => s + t.amountCents, 0);
 
-      // O gasto do mês por categoria — o "em que estamos a gastar".
+      /*
+       * Em que entrou e em que saiu, por categoria, no período da série.
+       *
+       * Era só o mês corrente; passou a ser o período que se escolheu em cima,
+       * porque "em que gastámos esta época" é a pergunta que a direção faz, e o
+       * mês corrente a dia 3 não responde a nada. As mensalidades e as quotas
+       * entram como categorias de receita: são quase sempre a maior, e um
+       * gráfico de receitas sem elas mentia por omissão.
+       */
       const acumulado = new Map<string, { kind: FinanceKind; amountCents: number }>();
-      for (const t of doMes) {
+      for (const t of movimentosDaSerie) {
         const chave = `${t.kind}:${t.categoryId ?? ""}`;
         const linha = acumulado.get(chave) ?? { kind: t.kind, amountCents: 0 };
         linha.amountCents += t.amountCents;
@@ -231,9 +289,32 @@ export class FinanceService {
       const saldo = settings.initialBalanceCents + receitas + autoDesdeOInicial + quotasTotal - despesas;
 
       /* ----------------------------------------------------- o previsto --- */
+      /*
+       * Os vencimentos por pagar entram nas previsões como qualquer despesa
+       * prevista: o deste mês vence no dia marcado, os em atraso já venceram
+       * (contam em todos os horizontes), os dos meses seguintes na data deles.
+       */
+      const vencimentosPorVir = folha.pessoas.flatMap((p) =>
+        p.meses
+          .filter((m) => m.estado !== "pago")
+          .map((m) => ({
+            id: `salary_${m.salaryId}_${m.period}`,
+            kind: "EXPENSE" as FinanceKind,
+            description: `Vencimento de ${nomeDoMes(m.period)} · ${p.nome}`,
+            amountCents: m.amountCents,
+            occurredAt: new Date(`${m.vence}T00:00:00.000Z`),
+            status: "PLANNED" as FinanceStatus,
+            category: { label: "Vencimentos" },
+            match: null,
+            calendarEvent: null,
+            trainingSession: null,
+          })),
+      );
+      const tudoPorVir = [...porVir, ...vencimentosPorVir].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+
       const somaAte = (kind: FinanceKind, dias: number) => {
         const limite = new Date(hoje.getTime() + dias * 86_400_000);
-        return porVir.filter((t) => t.kind === kind && t.occurredAt <= limite).reduce((s, t) => s + t.amountCents, 0);
+        return tudoPorVir.filter((t) => t.kind === kind && t.occurredAt <= limite).reduce((s, t) => s + t.amountCents, 0);
       };
       const forecast = HORIZONTES.map((days) => ({
         days,
@@ -243,16 +324,16 @@ export class FinanceService {
       const receitasPrevistas = somaAte("INCOME", horizonDays);
       const despesasPrevistas = somaAte("EXPENSE", horizonDays);
 
-      const proximasReceitas = porVir.filter((t) => t.kind === "INCOME").slice(0, 6).map(serializeCurto);
-      const proximasDespesas = porVir.filter((t) => t.kind === "EXPENSE").slice(0, 6).map(serializeCurto);
+      const proximasReceitas = tudoPorVir.filter((t) => t.kind === "INCOME").slice(0, 6).map(serializeCurto);
+      const proximasDespesas = tudoPorVir.filter((t) => t.kind === "EXPENSE").slice(0, 6).map(serializeCurto);
 
       /* ------------------------------------------------- a série mensal --- */
-      const meses = new Map<string, { income: number; expense: number }>();
-      for (let i = 5; i >= 0; i--) {
+      const serie = new Map<string, { income: number; expense: number }>();
+      for (let i = meses - 1; i >= 0; i--) {
         const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-        meses.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, { income: 0, expense: 0 });
+        serie.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, { income: 0, expense: 0 });
       }
-      const balde = (d: Date) => meses.get(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      const balde = (d: Date) => serie.get(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
       for (const t of movimentosDaSerie) {
         const b = balde(t.occurredAt);
         if (b) b[t.kind === "INCOME" ? "income" : "expense"] += t.amountCents;
@@ -260,11 +341,41 @@ export class FinanceService {
       // As mensalidades e as quotas no mês em que foram pagas.
       for (const c of [...chargesDaSerie, ...quotasDaSerie]) {
         const chave = mesDe(c);
-        const b = chave ? meses.get(chave) : undefined;
+        const b = chave ? serie.get(chave) : undefined;
         if (b) b.income += c.amountCents;
       }
 
       const rotulos = new Map(catalogo.map((c) => [c.id, c.label]));
+
+      /* ------------------------------------------- o que precisa de atenção --- */
+      /*
+       * A lista que abre a página: o que está fora do sítio. Só o que existe —
+       * uma página que diz "nada a assinalar" em quatro linhas é ruído.
+       */
+      const inicioDeHoje = new Date(`${dataDoDia(diaDeHoje)}T00:00:00.000Z`);
+      const vencidos = porVir.filter((t) => t.occurredAt < inicioDeHoje);
+      const gastoPorCategoria = new Map(gastosDaEpoca.map((g) => [g.categoryId, g._sum.amountCents ?? 0]));
+      const acimaDoOrcamento = orcamentos
+        .map((o) => ({ label: o.category.label, budgetCents: o.amountCents, spentCents: gastoPorCategoria.get(o.categoryId) ?? 0 }))
+        .filter((o) => o.budgetCents > 0 && o.spentCents > o.budgetCents)
+        .sort((a, b) => b.spentCents - b.budgetCents - (a.spentCents - a.budgetCents));
+
+      const atencao: Atencao[] = [];
+      if (folha.resumo.emAtraso.n > 0) atencao.push({ tipo: "vencimentos-atraso", n: folha.resumo.emAtraso.n, amountCents: folha.resumo.emAtraso.amountCents });
+      if (folha.resumo.porPagarEsteMes.n > 0) {
+        atencao.push({ tipo: "vencimentos-mes", n: folha.resumo.porPagarEsteMes.n, amountCents: folha.resumo.porPagarEsteMes.amountCents });
+      }
+      if (vencidos.length > 0) {
+        atencao.push({
+          tipo: "previstos-vencidos",
+          n: vencidos.length,
+          amountCents: vencidos.reduce((s, t) => s + (t.kind === "EXPENSE" ? t.amountCents : 0), 0),
+          receitasCents: vencidos.reduce((s, t) => s + (t.kind === "INCOME" ? t.amountCents : 0), 0),
+        });
+      }
+      if (acimaDoOrcamento.length > 0) atencao.push({ tipo: "orcamento", categorias: acimaDoOrcamento.slice(0, 4), epoca: epoca?.label ?? "" });
+      const projetado30 = saldo + forecast[0].income - forecast[0].expense;
+      if (projetado30 < 0 && saldo >= 0) atencao.push({ tipo: "saldo-projetado", amountCents: projetado30 });
 
       return {
         saldo,
@@ -284,16 +395,34 @@ export class FinanceService {
         forecast,
         includeFees: settings.includeFees,
         includeQuotas: settings.includeQuotas,
-        monthly: [...meses.entries()].map(([month, v]) => ({ month, ...v })),
+        /** Quantos meses tem a série (e o "por categoria"). */
+        meses,
+        mesAtual: chaveDoDia(diaDeHoje),
+        monthly: [...serie.entries()].map(([month, v]) => ({ month, ...v })),
         proximasDespesas,
         proximasReceitas,
-        porCategoria: porCategoria
-          .map((c) => ({
+        porCategoria: [
+          ...porCategoria.map((c) => ({
             kind: c.kind,
             label: c.categoryId ? (rotulos.get(c.categoryId) ?? "Sem categoria") : "Sem categoria",
             amountCents: c._sum.amountCents ?? 0,
-          }))
-          .sort((a, b) => b.amountCents - a.amountCents),
+          })),
+          ...(chargesDaSerie.length ? [{ kind: "INCOME" as FinanceKind, label: "Mensalidades e cobranças", amountCents: somaCharges(chargesDaSerie) }] : []),
+          ...(quotasDaSerie.length ? [{ kind: "INCOME" as FinanceKind, label: "Quotas de sócios", amountCents: somaCharges(quotasDaSerie) }] : []),
+        ].sort((a, b) => b.amountCents - a.amountCents),
+        /** A folha de vencimentos, em resumo. A página dos vencimentos tem o resto. */
+        vencimentos: folha.resumo,
+        /** O orçamento da época em curso, em totais, para o painel ligar ao separador. */
+        orcamento: epoca
+          ? {
+              epoca: epoca.label,
+              budgetCents: orcamentos.reduce((s, o) => s + o.amountCents, 0),
+              spentCents: orcamentos.reduce((s, o) => s + (gastoPorCategoria.get(o.categoryId) ?? 0), 0),
+              categorias: orcamentos.length,
+              acima: acimaDoOrcamento.length,
+            }
+          : null,
+        atencao,
       };
     });
   }
@@ -350,6 +479,7 @@ export class FinanceService {
         select: {
           id: true, kind: true, status: true, description: true, amountCents: true,
           occurredAt: true, dueDate: true, method: true, counterparty: true, notes: true, seriesId: true,
+          salaryId: true, salaryPeriod: true,
           category: { select: { id: true, label: true } },
           athlete: { select: { id: true, name: true } },
           member: { select: { id: true, name: true } },
@@ -375,10 +505,14 @@ export class FinanceService {
         counterparty: t.counterparty,
         notes: t.notes,
         seriesId: t.seriesId,
+        /** Quando paga um mês de vencimento: o mês (`AAAA-MM`). */
+        salaryPeriod: t.salaryPeriod,
+        salaryId: t.salaryId,
         category: t.category,
         athlete: t.athlete,
         member: t.member,
         team: t.team,
+        staffId: t.staff?.id ?? null,
         staffName: t.staff?.user.name ?? null,
         match: t.match ? { id: t.match.id, label: `${t.match.isHome ? "vs" : "@"} ${t.match.opponent}`, teamName: t.match.team.name } : null,
         // Um treino aparece onde aparece um evento, com o nome que tem no calendário.
@@ -447,11 +581,14 @@ export class FinanceService {
                 : null,
               notes: null,
               seriesId: null,
+              salaryPeriod: null,
+              salaryId: null,
               // A avulsa (equipamento, inscrição) diz-se pelo nome; a mensalidade, "Mensalidades".
               category: c.kind === "EXTRA" ? { id: "auto-extra", label: "Cobranças" } : { id: "auto-fees", label: "Mensalidades" },
               athlete: c.athlete,
               member: null,
               team: null,
+              staffId: null,
               staffName: null,
               match: null,
               calendarEvent: null,
@@ -500,10 +637,13 @@ export class FinanceService {
               counterparty: null,
               notes: null,
               seriesId: null,
+              salaryPeriod: null,
+              salaryId: null,
               category: { id: "auto-quotas", label: "Quotas" },
               athlete: null,
               member: q.member,
               team: null,
+              staffId: null,
               staffName: null,
               match: null,
               calendarEvent: null,
@@ -927,6 +1067,372 @@ export class FinanceService {
   }
 
   /* ---------------------------------------------------------------------- */
+  /* Vencimentos                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * A folha de vencimentos: quem recebe, quanto, o que está pago e o que falta.
+   *
+   * ## Como se lê
+   *
+   * Cada pessoa tem um ou mais períodos (`Salary`); o que se deve em cada mês
+   * sai de `mesesDevidos`, e o que está pago são os movimentos com
+   * `salaryPeriod`. A janela vai de 12 meses atrás ao mês seguinte: o que
+   * ficou por pagar há mais de um ano já não é folha, é história, e aparece na
+   * ficha da pessoa pelos movimentos.
+   *
+   * Sem filtro é a academia toda; com `membershipId` ou `athleteId`, a ficha
+   * de uma pessoa (com a mesma conta, para os dois ecrãs baterem certo).
+   */
+  async salaries(ctx: RequestContext, filtro: { membershipId?: string; athleteId?: string } = {}) {
+    this.mustRead(ctx);
+    return this.prisma.runAs(ctx.academyId, (db) => this.folha(db, partesNoFuso(new Date()), filtro));
+  }
+
+  private async folha(db: ScopedClient, hoje: Dia, filtro: { membershipId?: string; athleteId?: string } = {}) {
+    const mesAtual = chaveDoDia(hoje);
+    const janela = { desde: somarMeses(mesAtual, -12), ate: somarMeses(mesAtual, 1) };
+
+    const [periodos, pagamentos] = await Promise.all([
+      db.salary.findMany({
+        where: {
+          ...(filtro.membershipId ? { membershipId: filtro.membershipId } : {}),
+          ...(filtro.athleteId ? { athleteId: filtro.athleteId } : {}),
+        },
+        orderBy: { startsOn: "desc" },
+        select: {
+          id: true, membershipId: true, athleteId: true, amountCents: true, startsOn: true, endsOn: true, payDay: true, notes: true,
+          createdAt: true,
+          membership: {
+            select: { id: true, isActive: true, title: true, user: { select: { name: true } }, customRole: { select: { name: true } } },
+          },
+          athlete: {
+            select: {
+              id: true, name: true, status: true,
+              teams: { where: { leftAt: null }, take: 1, select: { team: { select: { name: true } } } },
+            },
+          },
+        },
+      }),
+      db.financialTransaction.findMany({
+        where: {
+          salaryId: { not: null },
+          status: { not: "CANCELLED" },
+          ...(filtro.membershipId ? { staffId: filtro.membershipId } : {}),
+          ...(filtro.athleteId ? { athleteId: filtro.athleteId } : {}),
+        },
+        orderBy: { occurredAt: "desc" },
+        select: { id: true, salaryId: true, salaryPeriod: true, amountCents: true, occurredAt: true, status: true, method: true },
+      }),
+    ]);
+
+    /* Os pagamentos por pessoa e mês: a mesma pessoa pode ter pago um mês num período e o seguinte noutro. */
+    const salarioDe = new Map(periodos.map((p) => [p.id, p]));
+    const chavePessoa = (p: { membershipId: string | null; athleteId: string | null }) =>
+      p.membershipId ? `staff:${p.membershipId}` : `atleta:${p.athleteId}`;
+    const pagosPorPessoa = new Map<string, Map<string, (typeof pagamentos)[number]>>();
+    for (const pg of pagamentos) {
+      const s = pg.salaryId ? salarioDe.get(pg.salaryId) : undefined;
+      if (!s || !pg.salaryPeriod) continue;
+      const k = chavePessoa(s);
+      const porMes = pagosPorPessoa.get(k) ?? new Map();
+      // O mais recente ganha (a lista vem por data, do mais recente para trás).
+      if (!porMes.has(pg.salaryPeriod)) porMes.set(pg.salaryPeriod, pg);
+      pagosPorPessoa.set(k, porMes);
+    }
+
+    /* As pessoas, cada uma com os seus períodos (do mais recente para trás). */
+    const porPessoa = new Map<string, typeof periodos>();
+    for (const p of periodos) {
+      const k = chavePessoa(p);
+      porPessoa.set(k, [...(porPessoa.get(k) ?? []), p]);
+    }
+
+    const pessoas = [...porPessoa.entries()].map(([k, linhas]) => {
+      const primeira = linhas[0];
+      const tipo = primeira.membershipId ? ("staff" as const) : ("atleta" as const);
+      const nome = primeira.membership?.user.name ?? primeira.athlete?.name ?? "—";
+      const detalhe = primeira.membership
+        ? primeira.membership.customRole?.name ?? primeira.membership.title ?? null
+        : primeira.athlete?.teams[0]?.team.name ?? null;
+      const ativo = primeira.membership ? primeira.membership.isActive : primeira.athlete?.status === "ACTIVE";
+
+      /* O período em vigor no mês corrente, se houver. */
+      const atual =
+        linhas.find((l) => mesDaData(l.startsOn) <= mesAtual && (!l.endsOn || mesDaData(l.endsOn) >= mesAtual)) ?? null;
+
+      const pagos = pagosPorPessoa.get(k) ?? new Map<string, (typeof pagamentos)[number]>();
+      const devidos: MesDevido[] = linhas.flatMap((l) => mesesDevidos(l as PeriodoDeVencimento, janela));
+      // Dois períodos no mesmo mês (uma correção mal fechada): fica o mais recente.
+      const porMes = new Map<string, MesDevido>();
+      for (const m of [...devidos].reverse()) porMes.set(m.period, m);
+      const meses = [...porMes.values()]
+        .sort((a, b) => (a.period < b.period ? -1 : 1))
+        .map((m) => {
+          const pago = pagos.get(m.period) ?? null;
+          const estado: EstadoDoMes = estadoDoMes(m, Boolean(pago), hoje);
+          return {
+            ...m,
+            estado,
+            pagamento: pago
+              ? { id: pago.id, amountCents: pago.amountCents, occurredAt: pago.occurredAt, method: pago.method }
+              : null,
+          };
+        });
+
+      const ultimoPagamento = [...pagos.values()].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0] ?? null;
+
+      return {
+        tipo,
+        id: primeira.membershipId ?? primeira.athleteId ?? "",
+        nome,
+        detalhe,
+        ativo,
+        atual: atual ? serializeSalario(atual) : null,
+        periodos: linhas.map(serializeSalario),
+        meses,
+        emAtraso: meses.filter((m) => m.estado === "atraso"),
+        esteMes: meses.find((m) => m.period === mesAtual) ?? null,
+        ultimoPagamento: ultimoPagamento
+          ? { id: ultimoPagamento.id, period: ultimoPagamento.salaryPeriod, amountCents: ultimoPagamento.amountCents, occurredAt: ultimoPagamento.occurredAt }
+          : null,
+      };
+    });
+
+    pessoas.sort((a, b) => a.nome.localeCompare(b.nome, "pt"));
+
+    const soma = (ms: { amountCents: number }[]) => ms.reduce((s, m) => s + m.amountCents, 0);
+    const comAtual = pessoas.filter((p) => p.atual);
+    const esteMes = pessoas.map((p) => p.esteMes).filter((m): m is NonNullable<typeof m> => Boolean(m));
+    const pagosEsteMes = esteMes.filter((m) => m.estado === "pago");
+    const porPagarEsteMes = esteMes.filter((m) => m.estado === "este-mes");
+    const emAtraso = pessoas.flatMap((p) => p.emAtraso);
+
+    return {
+      hoje: dataDoDia(hoje),
+      mesAtual,
+      resumo: {
+        pessoas: comAtual.length,
+        /** A soma dos vencimentos em vigor: o que o clube paga por mês. */
+        folhaMensal: soma(comAtual.map((p) => p.atual!)),
+        pagoEsteMes: { n: pagosEsteMes.length, amountCents: soma(pagosEsteMes.map((m) => m.pagamento!)) },
+        porPagarEsteMes: { n: porPagarEsteMes.length, amountCents: soma(porPagarEsteMes) },
+        emAtraso: { n: emAtraso.length, amountCents: soma(emAtraso) },
+      },
+      pessoas,
+    };
+  }
+
+  /**
+   * Definir o vencimento de uma pessoa.
+   *
+   * Se já houver um período em vigor, fecha-se no mês anterior ao novo: "o
+   * vencimento subiu em janeiro" fica escrito como dois períodos, e a ficha
+   * mostra os dois. Um início no mesmo mês do período em vigor substitui-o
+   * (foi um engano, não uma subida).
+   */
+  async createSalary(ctx: RequestContext, dto: SalaryDto) {
+    this.mustWrite(ctx);
+    if (Boolean(dto.membershipId) === Boolean(dto.athleteId)) {
+      throw new BadRequestException("Escolhe uma pessoa do staff ou um atleta");
+    }
+    const inicio = primeiroDia(dto.startsOn);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      if (dto.membershipId) {
+        const m = await db.membership.findFirst({ where: { id: dto.membershipId }, select: { id: true, role: true } });
+        if (!m) throw new NotFoundException("Pessoa não encontrada");
+        if (m.role === "GUARDIAN" || m.role === "ATHLETE") throw new BadRequestException("Um vencimento é de alguém do staff ou de um atleta");
+      } else {
+        const a = await db.athlete.findFirst({ where: { id: dto.athleteId! }, select: { id: true } });
+        if (!a) throw new NotFoundException("Atleta não encontrado");
+      }
+
+      const quem = dto.membershipId ? { membershipId: dto.membershipId } : { athleteId: dto.athleteId! };
+      const mesDoInicio = mesDaData(inicio);
+
+      /* O período em vigor nesse mês, e os que começam depois (um início no passado por cima de outro). */
+      const abertos = await db.salary.findMany({
+        where: { ...quem, OR: [{ endsOn: null }, { endsOn: { gte: inicio } }] },
+        select: { id: true, startsOn: true, endsOn: true },
+      });
+      for (const s of abertos) {
+        if (mesDaData(s.startsOn) >= mesDoInicio) {
+          // Começa no mesmo mês ou depois: era um engano — sai, e os pagamentos ficam.
+          await db.salary.delete({ where: { id: s.id } });
+        } else {
+          // Fecha no último dia do mês anterior ao novo.
+          await db.salary.update({ where: { id: s.id }, data: { endsOn: ultimoDiaAntes(inicio) } });
+        }
+      }
+
+      const s = await db.salary.create({
+        data: {
+          academyId: ctx.academyId,
+          ...quem,
+          amountCents: dto.amountCents,
+          startsOn: inicio,
+          payDay: dto.payDay ?? null,
+          notes: dto.notes?.trim() || null,
+          createdById: ctx.membershipId ?? null,
+        },
+        select: { id: true },
+      });
+      return { id: s.id };
+    });
+  }
+
+  /** Corrigir um período: o valor, as datas, o dia de pagamento, as notas. */
+  async updateSalary(ctx: RequestContext, id: string, dto: UpdateSalaryDto) {
+    this.mustWrite(ctx);
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const atual = await db.salary.findFirst({ where: { id }, select: { id: true, startsOn: true, endsOn: true } });
+      if (!atual) throw new NotFoundException("Vencimento não encontrado");
+
+      const startsOn = dto.startsOn !== undefined ? primeiroDia(dto.startsOn) : atual.startsOn;
+      const endsOn = dto.endsOn === undefined ? atual.endsOn : dto.endsOn ? ultimoDia(dto.endsOn) : null;
+      if (endsOn && endsOn < startsOn) throw new BadRequestException("O fim tem de ser depois do início");
+
+      await db.salary.update({
+        where: { id },
+        data: {
+          ...(dto.amountCents !== undefined ? { amountCents: dto.amountCents } : {}),
+          startsOn,
+          endsOn,
+          ...(dto.payDay !== undefined ? { payDay: dto.payDay } : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes.trim() || null } : {}),
+        },
+      });
+      return { ok: true };
+    });
+  }
+
+  /** Apagar um período. Os meses já pagos ficam nos movimentos, sem ligação. */
+  async deleteSalary(ctx: RequestContext, id: string) {
+    this.mustWrite(ctx);
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const atual = await db.salary.findFirst({ where: { id }, select: { id: true } });
+      if (!atual) throw new NotFoundException("Vencimento não encontrado");
+      await db.salary.delete({ where: { id } });
+      return { ok: true };
+    });
+  }
+
+  /**
+   * Pagar um mês de um vencimento.
+   *
+   * É registar uma despesa concluída, com a pessoa ligada e o mês escrito: o
+   * saldo, a lista e o gráfico tratam-na como qualquer outra. O mesmo mês não
+   * se paga duas vezes — um pagamento cancelado não conta, para o certo poder
+   * entrar a seguir.
+   */
+  async paySalary(ctx: RequestContext, id: string, dto: PaySalaryDto) {
+    this.mustWrite(ctx);
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const r = await this.pagarMes(db, ctx, id, dto);
+      return { id: r.id, amountCents: r.amountCents };
+    });
+  }
+
+  /** Pagar o mês a várias pessoas — por omissão, a todas as que ainda não o têm pago. */
+  async payMonth(ctx: RequestContext, dto: PayMonthDto) {
+    this.mustWrite(ctx);
+    if (!periodoValido(dto.period)) throw new BadRequestException("O mês tem de ser AAAA-MM");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const folha = await this.folha(db, partesNoFuso(new Date()));
+      const alvo = new Set(dto.salaryIds ?? []);
+      const porPagar = folha.pessoas
+        .map((p) => p.meses.find((m) => m.period === dto.period && m.estado !== "pago"))
+        .filter((m): m is NonNullable<typeof m> => Boolean(m))
+        .filter((m) => alvo.size === 0 || alvo.has(m.salaryId));
+
+      const pagos: { id: string; amountCents: number }[] = [];
+      for (const m of porPagar) {
+        pagos.push(await this.pagarMes(db, ctx, m.salaryId, { period: dto.period, paidOn: dto.paidOn, method: dto.method }));
+      }
+      return { pagos: pagos.length, amountCents: pagos.reduce((s, p) => s + p.amountCents, 0) };
+    });
+  }
+
+  private async pagarMes(db: ScopedClient, ctx: RequestContext, salaryId: string, dto: PaySalaryDto) {
+    if (!periodoValido(dto.period)) throw new BadRequestException("O mês tem de ser AAAA-MM");
+
+    const s = await db.salary.findFirst({
+      where: { id: salaryId },
+      select: {
+        id: true, membershipId: true, athleteId: true, amountCents: true, startsOn: true, endsOn: true,
+        membership: { select: { user: { select: { name: true } } } },
+        athlete: { select: { name: true } },
+      },
+    });
+    if (!s) throw new NotFoundException("Vencimento não encontrado");
+
+    const primeiro = mesDaData(s.startsOn);
+    const ultimo = s.endsOn ? mesDaData(s.endsOn) : null;
+    if (dto.period < primeiro || (ultimo && dto.period > ultimo)) {
+      throw new BadRequestException(`Este vencimento não vale para ${nomeDoMes(dto.period)}`);
+    }
+    const mesAtual = chaveDoMes(new Date());
+    if (dto.period > somarMeses(mesAtual, 1)) throw new BadRequestException("Só se paga até ao mês seguinte");
+
+    // Já pago? Pela pessoa e pelo mês, em qualquer período dela.
+    const jaPago = await db.financialTransaction.findFirst({
+      where: {
+        salaryPeriod: dto.period,
+        status: { not: "CANCELLED" },
+        ...(s.membershipId ? { staffId: s.membershipId } : { athleteId: s.athleteId! }),
+      },
+      select: { id: true },
+    });
+    if (jaPago) throw new BadRequestException(`${nomeDoMes(dto.period)} já está pago`);
+
+    const nome = s.membership?.user.name ?? s.athlete?.name ?? "";
+    const categoria = await this.categoriaDeVencimentos(db, ctx.academyId);
+    const amountCents = dto.amountCents ?? s.amountCents;
+    const t = await db.financialTransaction.create({
+      data: {
+        academyId: ctx.academyId,
+        kind: "EXPENSE",
+        status: "COMPLETED",
+        description: `Vencimento de ${nomeDoMes(dto.period)} · ${nome}`,
+        amountCents,
+        occurredAt: dto.paidOn ? new Date(dto.paidOn) : new Date(),
+        categoryId: categoria,
+        method: (dto.method as PaymentMethod) || null,
+        counterparty: nome,
+        notes: dto.notes?.trim() || null,
+        staffId: s.membershipId,
+        athleteId: s.athleteId,
+        salaryId: s.id,
+        salaryPeriod: dto.period,
+        createdById: ctx.membershipId ?? null,
+      },
+      select: { id: true },
+    });
+    return { id: t.id, amountCents };
+  }
+
+  /**
+   * A categoria dos pagamentos de vencimentos: a que o clube já tem com esse
+   * nome ("Salários e prémios" vem semeada), ou uma nova se a arquivou.
+   */
+  private async categoriaDeVencimentos(db: ScopedClient, academyId: string): Promise<string> {
+    const nomes = ["Salários e prémios", "Salários", "Vencimentos", "Salários e vencimentos"];
+    const existente = await db.catalogItem.findFirst({
+      where: { kind: "financeExpense", archivedAt: null, label: { in: nomes } },
+      select: { id: true },
+    });
+    if (existente) return existente.id;
+    const ultimo = await db.catalogItem.findFirst({ where: { kind: "financeExpense" }, orderBy: { order: "desc" }, select: { order: true } });
+    const nova = await db.catalogItem.create({
+      data: { academyId, kind: "financeExpense", label: "Salários e prémios", order: (ultimo?.order ?? 0) + 1 },
+      select: { id: true },
+    });
+    return nova.id;
+  }
+
+  /* ---------------------------------------------------------------------- */
   /* Miudezas                                                                */
   /* ---------------------------------------------------------------------- */
 
@@ -965,6 +1471,48 @@ export class FinanceService {
 
 /** Os horizontes que o painel oferece. Vão todos na mesma resposta. */
 const HORIZONTES = [30, 90, 180, 365] as const;
+
+/** O que o painel aponta como "precisa de atenção". Só o que existe. */
+type Atencao =
+  | { tipo: "vencimentos-atraso"; n: number; amountCents: number }
+  | { tipo: "vencimentos-mes"; n: number; amountCents: number }
+  | { tipo: "previstos-vencidos"; n: number; amountCents: number; receitasCents: number }
+  | { tipo: "orcamento"; epoca: string; categorias: { label: string; budgetCents: number; spentCents: number }[] }
+  | { tipo: "saldo-projetado"; amountCents: number };
+
+/** Um período de vencimento, como sai para o cliente. */
+function serializeSalario(s: {
+  id: string; amountCents: number; startsOn: Date; endsOn: Date | null; payDay: number | null; notes: string | null; createdAt: Date;
+}) {
+  return {
+    id: s.id,
+    amountCents: s.amountCents,
+    startsOn: s.startsOn.toISOString().slice(0, 10),
+    endsOn: s.endsOn ? s.endsOn.toISOString().slice(0, 10) : null,
+    payDay: s.payDay,
+    notes: s.notes,
+    createdAt: s.createdAt,
+  };
+}
+
+/** O dia 1 do mês de uma data `AAAA-MM-DD` (ou ISO), em UTC, como `@db.Date` guarda. */
+function primeiroDia(iso: string): Date {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) throw new BadRequestException("Data inválida");
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+/** O último dia do mês de uma data. */
+function ultimoDia(iso: string): Date {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) throw new BadRequestException("Data inválida");
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+}
+
+/** O último dia do mês anterior a esta data. */
+function ultimoDiaAntes(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0));
+}
 
 /** Cinco anos de renda. Depois disso é um contrato novo, não a mesma série. */
 const MAX_OCORRENCIAS = 60;

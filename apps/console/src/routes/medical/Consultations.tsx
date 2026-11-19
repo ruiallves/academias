@@ -159,12 +159,26 @@ export default function MedicalConsultations() {
     {
       key: "state",
       header: "Estado",
+      // O mesmo rótulo que `EstadoDaConsulta` mostra.
+      sortValue: ({ entry: e }) =>
+        e.status === "done"
+          ? "Realizada"
+          : e.status === "cancelled"
+            ? "Desmarcada"
+            : !e.confirmationRequired
+              ? "Agendada"
+              : e.reply === "confirmed"
+                ? "Confirmada"
+                : e.reply === "declined"
+                  ? "Não vai"
+                  : "Por responder",
       render: (r) => <EstadoDaConsulta entry={r.entry} />,
     },
     {
       key: "date",
       header: "Data",
       align: "right",
+      sortValue: (r) => new Date(`${r.entry.date}T${r.entry.time ?? "00:00"}`),
       render: (r) => (
         <div>
           <div className="text-meta text-ink-2 tabular">

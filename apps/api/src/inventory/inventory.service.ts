@@ -7,6 +7,7 @@ import { athleteScopeFilter, can, type RequestContext } from "../common/permissi
 import { currentSeason } from "../common/seasons";
 import { EspacoService } from "../storage/espaco.service";
 import { BillingService } from "../billing/billing.service";
+import { instanteDoPagamento } from "../billing/dia-do-pagamento";
 import { SiteService } from "../site/site.service";
 import type { ProdutoDoInventarioDto } from "../site/site.dto";
 import type {
@@ -1263,6 +1264,8 @@ export class InventoryService {
    */
   async moveStock(ctx: RequestContext, variantId: string, dto: StockMovementDto) {
     this.mustWrite(ctx);
+    /* O dia em que aconteceu, quando não foi hoje. O stock muda na mesma agora; a data é a do histórico. */
+    const em = instanteDoMovimento(dto.on);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const v = await db.inventoryVariant.findFirst({
@@ -1294,6 +1297,7 @@ export class InventoryService {
         // não se lê; "menos 2, contagem" lê-se.
         quantity: dto.type === "ADJUSTMENT" ? Math.abs(novoTotal - v.totalQuantity) : dto.quantity,
         reason: dto.reason?.trim() || (dto.type === "ADJUSTMENT" ? `Contagem: ${novoTotal}` : null),
+        em,
       });
 
       return { ok: true, total: novoTotal, available: novoTotal - v.assignedQuantity };
@@ -1331,6 +1335,8 @@ export class InventoryService {
     p: {
       athleteId: string; variantId: string; quantity: number; notes: string | null; seasonId: string | null;
       entregue: boolean; prefixo?: boolean;
+      /** Entregue num dia que já passou. Sem isto, agora. */
+      entregueEm?: Date;
     },
   ) {
     const variante = await db.inventoryVariant.findFirst({
@@ -1358,6 +1364,8 @@ export class InventoryService {
         notes: p.notes,
         seasonId: p.seasonId,
         assignedById: ctx.membershipId ?? null,
+        // O dia em que a peça foi entregue, quando foi antes de se registar.
+        ...(p.entregue && p.entregueEm ? { assignedAt: p.entregueEm } : {}),
       },
       select: { id: true },
     });
@@ -1369,6 +1377,7 @@ export class InventoryService {
       athleteId: p.athleteId,
       assignmentId: entrega.id,
       reason: p.notes,
+      em: p.entregue ? p.entregueEm : undefined,
     });
 
     return { id: entrega.id, itemName: variante.item.name, variantLabel: variante.label };
@@ -1398,6 +1407,7 @@ export class InventoryService {
         notes: dto.notes?.trim() || null,
         seasonId: season?.id ?? null,
         entregue: dto.entregue !== false,
+        entregueEm: dto.entregue !== false ? instanteDaEntrega(dto.deliveredOn) : undefined,
       });
 
       return { id: e.id, athleteName: atleta.name, itemName: e.itemName, variantLabel: e.variantLabel, porEntregar: dto.entregue === false };
@@ -1451,6 +1461,9 @@ export class InventoryService {
     if (dto.linhas.some((l) => l.pagamento && l.pagamento.modo !== "nenhum") && !can(ctx, "billing:write")) {
       throw new ForbiddenException("Sem permissão para cobrar: pede a quem trata das mensalidades");
     }
+    // As datas validam-se antes de o stock sair: um dia futuro não pode deixar meia entrega feita.
+    const entregueEm = dto.entregue !== false ? instanteDaEntrega(dto.deliveredOn) : undefined;
+    for (const l of dto.linhas) if (l.pagamento?.modo === "pago") instanteDoDiaPago(l.pagamento.paidOn);
 
     const feito = await this.prisma.runAs(ctx.academyId, async (db) => {
       const atleta = await db.athlete.findFirst({ where: { id: dto.athleteId }, select: { id: true, name: true } });
@@ -1468,6 +1481,7 @@ export class InventoryService {
           seasonId: season?.id ?? null,
           entregue: dto.entregue !== false,
           prefixo: true,
+          entregueEm,
         });
         entregas.push({ ...e, quantity: l.quantity });
       }
@@ -1511,8 +1525,10 @@ export class InventoryService {
    * em "Entregar" ao mesmo tempo dão uma entrega e um erro, e não dois
    * movimentos.
    */
-  async entregarGuardada(ctx: RequestContext, id: string) {
+  async entregarGuardada(ctx: RequestContext, id: string, deliveredOn?: string) {
     this.mustWrite(ctx);
+    /* Entregue hoje, ou num dia que já passou (o kit levado no treino de sábado, registado na segunda). */
+    const em = instanteDaEntrega(deliveredOn) ?? new Date();
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const a = await db.inventoryAssignment.findFirst({
@@ -1524,7 +1540,7 @@ export class InventoryService {
 
       const mexeu = await db.inventoryAssignment.updateMany({
         where: { id, status: "RESERVED" },
-        data: { status: "ACTIVE", assignedAt: new Date(), assignedById: ctx.membershipId ?? null },
+        data: { status: "ACTIVE", assignedAt: em, assignedById: ctx.membershipId ?? null },
       });
       if (mexeu.count === 0) throw new BadRequestException("Esta peça já foi entregue");
 
@@ -1535,6 +1551,7 @@ export class InventoryService {
         athleteId: a.athleteId,
         assignmentId: a.id,
         reason: a.notes,
+        em,
       });
 
       return { ok: true as const, status: "ACTIVE" as const };
@@ -1605,15 +1622,22 @@ export class InventoryService {
    * atletas"). Só entre por entregar e entregue: devolver e "não vai ser
    * entregue" continuam a ser gestos à parte, porque mexem no stock.
    */
-  async updateAssignment(ctx: RequestContext, id: string, dto: { notes?: string; pagamento?: PagamentoPedido; entregue?: boolean }) {
+  async updateAssignment(
+    ctx: RequestContext,
+    id: string,
+    dto: { notes?: string; pagamento?: PagamentoPedido; entregue?: boolean; deliveredOn?: string },
+  ) {
     this.mustWrite(ctx);
     const atual = await this.prisma.runAs(ctx.academyId, (db) =>
       db.inventoryAssignment.findFirst({ where: { id }, select: { id: true, status: true } }),
     );
     if (!atual) throw new NotFoundException("Entrega não encontrada");
-    if (dto.entregue !== undefined && atual.status !== "ACTIVE" && atual.status !== "RESERVED") {
+    if ((dto.entregue !== undefined || dto.deliveredOn) && atual.status !== "ACTIVE" && atual.status !== "RESERVED") {
       throw new BadRequestException("Esta entrega já foi fechada");
     }
+    // As datas validam-se antes de se mexer em alguma coisa.
+    const entregueEm = instanteDaEntrega(dto.deliveredOn);
+    if (dto.pagamento?.modo === "pago") instanteDoDiaPago(dto.pagamento.paidOn);
 
     if (dto.notes !== undefined) {
       await this.prisma.runAs(ctx.academyId, (db) =>
@@ -1622,10 +1646,32 @@ export class InventoryService {
     }
     const pagamento = dto.pagamento ? await this.definirPagamento(ctx, id, dto.pagamento) : undefined;
 
-    if (dto.entregue === true && atual.status === "RESERVED") await this.entregarGuardada(ctx, id);
+    if (dto.entregue === true && atual.status === "RESERVED") await this.entregarGuardada(ctx, id, dto.deliveredOn);
     if (dto.entregue === false && atual.status === "ACTIVE") await this.voltarAPorEntregar(ctx, id);
+    /* Já entregue e continua: o dia corrige-se (registou-se hoje o que foi entregue em setembro). */
+    if (entregueEm && dto.entregue !== false && atual.status === "ACTIVE") await this.corrigirDiaDaEntrega(ctx, id, entregueEm);
 
     return { ok: true, pagamento };
+  }
+
+  /**
+   * Corrigir o dia em que uma peça foi entregue.
+   *
+   * Muda o `assignedAt` e o dia do movimento da entrega (a entrega direta, ou o
+   * "entregue" de uma que esteve guardada), para o histórico do armazém contar
+   * a mesma data que a ficha do atleta. O stock não mexe.
+   */
+  private async corrigirDiaDaEntrega(ctx: RequestContext, id: string, em: Date) {
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const mexeu = await db.inventoryAssignment.updateMany({ where: { id, status: "ACTIVE" }, data: { assignedAt: em } });
+      if (mexeu.count === 0) throw new BadRequestException("Esta peça já não está entregue");
+      const movimento = await db.inventoryMovement.findFirst({
+        where: { assignmentId: id, type: { in: ["ASSIGNMENT", "HANDOVER"] } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (movimento) await db.inventoryMovement.update({ where: { id: movimento.id }, data: { createdAt: em } });
+    });
   }
 
   /**
@@ -1718,7 +1764,10 @@ export class InventoryService {
         db.charge.findFirst({ where: { id: chargeId! }, select: { status: true } }),
       );
       if (p.modo === "pago" && agora?.status !== "SETTLED") {
-        await this.billing.setChargeStatus(ctx, chargeId, "SETTLED", p.method ?? "CASH");
+        // O dia em que foi pago: é ele que decide o mês das Contas. Omitido, hoje.
+        await this.billing.setChargeStatus(ctx, chargeId, "SETTLED", p.method ?? "CASH", p.paidOn);
+      } else if (p.modo === "pago" && (p.paidOn || p.method)) {
+        await this.corrigirPagamentoManual(ctx, chargeId, p);
       } else if (p.modo === "app" && agora?.status !== "OPEN") {
         await this.billing.setChargeStatus(ctx, chargeId, "OPEN");
       }
@@ -1731,6 +1780,36 @@ export class InventoryService {
         select: SELECT_PAGAMENTO,
       });
       return pagamentoDe(r);
+    });
+  }
+
+  /**
+   * Uma peça já paga, com o dia ou o método corrigidos ("foi paga a 3, em
+   * MB WAY, não hoje em numerário").
+   *
+   * Só um pagamento marcado à mão se corrige aqui: o que veio da app (euPago)
+   * tem o dia e o método do próprio pagamento, e esses não se reescrevem.
+   */
+  private async corrigirPagamentoManual(ctx: RequestContext, chargeId: string, p: PagamentoPedido) {
+    const pagaEm = p.paidOn ? instanteDoDiaPago(p.paidOn) : undefined;
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      const manual = await db.payment.findFirst({
+        where: { chargeId, status: "PAID" },
+        orderBy: { paidAt: "desc" },
+        select: { id: true, provider: true, method: true, paidAt: true },
+      });
+      if (!manual) return;
+      const mudaDia = pagaEm && manual.paidAt?.getTime() !== pagaEm.getTime();
+      const mudaMetodo = p.method && manual.method !== p.method;
+      if (!mudaDia && !mudaMetodo) return;
+      if (manual.provider !== "manual") {
+        throw new BadRequestException("Foi pago pela app: o dia e o método são os do pagamento online");
+      }
+      await db.payment.update({
+        where: { id: manual.id },
+        data: { ...(mudaDia ? { paidAt: pagaEm } : {}), ...(mudaMetodo ? { method: p.method } : {}) },
+      });
+      if (mudaDia) await db.charge.update({ where: { id: chargeId }, data: { settledAt: pagaEm } });
     });
   }
 
@@ -1886,6 +1965,8 @@ export class InventoryService {
       athleteId?: string | null;
       assignmentId?: string | null;
       reason?: string | null;
+      /** Quando aconteceu, se não foi agora (uma entrega ou uma contagem de outro dia). */
+      em?: Date;
     },
   ) {
     await db.inventoryMovement.create({
@@ -1898,6 +1979,7 @@ export class InventoryService {
         assignmentId: m.assignmentId ?? null,
         reason: m.reason ?? null,
         performedById: ctx.membershipId ?? null,
+        ...(m.em ? { createdAt: m.em } : {}),
       } satisfies Prisma.InventoryMovementUncheckedCreateInput,
     });
   }
@@ -2061,7 +2143,13 @@ function skuDaVariante(skuDoArtigo: string | null, rotulo: string): string | nul
 /* O pagamento de uma entrega                                                  */
 /* -------------------------------------------------------------------------- */
 
-export type PagamentoPedido = { modo: "nenhum" | "porPagar" | "app" | "pago"; priceCents?: number; method?: "MBWAY" | "CASH" | "CARD" | "TRANSFER" };
+export type PagamentoPedido = {
+  modo: "nenhum" | "porPagar" | "app" | "pago";
+  priceCents?: number;
+  method?: "MBWAY" | "CASH" | "CARD" | "TRANSFER";
+  /** O dia em que foi pago (`AAAA-MM-DD`), em `pago`. Omitido = hoje. */
+  paidOn?: string;
+};
 
 /** O estado de pagamento de uma entrega, como a consola e a app o leem. */
 export type PagamentoDaEntrega = {
@@ -2070,6 +2158,8 @@ export type PagamentoDaEntrega = {
   /** Como foi pago, quando pago. */
   metodo: string | null;
   chargeId: string | null;
+  /** Quando foi pago, quando pago. */
+  pagoEm?: Date | null;
 };
 
 const SELECT_PAGAMENTO = {
@@ -2079,10 +2169,44 @@ const SELECT_PAGAMENTO = {
     select: {
       status: true,
       amountCents: true,
-      payments: { where: { status: "PAID" as const }, orderBy: { paidAt: "desc" as const }, take: 1, select: { method: true } },
+      settledAt: true,
+      payments: { where: { status: "PAID" as const }, orderBy: { paidAt: "desc" as const }, take: 1, select: { method: true, paidAt: true } },
     },
   },
 } as const;
+
+/**
+ * O instante de uma entrega num dia escolhido (`AAAA-MM-DD`), ou nada para
+ * "agora". As regras são as do dia do pagamento das Mensalidades: existe, não
+ * é no futuro, e um dia passado grava-se ao meio-dia na hora do clube.
+ */
+function instanteDaEntrega(dia: string | undefined | null): Date | undefined {
+  if (!dia) return undefined;
+  try {
+    return instanteDoPagamento(dia);
+  } catch (e) {
+    throw new BadRequestException((e instanceof Error ? e.message : "").replace("do pagamento", "da entrega") || "A data da entrega não é válida");
+  }
+}
+
+/** O mesmo para o dia de um pagamento marcado à mão; omitido é hoje. */
+function instanteDoDiaPago(dia: string | undefined | null): Date {
+  try {
+    return instanteDoPagamento(dia);
+  } catch (e) {
+    throw new BadRequestException(e instanceof Error ? e.message : "A data do pagamento não é válida");
+  }
+}
+
+/** O instante de um movimento de stock num dia escolhido, ou nada para agora. */
+function instanteDoMovimento(dia: string | undefined | null): Date | undefined {
+  if (!dia) return undefined;
+  try {
+    return instanteDoPagamento(dia);
+  } catch (e) {
+    throw new BadRequestException((e instanceof Error ? e.message : "").replace("do pagamento", "do movimento") || "A data não é válida");
+  }
+}
 
 /**
  * Para a família, "por pagar" diz-se igual esteja só no Equipamento ou também
@@ -2097,11 +2221,17 @@ function pagamentoParaAFamilia(pg: PagamentoDaEntrega) {
 function pagamentoDe(a: {
   priceCents: number | null;
   chargeId: string | null;
-  charge: { status: string; amountCents: number; payments: { method: string }[] } | null;
+  charge: { status: string; amountCents: number; settledAt?: Date | null; payments: { method: string; paidAt?: Date | null }[] } | null;
 }): PagamentoDaEntrega {
   if (a.charge) {
     const estado = a.charge.status === "SETTLED" ? "pago" : a.charge.status === "OPEN" ? "app" : "anulado";
-    return { estado, valorCents: a.charge.amountCents, metodo: a.charge.payments[0]?.method ?? null, chargeId: a.chargeId };
+    return {
+      estado,
+      valorCents: a.charge.amountCents,
+      metodo: a.charge.payments[0]?.method ?? null,
+      chargeId: a.chargeId,
+      pagoEm: estado === "pago" ? (a.charge.payments[0]?.paidAt ?? a.charge.settledAt ?? null) : null,
+    };
   }
   if (a.priceCents && a.priceCents > 0) return { estado: "porPagar", valorCents: a.priceCents, metodo: null, chargeId: null };
   return { estado: "nenhum", valorCents: null, metodo: null, chargeId: null };

@@ -17,6 +17,7 @@ import {
   deleteTransaction,
   euros,
   listTransactions,
+  mesLongo,
   updateTransaction,
   type FinanceKind,
   type TransactionRow,
@@ -32,7 +33,15 @@ import {
  * Um previsto confirma-se na própria linha — "o autocarro foi pago" é um
  * clique, não um formulário.
  */
-export default function Movements() {
+export default function Movements({
+  embutido = false,
+  onChange,
+}: {
+  /** Dentro da página das Contas (separador Movimentos): sem cabeçalho nem caminho de volta. */
+  embutido?: boolean;
+  /** Avisa a página de que o saldo pode ter mudado. */
+  onChange?: () => void;
+}) {
   const { session } = useSession();
   const podeEscrever = can(session, "finance:write");
   const categoriasReceita = useActiveCatalog("financeIncome");
@@ -43,7 +52,8 @@ export default function Movements() {
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<TransactionRow[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [q, setQ] = useState("");
+  /* A procura pode vir no endereço (`?q=`): é assim que a ficha de uma pessoa chega aos pagamentos dela. */
+  const [q, setQ] = useState(() => params.get("q") ?? "");
   const [registar, setRegistar] = useState<FinanceKind | null>(null);
   const [aMexer, setAMexer] = useState<string | null>(null);
   /** Cancelar um mês de uma série obriga a perguntar: só este, ou os seguintes? */
@@ -82,7 +92,7 @@ export default function Movements() {
     try {
       await deleteTransaction(t.id, scope);
       setApagar(null);
-      await carregar();
+      await carregar(true);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível apagar o movimento.");
     } finally {
@@ -101,8 +111,9 @@ export default function Movements() {
   const epoca = params.get("epoca") ?? "";
   const datasDaEpoca = epoca ? seasonRanges[epoca] : undefined;
 
-  async function carregar() {
+  async function carregar(mudou = false) {
     setErro(null);
+    if (mudou) onChange?.();
     try {
       setRows(
         await listTransactions({
@@ -142,7 +153,7 @@ export default function Movements() {
     setAMexer(t.id);
     try {
       await updateTransaction(t.id, { status, scope });
-      await carregar();
+      await carregar(true);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível alterar.");
     } finally {
@@ -180,36 +191,39 @@ export default function Movements() {
 
   return (
     <>
-      <Link to="/contas" className="mb-3 inline-flex items-center gap-1.5 text-meta font-medium text-ink-3 hover:text-ink">
-        <ArrowLeft className="size-3.5" strokeWidth={1.75} />
-        Contas
-      </Link>
+      {!embutido && (
+        <>
+          <Link to="/contas" className="mb-3 inline-flex items-center gap-1.5 text-meta font-medium text-ink-3 hover:text-ink">
+            <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+            Contas
+          </Link>
 
-      <PageHeader eyebrow="Contas" title="Movimentos" subtitle="Tudo o que entrou e saiu — e o que está previsto.">
-        {filtrados.length > 0 && (
-          <button type="button" className="ctl-ghost" onClick={() => void exportar()}>
-            <Download className="size-3.5" strokeWidth={1.75} />
-            Exportar
-          </button>
-        )}
-        {podeEscrever && (
-          <>
-            {/*
-              Um botão só. Receita e despesa são o mesmo gesto com o sinal
-              trocado, e escolher o sinal antes de ver o formulário obrigava a
-              decidir cedo de mais — a escolha passou para dentro do diálogo,
-              onde se muda sem fechar nada.
-            */}
-            <button type="button" className="ctl-primary" onClick={() => setRegistar("EXPENSE")}>
-              <Plus className="size-3.5" strokeWidth={2} />
-              Novo movimento
-            </button>
-          </>
-        )}
-      </PageHeader>
+          <PageHeader eyebrow="Contas" title="Movimentos" subtitle="Tudo o que entrou e saiu, e o que está previsto.">
+            {filtrados.length > 0 && (
+              <button type="button" className="ctl-ghost" onClick={() => void exportar()}>
+                <Download className="size-3.5" strokeWidth={1.75} />
+                Exportar
+              </button>
+            )}
+            {podeEscrever && (
+              <button type="button" className="ctl-primary" onClick={() => setRegistar("EXPENSE")}>
+                <Plus className="size-3.5" strokeWidth={2} />
+                Novo movimento
+              </button>
+            )}
+          </PageHeader>
+        </>
+      )}
 
       <Panel className="mb-3">
         <div className="flex flex-wrap items-center gap-2 p-3">
+          {/* Dentro das Contas, o exportar desta lista fica ao pé dos filtros que a definem. */}
+          {embutido && filtrados.length > 0 && (
+            <button type="button" className="ctl-ghost order-last" onClick={() => void exportar()} title="Esta lista, tal como se vê, em Excel">
+              <Download className="size-3.5" strokeWidth={1.75} />
+              Exportar lista
+            </button>
+          )}
           <div className="relative min-w-[180px] flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
             <input
@@ -286,6 +300,7 @@ export default function Movements() {
               key: "data",
               header: "Data",
               width: "90px",
+              sortValue: (t) => new Date(t.occurredAt),
               render: (t) => <span className="text-ink-2 tabular">{shortDate(new Date(t.occurredAt))}</span>,
             },
             {
@@ -303,6 +318,7 @@ export default function Movements() {
                   </span>
                   <span className="block truncate text-meta text-ink-3">
                     {[
+                      t.salaryPeriod ? `Vencimento de ${mesLongo(t.salaryPeriod)}` : null,
                       t.category?.label,
                       t.counterparty,
                       t.match?.label ?? t.calendarEvent?.title,
@@ -324,6 +340,7 @@ export default function Movements() {
               key: "valor",
               header: "Valor",
               align: "right",
+              sortValue: (t) => (t.kind === "INCOME" ? 1 : -1) * t.amountCents,
               render: (t) => (
                 <span
                   className={
@@ -457,7 +474,7 @@ export default function Movements() {
           onClose={() => setRegistar(null)}
           onDone={() => {
             setRegistar(null);
-            void carregar();
+            void carregar(true);
           }}
         />
       )}
@@ -468,7 +485,7 @@ export default function Movements() {
           onClose={() => setEditar(null)}
           onDone={() => {
             setEditar(null);
-            void carregar();
+            void carregar(true);
           }}
         />
       )}

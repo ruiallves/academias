@@ -128,6 +128,16 @@ export function BandaDoJogo({ proximo, ultimo, clube }: { proximo: Jogo | null; 
   );
 }
 
+/** Uma equipa na linha do calendário: o emblema pequeno e o nome, sem se separarem ao quebrar a linha. */
+function EquipaNaLinha({ nome, emblema }: { nome: string; emblema: React.ReactNode }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <span className="flex size-[22px] shrink-0 items-center justify-center text-ink">{emblema}</span>
+      <span className="min-w-0 break-words">{nome}</span>
+    </span>
+  );
+}
+
 /**
  * Uma linha do calendário: a data em bloco à esquerda, o jogo no meio, o
  * resultado ou a hora à direita.
@@ -149,14 +159,18 @@ export function LinhaCalendario({ jogo, clube }: { jogo: Jogo; clube: Clube }) {
       </time>
       <div className="min-w-0">
         <p className="eyebrow text-ink-3">{[jogo.teamName, jogo.competition, jogo.roundLabel].filter(Boolean).join(" · ")}</p>
-        <p className="mt-1 font-semibold leading-snug text-ink">
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold leading-snug text-ink">
           {jogo.isHome ? (
             <>
-              {clube.shortName} <span className="text-ink-4">vs</span> {jogo.opponent}
+              <EquipaNaLinha nome={clube.shortName} emblema={<Emblema logoUrl={clube.logoUrl} shortName={clube.shortName} size={22} />} />
+              <span className="text-ink-4">vs</span>
+              <EquipaNaLinha nome={jogo.opponent} emblema={<EmblemaAdversario name={jogo.opponent} logoUrl={jogo.opponentLogoUrl} size={22} />} />
             </>
           ) : (
             <>
-              {jogo.opponent} <span className="text-ink-4">vs</span> {clube.shortName}
+              <EquipaNaLinha nome={jogo.opponent} emblema={<EmblemaAdversario name={jogo.opponent} logoUrl={jogo.opponentLogoUrl} size={22} />} />
+              <span className="text-ink-4">vs</span>
+              <EquipaNaLinha nome={clube.shortName} emblema={<Emblema logoUrl={clube.logoUrl} shortName={clube.shortName} size={22} />} />
             </>
           )}
         </p>

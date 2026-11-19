@@ -50,6 +50,7 @@ import {
   LogOut,
   Pencil,
   Plus,
+  Receipt,
   Ruler,
   Star,
   Timer,
@@ -89,13 +90,14 @@ import { can, mayReadTaxId } from "@/lib/permissions";
 import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { FeeStatusControl } from "@/components/finance/FeeStatusControl";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
+import { VencimentoPanel } from "@/components/finance/VencimentoPanel";
 import { useSession } from "@/session";
 import type { Athlete, Fee } from "@/data/types";
 
-type Tab = "overview" | "matches" | "attendance" | "documents" | "school" | "clinical" | "kit" | "fees" | "family" | "history";
+type Tab = "overview" | "matches" | "attendance" | "documents" | "school" | "clinical" | "kit" | "fees" | "salary" | "family" | "history";
 
 /** Os separadores que se abrem por link (`?separador=`), com o nome em português. */
-const SEPARADOR_DO_LINK: Record<string, Tab> = { clinico: "clinical", documentos: "documents" };
+const SEPARADOR_DO_LINK: Record<string, Tab> = { clinico: "clinical", documentos: "documents", vencimento: "salary" };
 
 /**
  * A ficha do atleta.
@@ -183,6 +185,11 @@ export default function AthleteDetail() {
     */
     ...(can(session, "inventory:read") ? [{ value: "kit" as const, label: "Artigos", icon: Boxes }] : []),
     ...(can(session, "billing:read") ? [{ value: "fees" as const, label: "Mensalidades", icon: Wallet }] : []),
+    /*
+      O vencimento de um atleta pago pelo clube (os seniores, tipicamente). Só a
+      quem vê as Contas: é dinheiro do clube, não é da ficha desportiva.
+    */
+    ...(can(session, "finance:read") ? [{ value: "salary" as const, label: "Vencimento", icon: Receipt }] : []),
     ...(can(session, "family:read") ? [{ value: "family" as const, label: "Encarregado", icon: Home }] : []),
     /*
       O que já mexeram na ficha.
@@ -267,6 +274,7 @@ export default function AthleteDetail() {
       {tab === "clinical" && <Clinical athlete={athlete} />}
       {tab === "kit" && <AthleteKitPanel athleteId={athlete.id} athleteName={athlete.name} />}
       {tab === "fees" && <FeesTab athlete={athlete} />}
+      {tab === "salary" && <VencimentoPanel tipo="atleta" id={athlete.id} nome={athlete.name} />}
       {tab === "family" && <Family athlete={athlete} />}
       {tab === "history" && (
         <div className="space-y-3">
@@ -851,11 +859,14 @@ function Matches({ athleteId, matches }: { athleteId: string; matches: AthleteMa
       key: "date",
       header: "Data",
       width: "96px",
+      sortValue: (m) => new Date(m.event.start),
       render: (m) => <span className="text-ink-3 tabular">{shortDate(m.event.start)}</span>,
     },
     {
       key: "match",
       header: "Jogo",
+      // Pelo adversário, não pelo "vs"/"@" que vem antes.
+      sortValue: (m) => m.match.opponent,
       render: (m) => (
         <div className="flex items-center gap-2.5">
           <OutcomeDot outcome={m.outcome} />
@@ -883,6 +894,7 @@ function Matches({ athleteId, matches }: { athleteId: string; matches: AthleteMa
       header: "Minutos",
       align: "right",
       hideBelow: "sm",
+      sortValue: (m) => m.appearance.minutes,
       render: (m) => <span className="text-ink-2 tabular">{m.appearance.minutes}′</span>,
     },
     {
@@ -897,6 +909,7 @@ function Matches({ athleteId, matches }: { athleteId: string; matches: AthleteMa
       header: "Nota",
       align: "right",
       width: "80px",
+      sortValue: (m) => m.appearance.rating ?? null,
       render: (m) =>
         m.appearance.rating !== undefined ? (
           <span className="font-semibold text-ink tabular">{m.appearance.rating.toFixed(1)}</span>
@@ -953,6 +966,7 @@ function Attendance({ athleteId }: { athleteId: string }) {
       key: "date",
       header: "Data",
       width: "110px",
+      sortValue: (r) => new Date(r.session.start),
       render: (r) => {
         const d = new Date(r.session.start);
         return (

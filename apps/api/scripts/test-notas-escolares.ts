@@ -15,7 +15,7 @@
  * Uso: npm run test:notas-escolares
  */
 import { SchoolGradesService } from "../src/academy/school-grades.service";
-import { anoLectivoDe, chaveDaDisciplina, limparNota, negativa } from "../src/academy/notas-escolares";
+import { anoLectivoDe, anosLectivosAbertos, chaveDaDisciplina, limparNota, negativa } from "../src/academy/notas-escolares";
 
 let ok = 0;
 let bad = 0;
@@ -56,6 +56,17 @@ console.log("\nAs regras de uma nota");
   check("o ano lectivo vira em Agosto", anoLectivoDe(new Date(2026, 6, 31)) === "2025/26" && anoLectivoDe(new Date(2026, 7, 1)) === "2026/27");
   check("e na viragem do século das dezenas", anoLectivoDe(new Date(2099, 9, 1)) === "2099/00");
   check("um ano lectivo que não bate certo é recusado", lanca(() => limparNota({ ...BOA, schoolYear: "2026/31" })));
+
+  /* Anos anteriores (pedido de 19/11/2026): a família submete as notas de épocas passadas. */
+  const novembro = new Date(2026, 10, 19);
+  check("o ano anterior entra", limparNota({ ...BOA, schoolYear: "2025/26" }, novembro).schoolYear === "2025/26");
+  check("e o de há onze anos (a primária de quem está no 12.º)", limparNota({ ...BOA, schoolYear: "2015/16" }, novembro).schoolYear === "2015/16");
+  check("o de há doze anos é recusado", lanca(() => limparNota({ ...BOA, schoolYear: "2014/15" }, novembro)));
+  check("um ano futuro é recusado", lanca(() => limparNota({ ...BOA, schoolYear: "2027/28" }, novembro)));
+  check("em Julho, o ano que começa em Setembro ainda é futuro", lanca(() => limparNota({ ...BOA, schoolYear: "2026/27" }, new Date(2026, 6, 15))));
+  const abertos = anosLectivosAbertos(novembro);
+  check("a app oferece doze anos, do actual para trás", abertos.length === 12 && abertos[0] === "2026/27" && abertos[11] === "2015/16", abertos.join(", "));
+  check("e todos os que oferece o servidor aceita", abertos.every((a) => !lanca(() => limparNota({ ...BOA, schoolYear: a }, novembro))));
   check("um período inventado é recusado", lanca(() => limparNota({ ...BOA, period: "9P" })));
   check("sem disciplina é recusado", lanca(() => limparNota({ ...BOA, subject: "  " })));
   check("uma disciplina só de símbolos é recusada", lanca(() => limparNota({ ...BOA, subject: "!!!" })));

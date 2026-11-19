@@ -286,6 +286,7 @@ export default function Staff() {
       key: "since",
       header: "Desde",
       hideBelow: "md",
+      sortValue: (m) => new Date(m.since),
       render: (m) => {
         const d = new Date(m.since);
         return (

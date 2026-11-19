@@ -17,7 +17,7 @@ import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams,
 import { age, monthName, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
-import { medicalExpiry, medicalState } from "@/lib/medical";
+import { MEDICAL_STATE_LABEL, medicalExpiry, medicalState } from "@/lib/medical";
 import { can, semEquipasAtribuidas } from "@/lib/permissions";
 import { useSession } from "@/session";
 
@@ -219,6 +219,9 @@ export default function Athletes() {
       key: "medical",
       header: "Ficha médica",
       hideBelow: "sm",
+      // Pela validade; sem ficha vem antes das expiradas (é o mais urgente).
+      sortValue: (a) => medicalExpiry(a) ?? new Date(0),
+      filterValue: (a) => MEDICAL_STATE_LABEL[medicalState(a)],
       render: (a) => {
         const state = medicalState(a);
         // Sem exame é um estado, não um vazio: é o que separa "válido até

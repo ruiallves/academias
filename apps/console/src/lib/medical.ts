@@ -46,6 +46,14 @@ export function medicalExpiry(a: ComFicha): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** O estado da ficha como se escreve numa lista (o filtro das tabelas). */
+export const MEDICAL_STATE_LABEL: Record<MedicalState, string> = {
+  missing: "Sem ficha",
+  expired: "Caducada",
+  soon: "A caducar",
+  ok: "Válida",
+};
+
 export function medicalState(a: ComFicha, from: Date = today): MedicalState {
   const d = medicalExpiry(a);
   if (!d) return "missing";

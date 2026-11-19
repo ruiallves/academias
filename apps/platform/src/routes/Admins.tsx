@@ -8,6 +8,7 @@ import { shortDate } from "@/lib/format";
 import { apiDelete, apiPatch, ApiError } from "@/lib/http";
 import { useApi } from "@/lib/query";
 import { ADMIN_ROLE_LABEL, type Admin, type Me, type PlatformRole } from "@/lib/types";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 
 const ROLES: PlatformRole[] = ["OWNER", "ADMIN", "SUPPORT", "COMERCIAL"];
 
@@ -35,6 +36,19 @@ export default function Admins({ me }: { me: Me }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Ordenar por qualquer coluna; antes dos `return` de cima, porque é um hook.
+  const t = useOrdenacao(
+    data ?? [],
+    (coluna, a) =>
+      coluna === "pessoa" ? a.name
+      : coluna === "papel" ? ADMIN_ROLE_LABEL[a.role]
+      : coluna === "estado" ? (a.isActive ? "Activo" : "Desactivado")
+      : coluna === "mfa" ? a.mfaEnabled
+      : coluna === "entrou" ? new Date(a.createdAt)
+      : null,
+    "plataforma-admins",
+  );
+  const { linhas: ordenados, ordem } = t;
 
   if (me.role !== "OWNER") {
     return (
@@ -118,19 +132,28 @@ export default function Admins({ me }: { me: Me }) {
           <Empty title="Ainda não há administradores" />
         ) : (
           <div className="overflow-x-auto">
+            <BarraDeFiltros t={t} />
             <table className="w-full border-collapse text-body">
               <thead>
                 <tr className="border-b border-line bg-sunken/60 text-meta font-medium text-ink-3">
-                  <th className="px-5 py-2 text-left">Pessoa</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Papel</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Estado</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">2FA</th>
-                  <th className="px-5 py-2 text-right whitespace-nowrap">Entrou</th>
+                  {(
+                    [
+                      ["pessoa", "Pessoa", "px-5 text-left"],
+                      ["papel", "Papel", "px-3 text-left whitespace-nowrap"],
+                      ["estado", "Estado", "px-3 text-left whitespace-nowrap"],
+                      ["mfa", "2FA", "px-3 text-left whitespace-nowrap"],
+                      ["entrou", "Entrou", "px-5 text-right whitespace-nowrap"],
+                    ] as const
+                  ).map(([k, rotulo, cls]) => (
+                    <th key={k} className={`py-2 ${cls}`} aria-sort={ariaSort(ordem, k)}>
+                      <Coluna t={t} coluna={k} direita={k === "entrou"}>{rotulo}</Coluna>
+                    </th>
+                  ))}
                   <th className="px-5 py-2 text-right whitespace-nowrap"></th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((a) => {
+                {ordenados.map((a) => {
                   const self = a.id === me.id;
                   const busy = busyId === a.id;
                   const confirming = confirmingId === a.id;

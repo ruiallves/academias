@@ -7,6 +7,7 @@ import { dialogInputClass } from "@/components/Dialog";
 import { useStore } from "@/lib/store";
 import { listarLugaresAnuais, type LugarAnual } from "@/lib/bilheteira";
 import type { Recinto } from "@/lib/website";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 
 /**
  * Os lugares anuais de uma época, todos juntos: quem tem lugar, onde, e
@@ -34,10 +35,30 @@ export function LugaresAnuais({ recintos }: { recintos: Recinto[] }) {
     };
   }, [seasonId]);
 
-  if (!epocas.length) return <Empty icon={IconeLugarAnual} title="O clube ainda não tem épocas" detail="Os lugares anuais são por época." />;
-
   const recintoDe = (id: string) => recintos.find((r) => r.id === id);
   const bancadaDe = (venueId: string, id: string) => recintoDe(venueId)?.bancadas.find((b) => b.id === id);
+
+  // Por omissão, recinto → bancada → lugar → sócio; clicar num cabeçalho ordena por essa coluna.
+  const porOmissao = [...(lugares ?? [])].sort(
+    (a, b) =>
+      (recintoDe(a.venueId)?.nome ?? "").localeCompare(recintoDe(b.venueId)?.nome ?? "", "pt") ||
+      (bancadaDe(a.venueId, a.bancadaId)?.nome ?? "").localeCompare(bancadaDe(b.venueId, b.bancadaId)?.nome ?? "", "pt") ||
+      (a.lugar ?? "").localeCompare(b.lugar ?? "", "pt", { numeric: true }) ||
+      a.socio.name.localeCompare(b.socio.name, "pt"),
+  );
+  const t = useOrdenacao(
+    porOmissao,
+    (coluna, l) =>
+      coluna === "socio" ? l.socio.name
+      : coluna === "recinto" ? recintoDe(l.venueId)?.nome ?? null
+      : coluna === "bancada" ? bancadaDe(l.venueId, l.bancadaId)?.nome ?? null
+      : coluna === "lugar" ? l.lugar ?? null
+      : null,
+    "lugares-anuais",
+  );
+  const { linhas: ordenados, ordem } = t;
+
+  if (!epocas.length) return <Empty icon={IconeLugarAnual} title="O clube ainda não tem épocas" detail="Os lugares anuais são por época." />;
 
   // O total por bancada, pela ordem dos recintos e das bancadas no Estádio.
   const totais = new Map<string, { recinto: string; bancada: string; n: number; lotacao: number | null }>();
@@ -53,14 +74,6 @@ export function LugaresAnuais({ recintos }: { recintos: Recinto[] }) {
         lotacao: bancadaDe(l.venueId, l.bancadaId)?.lotacao ?? null,
       });
   }
-  const ordenados = [...(lugares ?? [])].sort(
-    (a, b) =>
-      (recintoDe(a.venueId)?.nome ?? "").localeCompare(recintoDe(b.venueId)?.nome ?? "", "pt") ||
-      (bancadaDe(a.venueId, a.bancadaId)?.nome ?? "").localeCompare(bancadaDe(b.venueId, b.bancadaId)?.nome ?? "", "pt") ||
-      (a.lugar ?? "").localeCompare(b.lugar ?? "", "pt", { numeric: true }) ||
-      a.socio.name.localeCompare(b.socio.name, "pt"),
-  );
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -108,14 +121,23 @@ export function LugaresAnuais({ recintos }: { recintos: Recinto[] }) {
             <p className="mt-1.5 text-meta text-ink-3">Estes lugares saem da lotação à venda em todos os jogos em casa da época.</p>
           </section>
 
+          <BarraDeFiltros t={t} />
           <div className="overflow-x-auto rounded-[10px] border border-line">
             <table className="w-full text-body">
               <thead>
                 <tr className="bg-sunken/50 text-meta text-ink-2">
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Sócio</th>
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Recinto</th>
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Bancada</th>
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Lugar</th>
+                  {(
+                    [
+                      ["socio", "Sócio"],
+                      ["recinto", "Recinto"],
+                      ["bancada", "Bancada"],
+                      ["lugar", "Lugar"],
+                    ] as const
+                  ).map(([k, rotulo]) => (
+                    <th key={k} scope="col" aria-sort={ariaSort(ordem, k)} className="px-3 py-2 text-left font-medium">
+                      <Coluna t={t} coluna={k}>{rotulo}</Coluna>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

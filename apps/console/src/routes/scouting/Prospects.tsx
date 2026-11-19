@@ -86,11 +86,15 @@ export default function Prospects() {
     {
       key: "stage",
       header: "Estado",
+      // Pela ordem do funil, não pelo nome do estado.
+      sortValue: (p) => STAGE_ORDER.indexOf(p.stage),
+      filterValue: (p) => STAGE_LABEL[p.stage],
       render: (p) => <StagePill stage={p.stage} />,
     },
     {
       key: "seen",
       header: "Última observação",
+      sortValue: (p) => (p.lastObservedAt ? new Date(p.lastObservedAt) : null),
       render: (p) => (
         <span className={cx("text-body", p.lastObservedAt ? "text-ink-2" : "text-ink-4")}>
           {sinceLabel(p.lastObservedAt)}

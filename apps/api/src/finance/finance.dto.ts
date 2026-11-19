@@ -115,3 +115,54 @@ export class BudgetDto {
   @IsString() @Length(1, 40) categoryId!: string;
   @IsInt() @Min(0) @Max(1_000_000_000) amountCents!: number;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Vencimentos                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Definir o vencimento de uma pessoa — alguém do staff (`membershipId`) ou um
+ * atleta (`athleteId`), nunca os dois.
+ *
+ * `startsOn` é o primeiro mês em que vale: aceita-se qualquer dia e guarda-se
+ * o dia 1. Se já houver um vencimento em vigor, fecha-se no mês anterior a
+ * este: é a maneira de dizer "subiu em janeiro" sem apagar o que valia antes.
+ */
+export class SalaryDto {
+  @IsOptional() @IsString() @Length(1, 40) membershipId?: string;
+  @IsOptional() @IsString() @Length(1, 40) athleteId?: string;
+  @IsInt() @Min(1) @Max(100_000_000) amountCents!: number;
+  @IsISO8601() startsOn!: string;
+  /** 1–28; ausente ou vazio = o último dia do mês. */
+  @IsOptional() @ValidateIf((o: SalaryDto) => o.payDay !== null) @IsInt() @Min(1) @Max(28) payDay?: number | null;
+  @IsOptional() @IsString() @Length(0, 500) notes?: string;
+}
+
+/** Corrigir um período já escrito. Tudo opcional; `endsOn` vazio volta a "em vigor". */
+export class UpdateSalaryDto {
+  @IsOptional() @IsInt() @Min(1) @Max(100_000_000) amountCents?: number;
+  @IsOptional() @IsISO8601() startsOn?: string;
+  @IsOptional() @ValidateIf((o: UpdateSalaryDto) => o.endsOn !== "" && o.endsOn !== null) @IsISO8601() endsOn?: string | null;
+  @IsOptional() @ValidateIf((o: UpdateSalaryDto) => o.payDay !== null) @IsInt() @Min(1) @Max(28) payDay?: number | null;
+  @IsOptional() @IsString() @Length(0, 500) notes?: string;
+}
+
+/**
+ * Pagar um mês de um vencimento. O mês é `AAAA-MM`; o valor, quando vem, é o
+ * que de facto se pagou (um prémio, um mês incompleto) e vence o do contrato.
+ */
+export class PaySalaryDto {
+  @IsString() @Length(7, 7) period!: string;
+  @IsOptional() @ValidateIf((o: PaySalaryDto) => o.paidOn !== "") @IsISO8601() paidOn?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(100_000_000) amountCents?: number;
+  @IsOptional() @ValidateIf((o: PaySalaryDto) => o.method !== "") @IsIn(METHODS as unknown as string[]) method?: string;
+  @IsOptional() @IsString() @Length(0, 500) notes?: string;
+}
+
+/** Pagar o mês a várias pessoas de uma vez: só as que ainda não o têm pago. */
+export class PayMonthDto {
+  @IsString() @Length(7, 7) period!: string;
+  @IsOptional() @IsString({ each: true }) salaryIds?: string[];
+  @IsOptional() @ValidateIf((o: PayMonthDto) => o.paidOn !== "") @IsISO8601() paidOn?: string;
+  @IsOptional() @ValidateIf((o: PayMonthDto) => o.method !== "") @IsIn(METHODS as unknown as string[]) method?: string;
+}

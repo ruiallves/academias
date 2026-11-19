@@ -8,12 +8,14 @@ import { reloadFees } from "@/lib/store";
 import {
   PAGAMENTO_VAZIO,
   PagamentoDaEntregaField,
+  oQueFaltaNoPagamento,
   pagamentoSemValorValido,
   type ValorDoPagamento,
 } from "./PagamentoDaEntrega";
 import { useSession } from "@/session";
-import { CampoDaEntrega } from "./PorEntregar";
-import { assignLote, listItems, textoDoPreco, type Item, type PagamentoPedido } from "@/lib/inventory";
+import { CampoDaEntrega, ENTREGUE_AGORA, entregaValida, type EstadoDaEntrega } from "./PorEntregar";
+import { assignLote, hojeISO, listItems, textoDoPreco, type Item, type PagamentoPedido } from "@/lib/inventory";
+import { shortDate } from "@/lib/format";
 
 /**
  * Entregar equipamento.
@@ -57,13 +59,17 @@ import { assignLote, listItems, textoDoPreco, type Item, type PagamentoPedido } 
  * **valor** escreve-se em cada artigo, porque cada um é uma cobrança. Depois
  * muda-se em "Editar", na ficha do atleta ou nas Entregas.
  *
- * ## Entregue agora, ou por entregar
+ * ## Entregue agora, noutro dia, ou por entregar
  *
  * Uma peça pode ser do atleta, e até estar paga, sem lhe ter sido entregue: o
  * tamanho que chega na semana seguinte, o kit pago pela app que se levanta no
  * treino (Rui, 16/11/2026). "Por entregar" guarda-a para ele: sai do stock
  * disponível, para não se dar a outro, e entrega-se depois com um toque na
  * ficha do atleta ou no Inventário.
+ *
+ * "Noutro dia" regista o que foi entregue antes de entrar no sistema (Rui,
+ * 19/11/2026). Nesse caso, um "Pago" não traz o dia de hoje escrito: o dia do
+ * pagamento não se adivinha a partir do da entrega, e pede-se.
  *
  * ## Os tamanhos sem stock aparecem, mas não se escolhem
  *
@@ -131,8 +137,9 @@ export function DeliverDialog({
   const podeCobrar = can(session, "billing:write");
   const [pagamento, setPagamento] = useState<ValorDoPagamento>(PAGAMENTO_VAZIO);
   const cobrar = podeCobrar && pagamento.modo !== "nenhum";
-  /** Entregue agora (o normal ao balcão) ou guardado para o atleta, por entregar. */
-  const [entregueAgora, setEntregueAgora] = useState(true);
+  /** Entregue agora (o normal ao balcão), noutro dia, ou guardado para o atleta. */
+  const [entrega, setEntrega] = useState<EstadoDaEntrega>(ENTREGUE_AGORA);
+  const entregueAgora = entrega.modo !== "porEntregar";
 
   const campoProcura = useRef<HTMLInputElement>(null);
 
@@ -187,6 +194,7 @@ export function DeliverDialog({
     Boolean(athleteId) &&
     escolhidas.length > 0 &&
     escolhidas.every(linhaPronta) &&
+    entregaValida(entrega) &&
     (!cobrar || pagamentoSemValorValido(pagamento));
 
   /*
@@ -204,10 +212,12 @@ export function DeliverDialog({
       if (!v) return `Escolhe o tamanho de ${nomeDe(l)}.`;
       if (l.quantity > v.available - levadoPorOutros(l.key, l.variantId)) return `Não há stock para tantas unidades de ${nomeDe(l)}.`;
     }
+    if (!entregaValida(entrega)) return entrega.dia ? "O dia da entrega não pode ser depois de hoje." : "Escolhe o dia em que foi entregue.";
     if (cobrar) {
       const semValor = escolhidas.find((l) => !(centsDoValor(l.valor) > 0));
       if (semValor) return `Escreve o valor de ${nomeDe(semValor)}, ou escolhe Sem pagamento.`;
-      if (!pagamentoSemValorValido(pagamento)) return "Escolhe como foi pago.";
+      const falta = oQueFaltaNoPagamento(pagamento);
+      if (falta) return falta;
     }
     return null;
   })();
@@ -225,6 +235,7 @@ export function DeliverDialog({
               modo: pagamento.modo,
               priceCents: centsDoValor(l.valor),
               ...(pagamento.modo === "pago" && pagamento.metodo ? { method: pagamento.metodo } : {}),
+              ...(pagamento.modo === "pago" && pagamento.dia ? { paidOn: pagamento.dia } : {}),
             }
           : undefined;
       const r = await assignLote({
@@ -234,7 +245,8 @@ export function DeliverDialog({
           const p = pedido(l);
           return { variantId: l.variantId, quantity: l.quantity, ...(p ? { pagamento: p } : {}) };
         }),
-        ...(entregueAgora ? {} : { entregue: false }),
+        ...(entrega.modo === "porEntregar" ? { entregue: false } : {}),
+        ...(entrega.modo === "dia" && entrega.dia !== hojeISO() ? { deliveredOn: entrega.dia } : {}),
       });
 
       const falhas = r.entregas.filter((x) => x.erroDoPagamento);
@@ -247,15 +259,16 @@ export function DeliverDialog({
         !cobrar || falhas.length === r.entregas.length
           ? ""
           : pagamento.modo === "pago"
-            ? " Registado como pago."
+            ? ` Registado como pago a ${shortDate(new Date(`${pagamento.dia}T12:00:00`))}.`
             : pagamento.modo === "app"
               ? " Foi para os Pagamentos da app, com notificação."
               : " Fica por pagar no Equipamento da app.";
       if (r.entregas.some((x) => x.pagamento)) void reloadFees();
       const nomes = r.entregas.map((x) => `${x.itemName} · ${x.variantLabel}${x.quantity > 1 ? ` (${x.quantity})` : ""}`);
+      const quando = entrega.modo === "dia" && entrega.dia !== hojeISO() ? ` a ${shortDate(new Date(`${entrega.dia}T12:00:00`))}` : "";
       setFeito(
         entregueAgora
-          ? `${nomes.join(", ")} ${nomes.length === 1 ? "entregue" : "entregues"} a ${r.athleteName}.${cobranca}`
+          ? `${nomes.join(", ")} ${nomes.length === 1 ? "entregue" : "entregues"} a ${r.athleteName}${quando}.${cobranca}`
           : `${nomes.join(", ")} ${nomes.length === 1 ? "fica" : "ficam"} por entregar a ${r.athleteName}.${cobranca}`,
       );
       /*
@@ -265,7 +278,7 @@ export function DeliverDialog({
       setLinhas([linhaVazia()]);
       setNotas("");
       setPagamento(PAGAMENTO_VAZIO);
-      setEntregueAgora(true);
+      setEntrega(ENTREGUE_AGORA);
       const frescos = await listItems();
       setItens(frescos);
       onDone();
@@ -277,14 +290,14 @@ export function DeliverDialog({
   }
 
   const n = escolhidas.length;
-  const verbo = entregueAgora ? "Entregar" : "Guardar";
+  const verbo = entrega.modo === "agora" ? "Entregar" : entrega.modo === "dia" ? "Registar" : "Guardar";
   const rotuloDoBotao = busy
     ? entregueAgora ? "A entregar…" : "A guardar…"
     : cobrar && totalCents > 0
       ? `${verbo} ${n > 1 ? `${n} artigos ` : ""}· ${euros(totalCents)} ${pagamento.modo === "pago" ? "pago" : "por pagar"}`
       : n > 1
         ? `${verbo} ${n} artigos`
-        : entregueAgora ? "Confirmar entrega" : "Guardar por entregar";
+        : entrega.modo === "agora" ? "Confirmar entrega" : entrega.modo === "dia" ? "Registar entrega" : "Guardar por entregar";
 
   /* Só se abre outro cartão quando todos os que existem têm artigo. */
   const podeAdicionar = linhas.every((l) => l.itemId) && comStock.length > 0;
@@ -437,7 +450,17 @@ export function DeliverDialog({
 
         {/* 3. O que vale para a entrega toda: se já sai, as observações e o pagamento. */}
         {n > 0 && (
-          <CampoDaEntrega value={entregueAgora} onChange={setEntregueAgora} primeiroNome={atleta?.name.split(" ")[0]} rotuloEntregue="Entregue agora" />
+          <CampoDaEntrega
+            value={entrega}
+            onChange={(e) => {
+              // Passar a "noutro dia" com um pago que veio com hoje sugerido: o hoje sai, e o dia escolhe-se.
+              if (e.modo === "dia" && entrega.modo !== "dia" && pagamento.modo === "pago" && pagamento.dia === hojeISO()) {
+                setPagamento({ ...pagamento, dia: "" });
+              }
+              setEntrega(e);
+            }}
+            primeiroNome={atleta?.name.split(" ")[0]}
+          />
         )}
 
         {n > 0 && (
@@ -459,6 +482,8 @@ export function DeliverDialog({
               primeiroNome={atleta?.name.split(" ")[0]}
               athleteId={atleta?.id}
               semValor
+              /* Ao balcão, pago é hoje. Numa entrega de outro dia, o dia do pagamento escolhe-se. */
+              diaSugerido={entrega.modo === "dia" ? undefined : hojeISO()}
             />
             {cobrar && (
               <p className="-mt-2 text-meta text-ink-3">

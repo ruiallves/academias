@@ -4,6 +4,7 @@ import { GraduationCap } from "@/lib/icons";
 import { useApi } from "@/lib/query";
 import { longDate } from "@/lib/format";
 import type { Athlete } from "@/data/types";
+import { ariaSort, BarraDeFiltros, Coluna, useOrdenacao } from "@academia/ui/ordenar";
 
 /**
  * As notas da escola — o separador "Escola" da ficha do atleta.
@@ -65,6 +66,18 @@ export function SchoolGrades({ athlete }: { athlete: Athlete }) {
   );
   const nota = (disciplina: string, periodo: string) =>
     doAno.find((n) => chave(n.subject) === disciplina && n.period === periodo);
+
+  // Ordenar pela disciplina ou pela nota de um período (pela fração da escala: um 4 em 5 vale mais do que um 14 em 20).
+  const t = useOrdenacao(
+    disciplinas,
+    (coluna, [k, nome]) => {
+      if (coluna === "disciplina") return nome;
+      const n = nota(k, coluna);
+      return n ? n.grade / (n.scale || 1) : null;
+    },
+    `notas-escola|${ano ?? ""}`,
+  );
+  const { linhas: linhasOrdenadas, ordem } = t;
 
   /* A média de um período só faz sentido se as notas forem todas da mesma escala. */
   const media = (periodo: string) => {
@@ -130,20 +143,23 @@ export function SchoolGrades({ athlete }: { athlete: Athlete }) {
             </span>
           </div>
 
+          <BarraDeFiltros t={t} />
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-body">
               <thead>
                 <tr className="border-b border-line">
-                  <th className="px-5 py-2.5 text-left text-meta font-medium text-ink-3">Disciplina</th>
+                  <th className="px-5 py-2.5 text-left text-meta font-medium text-ink-3" aria-sort={ariaSort(ordem, "disciplina")}>
+                    <Coluna t={t} coluna="disciplina">Disciplina</Coluna>
+                  </th>
                   {periodos.map((p) => (
-                    <th key={p} className="px-4 py-2.5 text-right text-meta font-medium whitespace-nowrap text-ink-3">
-                      {PERIODO[p] ?? p}
+                    <th key={p} className="px-4 py-2.5 text-right text-meta font-medium whitespace-nowrap text-ink-3" aria-sort={ariaSort(ordem, p)}>
+                      <Coluna t={t} coluna={p} direita>{PERIODO[p] ?? p}</Coluna>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {disciplinas.map(([k, nome]) => (
+                {linhasOrdenadas.map(([k, nome]) => (
                   <tr key={k} className="border-b border-line last:border-0">
                     <td className="px-5 py-2.5 text-ink">{nome}</td>
                     {periodos.map((p) => {

@@ -225,6 +225,7 @@ export default function Fees() {
         mensalidade repetida — e a primeira reacção de quem visse isso seria
         apagar uma delas.
       */
+      sortValue: (f) => f.period,
       render: (f) =>
         f.extra ? (
           <span className="flex min-w-0 items-center gap-1.5">
@@ -239,6 +240,7 @@ export default function Fees() {
       key: "due",
       header: "Vencimento",
       hideBelow: "sm",
+      sortValue: (f) => new Date(f.dueDate),
       render: (f) => {
         const d = new Date(f.dueDate);
         const late = f.status === "overdue";
@@ -294,6 +296,7 @@ export default function Fees() {
     {
       key: "status",
       header: "Estado",
+      sortValue: (f) => STATUS_LABEL[f.status],
       render: (f) =>
         mayEditFees ? (
           <FeeStatusControl fee={f} />
