@@ -25,5 +25,5 @@ export type EmblemaProposto = {
 
 export const ESTADO_LABEL: Record<EstadoDaProposta, string> = { PENDING: "Por rever", APPROVED: "Aprovado", REJECTED: "Rejeitado" };
 
-export const aprovarEmblema = (id: string) => apiPost<{ ok: true; knownClubId: string }>(`/api/platform/emblemas/${id}/aprovar`, {});
-export const rejeitarEmblema = (id: string, nota?: string) => apiPost<{ ok: true }>(`/api/platform/emblemas/${id}/rejeitar`, nota ? { nota } : {});
+export const aprovarEmblema = (id: string) => apiPost<{ ok: true; knownClubId: string }>(`/emblemas/${id}/aprovar`, {});
+export const rejeitarEmblema = (id: string, nota?: string) => apiPost<{ ok: true }>(`/emblemas/${id}/rejeitar`, nota ? { nota } : {});

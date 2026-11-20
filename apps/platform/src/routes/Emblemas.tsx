@@ -20,7 +20,7 @@ import { ESTADO_LABEL, aprovarEmblema, rejeitarEmblema, type EmblemaProposto } f
  * de aparecer ao clube que o carregou.
  */
 export default function Emblemas() {
-  const q = useApi<EmblemaProposto[]>("/api/platform/emblemas");
+  const q = useApi<EmblemaProposto[]>("/emblemas");
   const [aFazer, setAFazer] = useState<string | null>(null);
 
   const agir = async (id: string, f: () => Promise<unknown>) => {
