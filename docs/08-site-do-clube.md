@@ -407,11 +407,15 @@ dados, para todas as páginas mostrarem a mesma. As fontes e licenças estão em
 ## Correr
 
 ```
-npm run dev --workspace=@academia/clube-site     # http://localhost:5190
+npm run dev --workspace=@academia/clube-site     # http://localhost:5191
 ```
 
+Na 5191 desde 21/11/2026: a 5190 é do site academias.pt (`apps/site`), e as duas
+estavam na mesma porta. `npm run dev` na raiz arranca tudo, isto incluído, e
+põe a 5191 no CORS da API (o carrinho e o "Ser sócio" chamam-na do browser).
+
 `.env.local` tem `SITE_DEMO_SLUG=monteverde`. Para testar outro clube,
-`<slug>.localhost:5190`.
+`<slug>.localhost:5191`.
 
 ## Desenho
 

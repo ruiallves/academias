@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Check, ChevronLeft, EyeOff, Send, ShieldAlert } from "lucide-react";
 import { FRASE_DO_ESTADO, responder, verDenuncia, type DenunciaCompleta } from "@/lib/conduta";
 import { cx, dateShort, time } from "@/ui";
@@ -21,6 +21,19 @@ export default function Denuncia() {
   const [busy, setBusy] = useState(false);
   const fim = useRef<HTMLDivElement>(null);
   const enviada = params.get("enviada") === "1";
+  const location = useLocation();
+  /*
+   * Voltar às denúncias sem empilhar outra lista.
+   *
+   * Abrir a lista com `navigate("/denuncias")` punha uma lista nova por cima do
+   * caso, e o "Voltar" da lista (que recua) devolvia ao caso: a pessoa ficava
+   * presa entre os dois. Vindo da lista, recua-se; vindo de outro sítio (uma
+   * notificação, um link), o caso é trocado pela lista.
+   */
+  const voltar = () => {
+    if ((location.state as { daLista?: boolean } | null)?.daLista) navigate(-1);
+    else navigate("/denuncias", { replace: true });
+  };
 
   const carregar = () => {
     if (!id) return;
@@ -54,7 +67,7 @@ export default function Denuncia() {
       <div className="mt-10 rounded-[var(--radius-xl)] bg-surface p-10 text-center shadow-[var(--shadow-soft)]">
         <p className="text-[15px] font-semibold text-ink">Não foi possível abrir o caso</p>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-3">{erro}</p>
-        <button type="button" onClick={() => navigate("/denuncias")} className="mt-4 rounded-full bg-ink px-4 py-2 text-[14px] font-semibold text-white">
+        <button type="button" onClick={voltar} className="mt-4 rounded-full bg-ink px-4 py-2 text-[14px] font-semibold text-white">
           Voltar às denúncias
         </button>
       </div>
@@ -66,7 +79,7 @@ export default function Denuncia() {
 
   return (
     <div className="pt-2">
-      <button type="button" onClick={() => navigate("/denuncias")} className="-ml-2 mb-2 inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-[14px] font-medium text-ink-2">
+      <button type="button" onClick={voltar} className="-ml-2 mb-2 inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-[14px] font-medium text-ink-2">
         <ChevronLeft className="size-4" strokeWidth={2.2} />
         Denúncias
       </button>

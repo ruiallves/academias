@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 5190",
+    "dev": "next dev -p 5191",
     "build": "next build",
-    "start": "next start -p 5190",
+    "start": "next start -p 5191",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

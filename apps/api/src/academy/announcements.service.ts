@@ -309,12 +309,15 @@ export class AnnouncementsService {
       return { announcement, userIds, label: audienceLabelOf(audience, teamNames) };
     });
 
-    // Ninguém se notifica a si próprio. As notificações vão fora da transação: cada
-    // `enqueue` abre a sua, curta — e uma que falhe não desfaz o que já foi dito.
+    /*
+     * Ninguém se notifica a si próprio. As notificações vão fora da transação do
+     * aviso, todas numa escrita só, e os pushes saem depois sem este pedido
+     * esperar por eles. Eram uma a uma, e o ciclo partia a meio: ver `enqueueMany`.
+     */
     const recipients = userIds.filter((u) => u !== ctx.userId);
-    for (const userId of recipients) {
-      await this.notifications.enqueue({
-        academyId: ctx.academyId,
+    await this.notifications.enqueueMany(
+      ctx.academyId,
+      recipients.map((userId) => ({
         userId,
         type: NotificationType.ANNOUNCEMENT_PUBLISHED,
         title,
@@ -326,8 +329,8 @@ export class AnnouncementsService {
          * texto do aviso está por inteiro.
          */
         payload: { announcementId: announcement.id, route: "/notificacoes" },
-      });
-    }
+      })),
+    );
 
     return {
       id: announcement.id,

@@ -218,6 +218,8 @@ type ApiAnnouncement = {
   audience: string;
   authorName: string;
   publishedAt: string | null;
+  /** Os anexos, com link que dura uma hora. */
+  files?: { key: string; name: string; type: string; url: string | null }[];
 };
 
 type ApiEvaluation = {
@@ -267,6 +269,8 @@ export type ApiNotification = {
   createdAt: string;
   /** Os anexos de um aviso do clube, com link que dura uma hora. Ausente num servidor antigo. */
   files?: { key: string; name: string; type: string; url: string | null }[];
+  /** O aviso de onde veio, `null` se não veio de um. Ausente num servidor antigo. */
+  announcementId?: string | null;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -525,6 +529,7 @@ export type Notice = {
   body: string;
   from: string;
   at: Date;
+  files: { key: string; name: string; type: string; url: string | null }[];
 };
 
 export type Attendance = { attended: number; total: number };
@@ -1117,6 +1122,7 @@ function build(
       body: a.body,
       from: a.authorName,
       at: new Date(a.publishedAt as string),
+      files: a.files ?? [],
     }));
 
   /*

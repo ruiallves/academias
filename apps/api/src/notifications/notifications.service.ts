@@ -96,6 +96,53 @@ export class NotificationsService {
     return gravada;
   }
 
+  /**
+   * Muitas de uma vez: grava todas numa só escrita e só depois entrega.
+   *
+   * ## Porque não um `enqueue` por pessoa
+   *
+   * Um aviso a todo o clube eram 389 `enqueue` seguidos, cada um com a sua
+   * transacção e o seu push à espera. Demorava minutos e partilhava as cinco
+   * ligações com as famílias que o próprio push punha a abrir a app. Bastava uma
+   * delas não conseguir ligação a tempo para o ciclo rebentar: a 18/11/2026 a
+   * "Atualização da Plataforma" chegou a 208 pessoas e 176 ficaram sem nada, e a
+   * direção recebia um erro e voltava a publicar.
+   *
+   * Agora as linhas gravam-se juntas, numa ida à base: ou chegam todas à app ou
+   * nenhuma. Os pushes saem a seguir, um a um, e **sem** quem chamou esperar por
+   * eles: um push que falha é registado e não leva os outros consigo.
+   */
+  async enqueueMany(academyId: string, inputs: Omit<NotificationInput, "academyId">[]): Promise<number> {
+    if (inputs.length === 0) return 0;
+    const gravadas = await this.prisma.runAs(
+      academyId,
+      (db) =>
+        db.notification.createManyAndReturn({
+          data: inputs.map((input) => ({
+            academyId,
+            userId: input.userId,
+            type: input.type,
+            title: input.title,
+            body: input.body,
+            payload: (input.payload ?? {}) as object,
+            channels: ["inapp", ...this.channels.map((c) => c.name)],
+          })),
+          select: { id: true, userId: true, title: true, body: true, payload: true },
+        }),
+      { timeoutMs: 30_000 },
+    );
+    void (async () => {
+      for (const n of gravadas) {
+        try {
+          await this.entregar(n, academyId);
+        } catch (error) {
+          this.log.warn(`Entrega de ${n.id} falhou: ${error}`);
+        }
+      }
+    })();
+    return gravadas.length;
+  }
+
   private gravar(input: NotificationInput, db: ScopedClient) {
     return db.notification.create({
       data: {
@@ -300,6 +347,12 @@ export class NotificationsService {
         createdAt: n.createdAt,
         /** Os anexos do aviso, com link de leitura. Vazio para tudo o resto. */
         files: assinados.get(avisoDaNotificacao(n.payload) ?? "") ?? [],
+        /**
+         * O aviso de onde veio, ou `null`. A app junta à lista os avisos que vê
+         * no "Hoje" e para os quais não tem notificação, e é por isto que sabe
+         * quais já tem.
+         */
+        announcementId: avisoDaNotificacao(n.payload),
       };
     });
   }

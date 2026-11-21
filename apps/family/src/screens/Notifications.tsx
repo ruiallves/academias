@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { destinoDaNotificacao } from "@/lib/rotas";
 import { chooseContext } from "@/lib/contexts";
@@ -6,7 +6,7 @@ import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type L
 import { activeArea } from "@/lib/area";
 import { carregarNotificacoes, marcarLidas, useNotificacoes } from "@/lib/notificacoes";
 import { usePorPartes } from "@/lib/por-partes";
-import type { ApiNotification } from "@/lib/store";
+import { useStore, type ApiNotification, type Notice } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
 import { currentSubscription, pushState, pushSupported } from "@/lib/push";
 
@@ -57,10 +57,45 @@ const FALLBACK = { icon: Bell, cls: "bg-sunken text-ink-2" };
 
 export default function Notifications() {
   /* A lista partilhada por todas as áreas — ver `lib/notificacoes`. */
-  const { items: notifications } = useNotificacoes();
+  const { items: guardadas } = useNotificacoes();
+  const store = useStore();
   useEffect(() => {
     void carregarNotificacoes();
   }, []);
+
+  /*
+   * Os avisos do clube que a pessoa vê e para os quais não tem notificação.
+   *
+   * A notificação de um aviso cria-se no momento em que ele sai, para quem
+   * existe nesse momento. Um pai que entrou à tarde via no "Hoje" o mapa de
+   * jogos publicado de manhã, tocava nele, e nas Notificações não estava
+   * (18/11/2026). O "Hoje" lê os avisos pelo público; esta lista passa a lê-los
+   * também, e junta os que faltam como já lidos: não acendem o sino, só lá estão.
+   *
+   * Só nas áreas de família e de atleta: a store dos avisos é delas.
+   */
+  const notifications = useMemo(() => {
+    if (activeArea() === "MEMBER" || store.notices.length === 0) return guardadas;
+    const temAviso = (a: Notice) =>
+      guardadas.some(
+        (n) => n.announcementId === a.id || (n.type === "ANNOUNCEMENT_PUBLISHED" && n.announcementId === undefined && n.title === a.title),
+      );
+    const faltam: ApiNotification[] = store.notices
+      .filter((a) => !temAviso(a))
+      .map((a) => ({
+        id: `aviso:${a.id}`,
+        type: "ANNOUNCEMENT_PUBLISHED",
+        title: a.title,
+        body: a.body,
+        route: null,
+        readAt: a.at.toISOString(),
+        createdAt: a.at.toISOString(),
+        files: a.files,
+        announcementId: a.id,
+      }));
+    if (faltam.length === 0) return guardadas;
+    return [...guardadas, ...faltam].sort((x, y) => y.createdAt.localeCompare(x.createdAt));
+  }, [guardadas, store.notices]);
   /* As primeiras já; as outras depois do deslize de entrada. Ver `lib/por-partes`. */
   const visiveis = usePorPartes(notifications);
 

@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "node scripts/dev-tudo.mjs",
+    "dev:tudo": "node scripts/dev-tudo.mjs",
     "dev:console": "npm run dev --workspace=@academia/console",
     "dev:family": "npm run dev --workspace=@academia/family",
     "dev:platform": "npm run dev --workspace=@academia/platform",

@@ -33,7 +33,11 @@ export default function Denuncias() {
 
   return (
     <div className="pt-2">
-      <button type="button" onClick={() => navigate(-1)} className="-ml-2 mb-2 inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-[14px] font-medium text-ink-2">
+      {/* Recua para onde se veio (o Perfil); aberta por link, sem nada antes, vai para o Perfil. */}
+      <button
+        type="button"
+        onClick={() => ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0 ? navigate(-1) : navigate("/perfil", { replace: true })}
+        className="-ml-2 mb-2 inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-[14px] font-medium text-ink-2">
         <ChevronLeft className="size-4" strokeWidth={2.2} />
         Voltar
       </button>
@@ -65,7 +69,7 @@ export default function Denuncias() {
           <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
             {casos.map((c) => (
               <li key={c.id} className="border-b border-line last:border-0">
-                <Link to={`/denuncia/${c.id}`} className="flex items-center gap-3 p-4 active:bg-sunken/60">
+                <Link to={`/denuncia/${c.id}`} state={{ daLista: true }} className="flex items-center gap-3 p-4 active:bg-sunken/60">
                   <span className={cx("size-2 shrink-0 rounded-full", c.unread ? "bg-signal" : "bg-transparent")} aria-label={c.unread ? "Resposta por ler" : undefined} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">

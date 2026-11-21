@@ -62,7 +62,8 @@ export default function NovaDenuncia() {
         involved: involved.trim() || null,
         description: description.trim(),
       });
-      navigate(`/denuncia/${caso.id}?enviada=1`, { replace: true });
+      // Toma o lugar da "nova", que veio da lista: voltar do caso recua para a lista.
+      navigate(`/denuncia/${caso.id}?enviada=1`, { replace: true, state: { daLista: true } });
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível enviar. Tenta outra vez.");
       setBusy(false);
