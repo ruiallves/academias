@@ -1,5 +1,24 @@
-import { IsBoolean, IsEmail, IsEnum, IsString, Length, MaxLength } from "class-validator";
-import { PlatformRole } from "@prisma/client";
+import { Type } from "class-transformer";
+import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { PlatformRole, SalesPayModel } from "@prisma/client";
+
+/** Como vai receber um comercial. Os mesmos limites de Mês → Condições. */
+export class CondicoesDoConviteDto {
+  @IsEnum(SalesPayModel)
+  payModel!: SalesPayModel;
+
+  @IsInt() @Min(0) @Max(100_00)
+  hourlyCents!: number;
+
+  @IsInt() @Min(1) @Max(100)
+  meetingsPerCommission!: number;
+
+  @IsInt() @Min(0) @Max(10_000_00)
+  commissionCents!: number;
+
+  @IsInt() @Min(1) @Max(100)
+  weeklyGoal!: number;
+}
 
 /**
  * Classes e não interfaces — a `ValidationPipe` global (`whitelist: true,
@@ -18,6 +37,10 @@ export class InviteAdminDto {
 
   @IsEnum(PlatformRole)
   role!: PlatformRole;
+
+  /** Só no papel Comercial; nos outros papéis é ignorado. */
+  @IsOptional() @ValidateNested() @Type(() => CondicoesDoConviteDto)
+  compensation?: CondicoesDoConviteDto;
 }
 
 export class RedeemAdminInviteDto {

@@ -3,6 +3,7 @@ import { Check, Copy, X } from "lucide-react";
 import { apiPost } from "@/lib/http";
 import { ADMIN_ROLE_LABEL, type PlatformRole } from "@/lib/types";
 import { cx } from "./primitives";
+import { CONDICOES_INICIAIS, CondicoesCampos, lerCondicoes, type CondicoesTexto } from "./comercial/CondicoesCampos";
 
 /**
  * Convidar um administrador — gémeo do `NewAcademyDialog`.
@@ -20,6 +21,7 @@ export function InviteAdminDialog({ onClose, onCreated }: { onClose: () => void;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<PlatformRole>("ADMIN");
+  const [condicoes, setCondicoes] = useState<CondicoesTexto>(CONDICOES_INICIAIS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
@@ -30,7 +32,9 @@ export function InviteAdminDialog({ onClose, onCreated }: { onClose: () => void;
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose, onCreated, created]);
 
-  const valid = name.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const comercial = role === "COMERCIAL";
+  const compensation = comercial ? lerCondicoes(condicoes, null) : null;
+  const valid = name.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (!comercial || compensation !== null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -39,7 +43,12 @@ export function InviteAdminDialog({ onClose, onCreated }: { onClose: () => void;
     setError(null);
 
     try {
-      const result = await apiPost<Created>("/admins/convite", { name: name.trim(), email: email.trim(), role });
+      const result = await apiPost<Created>("/admins/convite", {
+        name: name.trim(),
+        email: email.trim(),
+        role,
+        ...(compensation ? { compensation } : {}),
+      });
       setCreated(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível convidar.");
@@ -94,7 +103,14 @@ export function InviteAdminDialog({ onClose, onCreated }: { onClose: () => void;
               </div>
             </div>
 
-            {error && <p className="rounded-[var(--radius-control)] bg-[#fae9e7] px-3 py-2 text-meta text-[#a82a20]">{error}</p>}
+            {/* O comercial entra já com o que se combinou: forma de pagar, valores e meta. */}
+            {comercial && (
+              <div className="rounded-[var(--radius-control)] border border-line bg-canvas/60 p-3.5">
+                <CondicoesCampos valor={condicoes} onChange={setCondicoes} nome={name.trim().split(" ")[0]} />
+              </div>
+            )}
+
+            {error &&<p className="rounded-[var(--radius-control)] bg-[#fae9e7] px-3 py-2 text-meta text-[#a82a20]">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={onClose} className="ctl-ghost">Cancelar</button>

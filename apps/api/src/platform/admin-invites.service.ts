@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { PlatformRole } from "@prisma/client";
+import { Prisma, type PlatformRole, type SalesPayModel } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
+import { DEFAULTS } from "./comercial.service";
 import { PlatformService } from "./platform.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
@@ -83,12 +84,28 @@ export class AdminInvitesService {
   /** Cria o convite e devolve o link — uma única vez, como os de staff. */
   async invite(
     admin: PlatformAdminContext,
-    dto: { name: string; email: string; role: PlatformRole },
+    dto: { name: string; email: string; role: PlatformRole; compensation?: CondicoesDoConvite },
     ip?: string,
   ): Promise<{ link: string; expiresAt: Date; emailed: boolean; emailError?: string }> {
     const email = dto.email.trim().toLowerCase();
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("O nome é preciso");
+    /*
+     * Um comercial entra já com a forma de pagar decidida: quem convida escolhe
+     * salário + comissão, só salário ou só comissão, os valores e a meta da
+     * semana. Sem nada escolhido, ficam os valores por omissão. Nos outros
+     * papéis não há nada a guardar.
+     */
+    const compensation =
+      dto.role === "COMERCIAL"
+        ? {
+            payModel: dto.compensation?.payModel ?? DEFAULTS.payModel,
+            hourlyCents: dto.compensation?.hourlyCents ?? DEFAULTS.hourlyCents,
+            meetingsPerCommission: dto.compensation?.meetingsPerCommission ?? DEFAULTS.meetingsPerCommission,
+            commissionCents: dto.compensation?.commissionCents ?? DEFAULTS.commissionCents,
+            weeklyGoal: dto.compensation?.weeklyGoal ?? DEFAULTS.weeklyGoal,
+          }
+        : null;
 
     const existing = await this.prisma.platformAdmin.findUnique({ where: { email }, select: { id: true } });
     if (existing) throw new ConflictException("Já existe um administrador com este email");
@@ -106,13 +123,21 @@ export class AdminInvitesService {
         email,
         name,
         role: dto.role,
+        compensation: compensation ?? Prisma.DbNull,
         invitedById: admin.id,
         expiresAt: new Date(Date.now() + VALID_DAYS * DAY),
       },
       select: { id: true, expiresAt: true },
     });
 
-    await this.platform.audit(admin, "platformAdmin.invite", "platformAdminInvite", invite.id, { email, role: dto.role }, ip);
+    await this.platform.audit(
+      admin,
+      "platformAdmin.invite",
+      "platformAdminInvite",
+      invite.id,
+      { email, role: dto.role, ...(compensation ? { compensation } : {}) },
+      ip,
+    );
 
     const link = this.linkFor(token);
 
@@ -275,7 +300,7 @@ export class AdminInvitesService {
       });
       if (redeemed.count === 0) throw new ConflictException("Este convite já foi usado");
 
-      return tx.platformAdmin.create({
+      const admin = await tx.platformAdmin.create({
         data: {
           authId: account.authId,
           email: invite.email,
@@ -284,6 +309,14 @@ export class AdminInvitesService {
         },
         select: { id: true, name: true, email: true, role: true },
       });
+
+      // O comercial nasce com as condições do convite: o "Hoje" já lhe mostra a
+      // meta da semana e o mês já conta como foi combinado.
+      if (invite.role === "COMERCIAL") {
+        const c = condicoesDoConvite(invite.compensation);
+        await tx.salesCompensation.create({ data: { adminId: admin.id, ...c } });
+      }
+      return admin;
     });
 
     await this.platform.audit(
@@ -334,6 +367,33 @@ export class AdminInvitesService {
     const base = (this.config.get<string>("PLATFORM_ORIGIN") ?? "http://localhost:5180").replace(/\/$/, "");
     return `${base}/convite-admin/${token}`;
   }
+}
+
+/** Como vai receber um comercial convidado. Ver `PlatformAdminInvite.compensation`. */
+export type CondicoesDoConvite = {
+  payModel: SalesPayModel;
+  hourlyCents: number;
+  meetingsPerCommission: number;
+  commissionCents: number;
+  weeklyGoal: number;
+};
+
+const FORMAS: SalesPayModel[] = ["HOURLY", "SALARY", "COMMISSION"];
+
+/**
+ * As condições gravadas no convite, lidas com cuidado: um convite feito antes
+ * de isto existir não traz nada, e então valem as de omissão.
+ */
+function condicoesDoConvite(v: unknown): CondicoesDoConvite {
+  const o = (v && typeof v === "object" ? v : {}) as Partial<Record<keyof CondicoesDoConvite, unknown>>;
+  const inteiro = (x: unknown, omissao: number) => (typeof x === "number" && Number.isInteger(x) && x >= 0 ? x : omissao);
+  return {
+    payModel: FORMAS.includes(o.payModel as SalesPayModel) ? (o.payModel as SalesPayModel) : DEFAULTS.payModel,
+    hourlyCents: inteiro(o.hourlyCents, DEFAULTS.hourlyCents),
+    meetingsPerCommission: Math.max(1, inteiro(o.meetingsPerCommission, DEFAULTS.meetingsPerCommission)),
+    commissionCents: inteiro(o.commissionCents, DEFAULTS.commissionCents),
+    weeklyGoal: Math.max(1, inteiro(o.weeklyGoal, DEFAULTS.weeklyGoal)),
+  };
 }
 
 /** A projecção usada em toda a parte — uma só, para `list`, `setActive` e `setRole` nunca divergirem. */

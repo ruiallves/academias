@@ -4817,6 +4817,11 @@ model PlatformAdminInvite {
   name  String
   role  PlatformRole
 
+  /// Só no papel Comercial: como vai receber, decidido por quem convida
+  /// (`payModel`, `hourlyCents`, `meetingsPerCommission`, `commissionCents`,
+  /// `weeklyGoal`). Vira a `SalesCompensation` da pessoa ao resgatar.
+  compensation Json?
+
   /// Quem convidou. Um convite sem autor é uma porta que ninguém assume.
   invitedById String
   invitedBy   PlatformAdmin @relation(fields: [invitedById], references: [id], onDelete: Cascade)
@@ -5976,11 +5981,14 @@ model SalesShift {
   @@index([adminId, startedAt])
 }
 
-/// Quanto se paga a um comercial. Uma linha por pessoa; o dono ajusta.
+/// Quanto se paga a um comercial. Uma linha por pessoa; nasce com o convite
+/// (`PlatformAdminInvite.compensation`) e o dono ajusta em Mês → Condições.
 ///
-/// Dois modelos, um de cada vez (`payModel`): à hora pelos turnos mais uma
-/// comissão por cada bloco de reuniões marcadas, ou só comissão sobre o que
-/// pagam os clubes da carteira (`SalesPortfolioClub`), sem horário.
+/// Três formas, uma de cada vez (`payModel`): salário à hora mais comissão,
+/// só salário, ou só comissão. O salário paga-se pelos turnos marcados no
+/// painel; a comissão por cada bloco de `meetingsPerCommission` reuniões
+/// marcadas. `weeklyGoal` é a meta de reuniões por semana, que o comercial vê
+/// no "Hoje" a encher à medida que marca.
 model SalesCompensation {
   adminId String        @id
   admin   PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
@@ -5993,22 +6001,24 @@ model SalesCompensation {
   meetingsPerCommission Int @default(10)
   commissionCents       Int @default(0)
 
-  /// Só comissão: a percentagem do que o clube paga, sem IVA, que fica para o
-  /// comercial. É o valor com que nasce cada clube novo da carteira; cada clube
-  /// guarda o seu, e mudar este não mexe nos que já lá estão.
+  /// Reuniões a marcar por semana (segunda a domingo, hora de Lisboa).
+  weeklyGoal Int @default(5)
+
+  /// Do modelo antigo de comissão sobre a carteira (20 % de cada clube), que
+  /// deixou de se usar a 21/11/2026. Ficam por causa de `SalesPortfolioClub`.
   clubPercent Int  @default(20)
-  /// Durante quantos meses se paga por cada clube, contados do início. Nulo =
-  /// enquanto o clube pagar. Também só serve de valor inicial.
   clubMonths  Int?
 
   updatedAt DateTime @updatedAt
 }
 
 enum SalesPayModel {
-  /// À hora, pelos turnos, mais a comissão por blocos de reuniões.
+  /// Salário à hora (turnos) mais comissão por blocos de reuniões marcadas.
   HOURLY
-  /// Só comissão: uma parte do que paga cada clube da carteira. Sem turnos.
+  /// Só comissão por blocos de reuniões marcadas. Sem turnos.
   COMMISSION
+  /// Só salário à hora, pelos turnos. As reuniões contam para a meta, não pagam.
+  SALARY
 }
 
 /// Um clube na carteira de um comercial pago à comissão.

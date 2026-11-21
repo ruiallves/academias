@@ -6,7 +6,7 @@ import { Empty, Panel, cx } from "@/components/primitives";
 import { ContactDialog } from "@/components/ContactDialog";
 import { CalendarDialog } from "@/components/CalendarDialog";
 import { RegistarChamada } from "@/components/comercial/RegistarChamada";
-import { AnelComissao, Kbd, Numeros, QrLigar, Segmented } from "@/components/comercial/ui";
+import { AnelComissao, Kbd, MetaDaSemana, Numeros, QrLigar, Segmented } from "@/components/comercial/ui";
 import { Failed, Skeleton } from "../Overview";
 import { apiPost } from "@/lib/http";
 import { useApi } from "@/lib/query";
@@ -24,7 +24,7 @@ import {
   saudacao,
   telefoneLegivel,
 } from "@/lib/comercial";
-import type { CallOutcome, ComercialHoje, Contact, Me } from "@/lib/types";
+import { recebeComissao, recebeHoras, type CallOutcome, type ComercialHoje, type Contact, type Me } from "@/lib/types";
 
 type Aba = "seguimentos" | "novos" | "semResposta";
 
@@ -110,7 +110,7 @@ export default function Hoje({ me }: { me: Me }) {
 
   const h = hoje.data;
   const comercial = me.role === "COMERCIAL";
-  const aComissao = h?.payModel === "COMMISSION";
+  const pagaHoras = h ? recebeHoras(h.payModel) : false;
 
   function registado(c: Contact, resultado: CallOutcome) {
     setLista((l) => (l ?? []).map((x) => (x.id === c.id ? c : x)));
@@ -132,7 +132,7 @@ export default function Hoje({ me }: { me: Me }) {
           totalFila === 0 ? "fila vazia" : `${fila.seguimentos.length} seguimentos e ${fila.novos.length} clubes novos na fila`
         }`}
       >
-        {comercial && h && !aComissao && <Turno turno={h.turno} onChange={hoje.reload} />}
+        {comercial && h && pagaHoras && <Turno turno={h.turno} onChange={hoje.reload} />}
       </PageHeader>
 
       {h && (
@@ -145,11 +145,11 @@ export default function Hoje({ me }: { me: Me }) {
                 value: h.hoje.chamadas ? `${Math.round((h.hoje.atendidas / h.hoje.chamadas) * 100)}%` : "—",
                 note: `${h.hoje.atendidas} de ${h.hoje.chamadas} hoje`,
               },
-              { label: "Reuniões marcadas", value: String(h.hoje.reunioes), note: `${h.semana.reunioes} esta semana` },
-              ...(comercial && aComissao && h.carteira
-                ? [{ label: "Carteira", value: euros(h.carteira.porMesCents), note: `por mês, ${h.carteira.aPagar} ${h.carteira.aPagar === 1 ? "clube a pagar" : "clubes a pagar"}` }]
+              { label: "Reuniões marcadas", value: String(h.hoje.reunioes), note: `${h.semana.reunioes} de ${h.semana.meta} esta semana` },
+              ...(comercial && pagaHoras
+                ? [{ label: "Turno hoje", value: horas(h.hoje.minutos), note: `${horas(h.mes.minutos)} este mês` }]
                 : comercial
-                  ? [{ label: "Turno hoje", value: horas(h.hoje.minutos), note: `${horas(h.mes.minutos)} este mês` }]
+                  ? [{ label: "Este mês", value: euros(h.mes.totalCents), note: `${h.mes.comissao.novas} ${h.mes.comissao.novas === 1 ? "comissão" : "comissões"}` }]
                   : []),
             ]}
           />
@@ -240,8 +240,15 @@ export default function Hoje({ me }: { me: Me }) {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          {h && aComissao && h.carteira && <CartaoCarteira c={h.carteira} />}
-          {h && !aComissao && (comercial || h.mes.configured) && <CartaoComissao h={h} />}
+          {/* A meta enche-se a cada reunião marcada: registar a chamada recarrega estes números. */}
+          {h && (comercial || h.mes.configured) && (
+            <Panel>
+              <div className="px-5 py-5">
+                <MetaDaSemana feitas={h.semana.reunioes} meta={h.semana.meta} />
+              </div>
+            </Panel>
+          )}
+          {h && (comercial || h.mes.configured) && <CartaoDoMes h={h} />}
 
           <Panel>
             <header className="flex items-center justify-between border-b border-line px-5 py-3.5">
@@ -485,64 +492,39 @@ function Turno({ turno, onChange }: { turno: ComercialHoje["turno"]; onChange: (
   );
 }
 
-/** À comissão: o que a carteira rende por mês e o que já entrou este mês. */
-function CartaoCarteira({ c }: { c: NonNullable<ComercialHoje["carteira"]> }) {
-  return (
-    <Panel>
-      <header className="border-b border-line px-5 py-3.5">
-        <h2 className="text-panel text-ink">Carteira</h2>
-      </header>
-      <div className="px-5 py-5">
-        <p className="text-meta text-ink-3">A receber por mês</p>
-        <p className="mt-1 text-[32px] leading-none font-semibold tracking-[-0.02em] text-ink tabular">{euros(c.porMesCents)}</p>
-        <p className="mt-2 text-meta leading-relaxed text-ink-2">
-          {c.clubes === 0
-            ? "Ainda sem clubes. Cada reunião que fechar entra aqui."
-            : `${c.aPagar} ${c.aPagar === 1 ? "clube a pagar" : "clubes a pagar"}${c.emExperiencia ? ` e ${c.emExperiencia} em experiência` : ""}.`}
-        </p>
-      </div>
-      <dl className="grid grid-cols-2 border-t border-line text-center">
-        <div className="border-r border-line px-2 py-3">
-          <dt className="text-[11px] text-ink-4">Este mês</dt>
-          <dd className="mt-0.5 text-body font-semibold text-ink tabular">{euros(c.esteMesCents)}</dd>
-        </div>
-        <div className="px-2 py-3">
-          <dt className="text-[11px] text-ink-4">Ganho no total</dt>
-          <dd className="mt-0.5 text-body font-semibold text-ink tabular">{euros(c.ganhoCents)}</dd>
-        </div>
-      </dl>
-      <div className="border-t border-line px-5 py-3">
-        <Link to="/comercial/carteira" className="text-meta text-ink-3 hover:text-ink">
-          Ver a carteira
-        </Link>
-      </div>
-    </Panel>
-  );
-}
-
-function CartaoComissao({ h }: { h: ComercialHoje }) {
+/**
+ * O mês: a comissão a andar (quando a forma de pagar a tem) e os números.
+ * Só salário não tem anel; só comissão não tem horas.
+ */
+function CartaoDoMes({ h }: { h: ComercialHoje }) {
   const c = h.mes.comissao;
+  const comissao = recebeComissao(h.payModel);
+  const horasPagas = recebeHoras(h.payModel);
   return (
     <Panel>
       <header className="border-b border-line px-5 py-3.5">
-        <h2 className="text-panel text-ink">Comissão</h2>
+        <h2 className="text-panel text-ink">{comissao ? "Comissão" : "Este mês"}</h2>
       </header>
-      <div className="flex items-center gap-4 px-5 py-5">
-        <AnelComissao feito={c.progresso} total={c.porComissao} size={112} />
-        <p className="text-meta leading-relaxed text-ink-2">
-          {c.faltam === 1 ? "Falta 1 reunião" : `Faltam ${c.faltam} reuniões`} para a próxima comissão.
-          {c.novas > 0 && (
-            <span className="mt-1 block font-medium text-ok">
-              {c.novas} {c.novas === 1 ? "comissão ganha" : "comissões ganhas"} este mês.
-            </span>
-          )}
-        </p>
-      </div>
-      <dl className="grid grid-cols-3 border-t border-line text-center">
-        <div className="border-r border-line px-2 py-3">
-          <dt className="text-[11px] text-ink-4">Horas</dt>
-          <dd className="mt-0.5 text-body font-semibold text-ink tabular">{horas(h.mes.minutos)}</dd>
+      {comissao && (
+        <div className="flex items-center gap-4 px-5 py-5">
+          <AnelComissao feito={c.progresso} total={c.porComissao} size={112} />
+          <p className="text-meta leading-relaxed text-ink-2">
+            {c.faltam === 1 ? "Falta 1 reunião" : `Faltam ${c.faltam} reuniões`} para a próxima comissão.
+            {c.novas > 0 && (
+              <span className="mt-1 block font-medium text-ok">
+                {c.novas} {c.novas === 1 ? "comissão ganha" : "comissões ganhas"} este mês.
+              </span>
+            )}
+          </p>
         </div>
+      )}
+      <dl className={cx("grid border-line text-center", comissao && "border-t", horasPagas ? "grid-cols-3" : "grid-cols-2")}>
+        {horasPagas && (
+          <div className="border-r border-line px-2 py-3">
+            <dt className="text-[11px] text-ink-4">Horas</dt>
+            <dd className="mt-0.5 text-body font-semibold text-ink tabular">{horas(h.mes.minutos)}</dd>
+          </div>
+        )}
         <div className="border-r border-line px-2 py-3">
           <dt className="text-[11px] text-ink-4">Reuniões</dt>
           <dd className="mt-0.5 text-body font-semibold text-ink tabular">{h.mes.reunioes}</dd>

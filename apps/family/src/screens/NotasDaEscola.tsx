@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { GraduationCap, Minus, Plus, Trash2, X } from "lucide-react";
 import { apiDelete, apiGet, apiPost } from "@/lib/http";
 import { cx } from "@/ui";
@@ -288,7 +289,7 @@ function NotaSheet({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/30" onClick={onClose} role="presentation">
       <div
         role="dialog"
@@ -475,7 +476,8 @@ function NotaSheet({
           </p>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

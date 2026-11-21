@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Apple, Camera, ChevronRight, FileText, MessageSquare, Stethoscope, X } from "lucide-react";
 import { useChild } from "@/App";
@@ -460,7 +461,7 @@ function EvaluationCard({ evaluation, previous }: { evaluation: Evaluation; prev
  * exactamente ao sítio onde estava.
  */
 function ReportSheet({ report, onClose }: { report: Report; onClose: () => void }) {
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end bg-ink/30"
       onClick={onClose}
@@ -514,6 +515,7 @@ function ReportSheet({ report, onClose }: { report: Report; onClose: () => void 
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

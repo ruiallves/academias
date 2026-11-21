@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Briefcase, Building2, CalendarDays, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, ShieldHalf, Sun, TrendingUp, Users, Wallet } from "lucide-react";
+import { Building2, CalendarDays, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, ShieldHalf, Sun, TrendingUp, Users, Wallet } from "lucide-react";
 import { ADMIN_ROLE_LABEL } from "@/lib/types";
 import { TICKETS_MUDARAM } from "@/lib/tickets";
 import { signOut } from "@/lib/session";
@@ -65,18 +65,9 @@ const COMERCIAL_NAV: NavItem[] = [
   { to: "/comercial/mes", label: "O meu mês", icon: Wallet },
 ];
 
-/** À comissão, a carteira de clubes entra antes do mês: é o que lhe paga. */
-const COMERCIAL_A_COMISSAO_NAV: NavItem[] = [
-  ...COMERCIAL_NAV.slice(0, 3),
-  { to: "/comercial/carteira", label: "Carteira", icon: Briefcase },
-  COMERCIAL_NAV[3],
-];
-
 export function Shell({ me }: { me: Me }) {
   const comercial = me.role === "COMERCIAL";
-  const nav = comercial
-    ? me.salesPayModel === "COMMISSION" ? COMERCIAL_A_COMISSAO_NAV : COMERCIAL_NAV
-    : me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
+  const nav = comercial ? COMERCIAL_NAV : me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
 
   /*
    * Os pedidos por tratar, ao lado de "Tickets".

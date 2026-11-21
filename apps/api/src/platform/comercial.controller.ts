@@ -126,6 +126,10 @@ class CondicoesDto {
   @IsInt() @Min(0) @Max(10_000_00)
   commissionCents!: number;
 
+  /** Reuniões a marcar por semana. */
+  @IsOptional() @IsInt() @Min(1) @Max(100)
+  weeklyGoal?: number;
+
   @IsOptional() @IsInt() @Min(1) @Max(100)
   clubPercent?: number;
 

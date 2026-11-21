@@ -252,9 +252,27 @@ export function comissoes(antes: number, doMes: number, porComissao: number) {
 }
 
 /** Quanto se paga: as horas ao minuto, arredondadas ao cêntimo, mais as comissões. */
-export function pagamento(minutos: number, hourlyCents: number, novasComissoes: number, commissionCents: number) {
-  const hoursCents = Math.round((minutos * hourlyCents) / 60);
-  const comissao = novasComissoes * commissionCents;
+/** As três formas de pagar um comercial. Ver `SalesPayModel` no schema. */
+export type FormaDePagar = "HOURLY" | "SALARY" | "COMMISSION";
+
+/** Recebe pelas horas dos turnos: salário + comissão, ou só salário. */
+export const recebeHoras = (f: FormaDePagar): boolean => f === "HOURLY" || f === "SALARY";
+/** Recebe comissão por blocos de reuniões: salário + comissão, ou só comissão. */
+export const recebeComissao = (f: FormaDePagar): boolean => f === "HOURLY" || f === "COMMISSION";
+
+/**
+ * Quanto se paga no mês. Cada parte só entra na forma que a tem: só salário
+ * não ganha comissões, só comissão não ganha horas (nem tem turnos).
+ */
+export function pagamento(
+  minutos: number,
+  hourlyCents: number,
+  novasComissoes: number,
+  commissionCents: number,
+  forma: FormaDePagar = "HOURLY",
+) {
+  const hoursCents = recebeHoras(forma) ? Math.round((minutos * hourlyCents) / 60) : 0;
+  const comissao = recebeComissao(forma) ? novasComissoes * commissionCents : 0;
   return { hoursCents, commissionCents: comissao, totalCents: hoursCents + comissao };
 }
 

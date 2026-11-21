@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   Banknote,
@@ -478,7 +479,7 @@ function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected:
 /* -------------------------------------------------------------------------- */
 
 function Sheet({ children: kids, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-40 flex items-end justify-center">
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div
@@ -488,7 +489,8 @@ function Sheet({ children: kids, onClose }: { children: React.ReactNode; onClose
         <span className="mx-auto mb-4 block h-1 w-10 rounded-full bg-ink-4/40" aria-hidden />
         {kids}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

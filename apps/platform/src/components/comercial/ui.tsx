@@ -145,6 +145,53 @@ export function AnelComissao({ feito, total, size = 132 }: { feito: number; tota
   );
 }
 
+/**
+ * A meta da semana: quantas reuniões já se marcaram de segunda a domingo.
+ *
+ * Uma casa por reunião da meta (até 12; acima disso, uma barra contínua), que
+ * se preenche a cada reunião marcada. Passar a meta diz-se em texto, com o que
+ * vai a mais, sem casas extra a alargar a linha.
+ */
+export function MetaDaSemana({ feitas, meta }: { feitas: number; meta: number }) {
+  const cumprida = feitas >= meta;
+  const casas = meta <= 12;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-meta text-ink-3">Meta da semana</span>
+        <span className={cx("text-meta font-medium", cumprida ? "text-ok" : "text-ink-3")}>
+          {cumprida ? (feitas > meta ? `Cumprida, +${feitas - meta}` : "Cumprida") : meta - feitas === 1 ? "Falta 1" : `Faltam ${meta - feitas}`}
+        </span>
+      </div>
+      <p className="mt-1 text-[28px] leading-none font-semibold tracking-tight text-ink tabular">
+        {feitas}
+        <span className="text-ink-4"> de {meta}</span>
+        <span className="ml-1.5 text-meta font-normal tracking-normal text-ink-3">{meta === 1 ? "reunião" : "reuniões"}</span>
+      </p>
+      {casas ? (
+        <div className="mt-3 flex gap-1" role="img" aria-label={`${feitas} de ${meta} reuniões marcadas esta semana`}>
+          {Array.from({ length: meta }, (_, i) => (
+            <span
+              key={i}
+              className={cx(
+                "h-2 flex-1 rounded-full transition-colors duration-300 motion-reduce:transition-none",
+                i < feitas ? (cumprida ? "bg-ok" : "bg-signal") : "bg-sunken",
+              )}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-sunken" role="img" aria-label={`${feitas} de ${meta} reuniões marcadas esta semana`}>
+          <div
+            className={cx("h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", cumprida ? "bg-ok" : "bg-signal")}
+            style={{ width: `${Math.min(100, (feitas / meta) * 100)}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** A moldura de um diálogo: fundo, Escape, folha no telemóvel. */
 export function Dialog({
   title,

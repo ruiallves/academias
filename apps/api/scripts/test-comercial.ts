@@ -24,6 +24,8 @@ import {
   minutosDoTurno,
   pagamento,
   proximoDiaUtil,
+  recebeComissao,
+  recebeHoras,
 } from "../src/platform/comercial.regras";
 
 let ok = 0;
@@ -105,6 +107,17 @@ const p = pagamento(12 * 60 + 30, 700, 2, 2500);
 check("12h30 a 7 €/h = 87,50 €", p.hoursCents === 8750);
 check("2 comissões de 25 € = 50 €", p.commissionCents === 5000 && p.totalCents === 13750);
 check("1 minuto a 7 €/h arredonda ao cêntimo", pagamento(1, 700, 0, 0).hoursCents === 12);
+
+console.log("\nAs três formas de pagar");
+const sc = pagamento(10 * 60, 500, 3, 2000, "HOURLY");
+check("salário + comissão: 10 h a 5 € e 3 comissões de 20 € = 110 €", sc.hoursCents === 5000 && sc.commissionCents === 6000 && sc.totalCents === 11000, sc);
+const ss = pagamento(10 * 60, 500, 3, 2000, "SALARY");
+check("só salário: as comissões não entram", ss.hoursCents === 5000 && ss.commissionCents === 0 && ss.totalCents === 5000, ss);
+const so = pagamento(10 * 60, 500, 3, 2000, "COMMISSION");
+check("só comissão: as horas não entram", so.hoursCents === 0 && so.commissionCents === 6000 && so.totalCents === 6000, so);
+check("sem forma dita, é salário + comissão (como antes)", pagamento(60, 700, 1, 2500).totalCents === 3200);
+check("turnos: salário + comissão e só salário sim, só comissão não", recebeHoras("HOURLY") && recebeHoras("SALARY") && !recebeHoras("COMMISSION"));
+check("comissão: salário + comissão e só comissão sim, só salário não", recebeComissao("HOURLY") && recebeComissao("COMMISSION") && !recebeComissao("SALARY"));
 
 console.log("\nComissões por blocos");
 let c = comissoes(0, 3, 5);

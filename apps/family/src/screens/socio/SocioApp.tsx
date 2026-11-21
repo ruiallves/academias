@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { PAGAMENTOS_DESATIVADOS, doMetodo, useCotacao } from "@/lib/cotacao";
 import {
   NavLink,
@@ -1171,7 +1172,7 @@ function PagarSheet({
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40"
       onClick={onClose}
@@ -1323,7 +1324,8 @@ function PagarSheet({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2028,7 +2030,7 @@ function FotoSugestao({ memberId }: { memberId: string }) {
 
   if (!aberta) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40"
       onClick={fechar}
@@ -2075,7 +2077,8 @@ function FotoSugestao({ memberId }: { memberId: string }) {
           {campo}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

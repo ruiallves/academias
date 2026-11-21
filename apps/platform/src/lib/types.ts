@@ -8,8 +8,8 @@ export type Me = {
   email: string;
   role: PlatformRole;
   mfaEnabled: boolean;
-  /** Só para o papel Comercial: à comissão, o menu tem a Carteira e não há turnos. */
-  salesPayModel?: "HOURLY" | "COMMISSION" | null;
+  /** Só para o papel Comercial: só à comissão não há turnos. */
+  salesPayModel?: SalesPayModel | null;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -434,7 +434,8 @@ export type CommissionProgress = { novas: number; progresso: number; faltam: num
 export type ComercialHoje = {
   turno: { id: string; startedAt: string } | null;
   hoje: { chamadas: number; atendidas: number; reunioes: number; minutos: number };
-  semana: { chamadas: number; atendidas: number; reunioes: number };
+  /** `meta`: reuniões a marcar nesta semana (segunda a domingo). */
+  semana: { chamadas: number; atendidas: number; reunioes: number; meta: number };
   proximas: {
     id: string;
     scheduledAt: string;
@@ -445,73 +446,32 @@ export type ComercialHoje = {
   }[];
   mes: { month: string; minutos: number; reunioes: number; comissao: CommissionProgress; totalCents: number; configured: boolean };
   payModel: SalesPayModel;
-  carteira: CarteiraTotais | null;
 };
 
-/** À hora (turnos + comissão por blocos de reuniões) ou só comissão sobre os clubes da carteira. */
-export type SalesPayModel = "HOURLY" | "COMMISSION";
+/**
+ * Como se paga a um comercial: salário à hora + comissão por blocos de
+ * reuniões (`HOURLY`), só salário (`SALARY`) ou só comissão (`COMMISSION`).
+ */
+export type SalesPayModel = "HOURLY" | "SALARY" | "COMMISSION";
+
+export const PAY_MODEL_LABEL: Record<SalesPayModel, string> = {
+  HOURLY: "Salário + comissão",
+  SALARY: "Só salário",
+  COMMISSION: "Só comissão",
+};
+
+/** Recebe pelas horas dos turnos. */
+export const recebeHoras = (m: SalesPayModel) => m === "HOURLY" || m === "SALARY";
+/** Recebe comissão por blocos de reuniões marcadas. */
+export const recebeComissao = (m: SalesPayModel) => m === "HOURLY" || m === "COMMISSION";
 
 export type Compensation = {
   payModel: SalesPayModel;
   hourlyCents: number;
   meetingsPerCommission: number;
   commissionCents: number;
-  clubPercent: number;
-  /** Nulo = enquanto o clube pagar. */
-  clubMonths: number | null;
-};
-
-export type CarteiraTotais = {
-  clubes: number;
-  aPagar: number;
-  emExperiencia: number;
-  porMesCents: number;
-  esteMesCents: number;
-  ganhoCents: number;
-};
-
-export type EstadoNaCarteira = "ativo" | "em-atraso" | "experiencia" | "suspenso" | "cancelado" | "terminou" | "retirado";
-
-export type CarteiraClube = {
-  id: string;
-  academyId: string;
-  name: string;
-  plan: string | null;
-  trialEndsAt: string | null;
-  mensalidadeCents: number;
-  percent: number;
-  months: number | null;
-  startsOn: string;
-  endsOn: string | null;
-  endedOn: string | null;
-  note: string | null;
-  estado: EstadoNaCarteira;
-  porMesCents: number;
-  esteMesCents: number;
-  ganhoCents: number;
-  ultimoPagamento: string | null;
-};
-
-export type Carteira = {
-  admin: { id: string; name: string };
-  payModel: SalesPayModel;
-  defaults: { percent: number; months: number | null };
-  totals: CarteiraTotais;
-  clubs: CarteiraClube[];
-  months: { month: string; label: string; cents: number }[];
-  /** Só para quem gere: clubes que ainda não estão em carteira nenhuma. */
-  livres?: { id: string; name: string; plan: string | null; status: string | null; sugerido: boolean }[];
-};
-
-export type CarteiraLinhaDoMes = {
-  id: string;
-  academyId: string;
-  clube: string;
-  dia: string;
-  description: string;
-  amountCents: number;
-  percent: number;
-  commissionCents: number;
+  /** Reuniões a marcar por semana. */
+  weeklyGoal: number;
 };
 
 export type SalesShift = {
@@ -539,8 +499,9 @@ export type ComercialMes = {
   commission: CommissionProgress;
   hoursCents: number;
   commissionCents: number;
-  portfolio: { lines: CarteiraLinhaDoMes[]; cents: number };
   totalCents: number;
+  /** A semana corrente: reuniões marcadas (sem as canceladas) e a meta. */
+  week: { meetings: number; goal: number };
   payout: { approvedAt: string; approvedBy: string | null; transactionId: string | null } | null;
 };
 

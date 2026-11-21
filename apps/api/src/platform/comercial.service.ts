@@ -22,6 +22,8 @@ import {
   nomeDoMes,
   pagamento,
   pagamentoDaComissao,
+  recebeComissao,
+  recebeHoras,
   type Resultado,
 } from "./comercial.regras";
 
@@ -40,11 +42,12 @@ import {
  * marcam o resultado das reuniões, corrigem turnos e aprovam meses.
  */
 
-const DEFAULTS = {
+export const DEFAULTS = {
   payModel: "HOURLY" as SalesPayModel,
   hourlyCents: 700,
   meetingsPerCommission: 10,
   commissionCents: 0,
+  weeklyGoal: 5,
   clubPercent: 20,
   clubMonths: null as number | null,
 };
@@ -92,6 +95,7 @@ export type CondicoesInput = {
   hourlyCents: number;
   meetingsPerCommission: number;
   commissionCents: number;
+  weeklyGoal?: number;
   clubPercent?: number;
   clubMonths?: number | null;
 };
@@ -132,8 +136,9 @@ export class ComercialService {
         where: { byId: admin.id, channel: "CHAMADA", happenedAt: { gte: semana } },
         select: { outcome: true, happenedAt: true },
       }),
+      /* Uma reunião cancelada não conta para a meta, como não conta para a comissão. */
       this.prisma.salesMeeting.findMany({
-        where: { bookedById: admin.id, createdAt: { gte: semana } },
+        where: { bookedById: admin.id, createdAt: { gte: semana }, status: { not: "CANCELADA" } },
         select: { createdAt: true },
       }),
       this.prisma.salesMeeting.findMany({
@@ -151,12 +156,9 @@ export class ComercialService {
 
     const deHoje = chamadasSemana.filter((c) => c.happenedAt >= dia);
     const minutosHoje = await this.minutosDesde(admin.id, dia, agora);
-    const aComissao = mes.compensation.payModel === "COMMISSION";
-    const carteira = aComissao ? (await this.lerCarteira(admin.id, false)).totals : null;
 
     return {
       payModel: mes.compensation.payModel,
-      carteira,
       turno: turno ? { id: turno.id, startedAt: turno.startedAt } : null,
       hoje: {
         chamadas: deHoje.length,
@@ -168,6 +170,8 @@ export class ComercialService {
         chamadas: chamadasSemana.length,
         atendidas: chamadasSemana.filter((c) => atendeu(c.outcome)).length,
         reunioes: reunioesSemana.length,
+        /** A meta de reuniões desta semana (segunda a domingo). */
+        meta: mes.compensation.weeklyGoal,
       },
       proximas: proximas.map(reuniaoCurta),
       mes: {
@@ -410,7 +414,7 @@ export class ComercialService {
 
   async iniciarTurno(admin: PlatformAdminContext) {
     const comp = await this.prisma.salesCompensation.findUnique({ where: { adminId: admin.id }, select: { payModel: true } });
-    if (comp?.payModel === "COMMISSION") throw new BadRequestException("Recebes à comissão: não há turnos para marcar.");
+    if (comp && !recebeHoras(comp.payModel)) throw new BadRequestException("Recebes só à comissão: não há turnos para marcar.");
     const aberto = await this.prisma.salesShift.findFirst({ where: { adminId: admin.id, endedAt: null } });
     if (aberto) return { id: aberto.id, startedAt: aberto.startedAt, endedAt: null };
     const t = await this.prisma.salesShift.create({ data: { adminId: admin.id, startedAt: new Date() } });
@@ -491,7 +495,8 @@ export class ComercialService {
   async resumoDoMes(adminId: string, mes: string, agora: Date) {
     const { inicio, fim } = limitesDoMes(mes);
 
-    const [pessoa, comp, turnos, reunioes, antes, chamadas, payout] = await Promise.all([
+    const { semana: inicioDaSemana } = inicioDoDiaEDaSemana(agora);
+    const [pessoa, comp, turnos, reunioes, antes, chamadas, payout, daSemana] = await Promise.all([
       this.prisma.platformAdmin.findUnique({ where: { id: adminId }, select: { id: true, name: true, role: true } }),
       this.prisma.salesCompensation.findUnique({ where: { adminId } }),
       this.prisma.salesShift.findMany({ where: { adminId, startedAt: { gte: inicio, lt: fim } }, orderBy: { startedAt: "asc" } }),
@@ -506,6 +511,8 @@ export class ComercialService {
         select: { outcome: true },
       }),
       this.prisma.salesPayout.findUnique({ where: { adminId_month: { adminId, month: mes } }, include: { approvedBy: { select: { name: true } } } }),
+      /* A semana corrente, seja qual for o mês que se está a ver: é a da meta. */
+      this.prisma.salesMeeting.count({ where: { bookedById: adminId, createdAt: { gte: inicioDaSemana }, status: { not: "CANCELADA" } } }),
     ]);
     if (!pessoa) throw new NotFoundException("Pessoa não encontrada");
 
@@ -515,23 +522,21 @@ export class ComercialService {
           hourlyCents: comp.hourlyCents,
           meetingsPerCommission: comp.meetingsPerCommission,
           commissionCents: comp.commissionCents,
-          clubPercent: comp.clubPercent,
-          clubMonths: comp.clubMonths,
+          weeklyGoal: comp.weeklyGoal,
         }
-      : DEFAULTS;
-    const aComissao = condicoes.payModel === "COMMISSION";
+      : {
+          payModel: DEFAULTS.payModel,
+          hourlyCents: DEFAULTS.hourlyCents,
+          meetingsPerCommission: DEFAULTS.meetingsPerCommission,
+          commissionCents: DEFAULTS.commissionCents,
+          weeklyGoal: DEFAULTS.weeklyGoal,
+        };
 
     const minutos = turnos.reduce((s, t) => s + minutosDoTurno(t, agora), 0);
     const contam = reunioes.filter((r) => r.countsForCommission).length;
     const com = comissoes(antes, contam, condicoes.meetingsPerCommission);
-    /*
-     * À comissão não há horas nem blocos de reuniões: paga-se só a parte do que
-     * os clubes da carteira pagaram neste mês. À hora, a carteira não conta.
-     */
-    const carteira = aComissao ? await this.comissoesDaCarteira(adminId, mes) : { linhas: [], cents: 0 };
-    const pago = aComissao
-      ? { hoursCents: 0, commissionCents: 0, totalCents: carteira.cents }
-      : pagamento(minutos, condicoes.hourlyCents, com.novas, condicoes.commissionCents);
+    /* Cada forma de pagar só leva a sua parte: ver `pagamento`. */
+    const pago = pagamento(minutos, condicoes.hourlyCents, com.novas, condicoes.commissionCents, condicoes.payModel);
 
     return {
       admin: { id: pessoa.id, name: pessoa.name, role: pessoa.role },
@@ -556,8 +561,9 @@ export class ComercialService {
       commission: { ...com, novas: payout ? payout.commissions : com.novas },
       hoursCents: payout ? payout.hoursCents : pago.hoursCents,
       commissionCents: payout ? payout.commissionCents : pago.commissionCents,
-      portfolio: { lines: carteira.linhas, cents: payout ? payout.portfolioCents : carteira.cents },
       totalCents: payout ? payout.totalCents : pago.totalCents,
+      /** Reuniões marcadas nesta semana (sem as canceladas) e a meta. */
+      week: { meetings: daSemana, goal: condicoes.weeklyGoal },
       payout: payout
         ? { approvedAt: payout.approvedAt, approvedBy: payout.approvedBy?.name ?? null, transactionId: payout.transactionId }
         : null,
@@ -585,6 +591,7 @@ export class ComercialService {
           calls: r.calls,
           meetingsCounted: r.meetingsCounted,
           totalCents: r.totalCents,
+          week: r.week,
           shiftStartedAt: aberto?.startedAt ?? null,
         };
       }),
@@ -598,6 +605,7 @@ export class ComercialService {
       meetingsPerCommission: dto.meetingsPerCommission,
       commissionCents: dto.commissionCents,
       ...(dto.payModel !== undefined ? { payModel: dto.payModel } : {}),
+      ...(dto.weeklyGoal !== undefined ? { weeklyGoal: dto.weeklyGoal } : {}),
       ...(dto.clubPercent !== undefined ? { clubPercent: dto.clubPercent } : {}),
       ...(dto.clubMonths !== undefined ? { clubMonths: dto.clubMonths } : {}),
     };
@@ -634,10 +642,15 @@ export class ComercialService {
                 occurredAt: new Date(new Date().toISOString().slice(0, 10)),
                 category: "Comercial",
                 counterparty: r.admin.name,
-                notes:
-                  r.compensation.payModel === "COMMISSION"
-                    ? `Comissões da carteira: ${r.portfolio.lines.length} ${r.portfolio.lines.length === 1 ? "pagamento" : "pagamentos"} de clubes (${[...new Set(r.portfolio.lines.map((l) => l.clube))].join(", ")}).`
-                    : `${horasEMinutos(r.minutes)} de turnos e ${r.commission.novas} ${r.commission.novas === 1 ? "comissão" : "comissões"} (${r.meetingsCounted} reuniões marcadas no mês).`,
+                notes: [
+                  recebeHoras(r.compensation.payModel) ? `${horasEMinutos(r.minutes)} de turnos` : null,
+                  recebeComissao(r.compensation.payModel)
+                    ? `${r.commission.novas} ${r.commission.novas === 1 ? "comissão" : "comissões"} (${r.meetingsCounted} reuniões marcadas no mês)`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" e ")
+                  .concat("."),
                 createdById: admin.id,
               },
             })
@@ -651,7 +664,6 @@ export class ComercialService {
           commissions: r.commission.novas,
           hoursCents: r.hoursCents,
           commissionCents: r.commissionCents,
-          portfolioCents: r.portfolio.cents,
           totalCents: r.totalCents,
           approvedById: admin.id,
           transactionId: transacao?.id ?? null,

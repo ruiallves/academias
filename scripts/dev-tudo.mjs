@@ -105,15 +105,26 @@ if (escolhidas.length === 0) {
 
 /* ------------------------------------------------------------------ portas --- */
 
-/** A porta já responde? (alguém a ouvir em localhost) */
-function portaOcupada(porta) {
+/** Alguém a ouvir neste endereço e porta? */
+function responde(host, porta) {
   return new Promise((resolve) => {
-    const s = net.connect({ host: "127.0.0.1", port: porta });
+    const s = net.connect({ host, port: porta });
     s.setTimeout(800);
     s.once("connect", () => (s.destroy(), resolve(true)));
     s.once("timeout", () => (s.destroy(), resolve(false)));
     s.once("error", () => resolve(false));
   });
+}
+
+/**
+ * A porta já responde em localhost?
+ *
+ * Pergunta em IPv4 **e** IPv6: o Vite, sem `host`, ouve só em `[::1]` no
+ * Windows, e a pergunta só em `127.0.0.1` dava uma app a correr como parada.
+ */
+async function portaOcupada(porta) {
+  const [v4, v6] = await Promise.all([responde("127.0.0.1", porta), responde("::1", porta)]);
+  return v4 || v6;
 }
 
 /* --------------------------------------------------------------- arrancar --- */
@@ -185,7 +196,7 @@ function resumo() {
       : cor(33, "a arrancar ");
     console.log(`  ${marca} ${a.rotulo.padEnd(24)} ${a.url}`);
   }
-  console.log(cinza("\n  Ctrl+C fecha tudo o que este terminal abriu.\n"));
+  console.log(filhos.size > 0 ? cinza("\n  Ctrl+C fecha tudo o que este terminal abriu.\n") : "");
 }
 
 /* ------------------------------------------------------------------ fechar --- */
